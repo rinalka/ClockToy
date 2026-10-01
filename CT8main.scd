@@ -31,15 +31,13 @@
 // The piece is organized into 13 simultaneous tracks: 4 percussion, 1 bass,
 // 4 rhythm/harmony, and 4 melody.
 //
-// Terminology: a beat is one flashed segment/event (row or column scan);
+// Terminology: 
+//a beat is one flashed segment/event (row or column scan);
 // a bar is one full pass through all of a track's beats before the pattern
-// repeats - how many beats that is varies with the displayed time and
-// 12/24-hour mode (see PT1/PT2's beatCount/barCount diagnostics,
-// CT8tracks.scd). Eventually there will also be sections: a section is some
-// number of bars, sized from the 15-minute chunks in the Actions and Mood
-// tables above (maybe Weather too) - i.e. the piece's larger-scale
-// structure is meant to follow those real-world 15-minute slots, not be
-// arbitrary.
+//  repeats - how many beats that is varies with the displayed time and
+//  12/24-hour mode Sections: 
+//a section is some  number of bars, sized from the 15-minute chunks in the Actions and Mood
+//   tables above (maybe Weather too) 
 //
 // Generative code will read the four tables across the chosen start time and
 // duration, and use them to select and configure instruments, set their
@@ -54,7 +52,6 @@
 // 0. LOAD EVERY OTHER CT8 FILE
 // ---------------------------------------------------------------------------
 
-//
 // ~ct8Dir is hardcoded! Update this path if the project folder moves.
 ~ct8Dir = "C:/Users/baaan/Desktop/Music/sc/ClockToy/CT8";
 ~ct8FileNames = [
@@ -63,20 +60,15 @@
     "CT8tracks.scd",
     "CT8guiAdjust.scd",
     "CT8guiSynth.scd",
-    "CT8guiReverb.scd",
+    "CT8guiSynthLab.scd",
     "CT8fakeData.scd"
 ];
 
-// Load one file by name, e.g. ~loadCt8File.("CT8guiSynth.scd") - handy for
-// picking up an edit to just that one piece without reloading everything.
 ~loadCt8File = { |fileName|
     ("Loading " ++ fileName ++ " ...").postln;
     thisProcess.interpreter.executeFile(~ct8Dir +/+ fileName);
 };
-
-// Load all five, in order.
 ~loadAllCt8Files = { ~ct8FileNames.do(~loadCt8File) };
-
 ~loadAllCt8Files.value;
 
 // ---------------------------------------------------------------------------
@@ -93,6 +85,7 @@ if(
     Error("A CT8 file failed to load - check the post window above for the actual error.").throw;
 };
 
+// set current tracks true
 ~trackEnabled[\PT1] = true;
 ~trackEnabled[\PT2] = true;
 ~trackEnabled[\PT3] = true;
@@ -112,19 +105,27 @@ if(~closeWindowsOnCmdPeriod.notNil) { CmdPeriod.remove(~closeWindowsOnCmdPeriod)
     if(w.notNil) { w.close };
     if(~adjustWindow.notNil) { ~adjustWindow.close };
     if(~synthWindow.notNil) { ~synthWindow.close };
-    if(~reverbWindow.notNil) { ~reverbWindow.close };
+// ~stopSynthLab also frees its own private Groups/Bus, not just the window -
+// see CT8guiSynthLab.scd.
+    if(~stopSynthLab.notNil) { ~stopSynthLab.value };
 };
 CmdPeriod.add(~closeWindowsOnCmdPeriod);
 
 // ---------------------------------------------------------------------------
 // 3. RUNTIME PARAMETERS
 
+// set current tracks true
+~trackEnabled[\PT1] = true;
+~trackEnabled[\PT2] = true;
+~trackEnabled[\PT3] = true;
+~trackEnabled[\HT1] = true;
+~trackEnabled[\MT1] = true;
+~trackEnabled[\BT1] = true;
+
 ~twelveHourClock = true;  // false makes it a 24-hour clock
 ~runningRealTime = true;  // false starts the clock at a fixed time and advances it using ~fakeSecond
 ~tempo = 180 / 60;        // TempoClock uses beats per second
 ~pieceLengthSecs = 300;
-
-~dashDir = "byRow";       // Current musical event generation is row-based.
 
 // Establish the initial displayed time and scheduler interval.
 if(~runningRealTime) {
@@ -145,19 +146,17 @@ if(~runningRealTime) {
 s.quit;
 Server.killAll;
 
-// s.quit/Server.killAll are async - the OS can take a moment to actually
-// release the old scsynth.exe process/port, especially when killAll just
-// force-killed a leftover one from an earlier crash or rapid re-evaluation.
-// Booting again immediately can race that teardown ("server 'localhost'
-// already booting", then the new server exiting with code 1). A short
-// delay before the fresh boot avoids that race.
 AppClock.sched(1.0, {
     s.options.device = "ASIO : Focusrite USB ASIO"; // Explicitly select the Focusrite USB ASIO driver.
     s.options.numInputBusChannels = 2;              // Expose two hardware input channels to scsynth.
     s.options.numOutputBusChannels = 2;             // Use stereo hardware output.
     s.options.sampleRate = 48000;                   // Request a 48 kHz sample rate.
-    //  64MB gives alot more headroom against both real leaks and plain fragmentation.
-    s.options.memSize = 65536;                      // Real-time memory pool, in KB (default 8192).
+    // Bumped from 64MB for the Synth Lab's heavier synths (\drone/\kick/
+    // \droneChord all run 8-20+ simultaneous oscillators per note) - this is
+    // the only place this setting can take effect, since it's boot-time-only
+    // and the server is already running by the time CT8guiSynthLab.scd's own
+    // window gets built.
+    s.options.memSize = 655360;                     // Real-time memory pool, in KB (default 8192).
     s.options.maxNodes = 8192;                      // Max simultaneous server nodes (default 1024).
     s.options.hardwareBufferSize = 256;             // Request a 256-sample hardware buffer.
 
@@ -170,20 +169,14 @@ s.waitForBoot({
     ~revBus = Bus.audio(s, 2);// Allocate a private stereo audio bus used to feed the reverb processor.
     ~installSynthDefs.value;// Compile/send the live SynthDef source evaluated from CT8synths.
     s.sync;// Wait until prior asynchronous server commands have completed.
+ 
     {
-     ~makeWindow.value;// Construct the original CT7 four-digit clock GUI.
-     ~makeAdjustWindow.value;// Construct the separate CT8 control window.
-// Synth Controls and Reverb Controls are both disabled for now - due for a
-// rewrite (a new synth-assignment method, plus a third reverb version to be
-// folded into Synth Controls). Their default synth-role globals still get
-// set from CT8tracks.scd directly, so PT1/PT2 keep working without these.
-     //~makeSynthWindow.value;// Construct the per-synth live control window.
-     //~makeReverbWindow.value;// Construct the persistent-reverb live control window.
-
-     //if(~makeFakeDataWindow.notNil) { ~makeFakeDataWindow.value };
-
+     ~makeWindow.value;// Construct the  four-digit clock GUI.
+     ~makeAdjustWindow.value;// Construct the separate control window.
+     ~makeSynthWindow.value;// Construct the per-synth live control window.
+     ~makeSynthLabWindow.value;// Construct the standalone sound-experiment/audition window (own private reverb bus, unrelated to ~revBus).
      ~displayClock.value;// Draw the initial four digits using ~hours and ~minutes.
-     ~getLineSegOrder.value(~dashDir); // Scan the lit seven-segment cells and create the ordered ~clockEvents Array.
+     ~getLineSegOrder.value; // Scan the lit seven-segment cells and create the ordered ~clockEvents Array.
      ~getColumnSegOrder.value; // Build track two's independent by-column event stream.
     }.defer;
 
@@ -204,7 +197,7 @@ s.waitForBoot({
                     ("Piece-length timer (" ++ ~pieceLengthSecs ++ " sec) elapsed - stopping playback.").postln;
                     ~stopPbinds.value;
                 };
-                nil;
+                nil; //return nil when done!
             });
         }.value;
 
@@ -221,25 +214,5 @@ s.waitForBoot({
 )
 
 
-// Everything below is optional testing material.
-
-~trackPatterns.postln;
-~rowPattern.postln;
-~colPattern.postln;
-~numBeats.postln;
-
-(// turn percussion tracks on and off
-~trackEnabled[\PT1] = true;
-~trackEnabled[\PT2] = true;
-
-)
-
-(// freeze the clock: tempo 0 stops it dead, not a "reset" to some normal speed.
-// This also replaces t with a fresh TempoClock that has no minute-check
-// scheduled on it, so re-evaluate all of CT8main afterward to get a working
-// clock back, rather than just setting ~tempo to a normal value here.
-~tempo = 00 / 60;
-t = TempoClock.new(~tempo);
-)
 
 

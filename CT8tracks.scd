@@ -15,12 +15,8 @@
 // definitions) so "how tracks are built" can be worked on without wading
 // through SynthDef code. Globals (the track registry, role-assignment
 // defaults, PT3's rhythm template) are declared up top, before any
-// function, so the data this file works with is visible at a glance - this
-// is expected to be the most actively-changing file as the planned
-// generative "Daily Piece" hierarchy (Piece -> Phrase -> Bar -> Beat, see
-// CT8main.scd's FUTURE DIRECTION note) gets designed and built out on top
-// of what's here now.
-//
+// function, so the data this file works with is visible at a glance 
+
 // Requires CT8synths.scd (~availableSynths/~getSynthParam) and
 // CT8guiClock.scd (~rowPattern/~colPattern/~clockEvents/~columnEvents) to
 // already be loaded - CT8main.scd's ~loadAllCt8Files loads every file in

@@ -109,7 +109,7 @@
 // LIT SEGMENTS -> ABSTRACT CLOCK EVENTS
 // ---------------------------------------------------------------------------
 // Build the ordered musical cell stream from all currently lit clock segments.
-~getLineSegOrder = { |dir|
+~getLineSegOrder = {
 // Seven on/off flags for each decimal digit, indexed by segment number 0..6.
     var linePattern = [
         [1, 1, 1, 0, 1, 1, 1], // 0
@@ -197,12 +197,6 @@
 // segment index, flattened out of ~clockEvents.
     ~dashPanNum = ~clockEvents.collect { |event| event[\panel] };
     ~dashSegNum = ~clockEvents.collect { |event| event[\segment] };
-
-// dir is accepted but ignored: the musical scan is always row-based. Other
-// display orderings could read it later without changing the event format.
-    if(dir != "byRow") {
-        "Clock music currently uses byRow scan order.".postln;
-    };
 
     ~clockEvents;
 };
@@ -476,7 +470,7 @@
 // Redraw the four digits. The function itself reads globals; extra arguments are harmless.
             ~displayClock.value(~hours, ~minutes);
 // Rebuild the ordered ~clockEvents stream for the new digits.
-            ~getLineSegOrder.value(~dashDir);
+            ~getLineSegOrder.value;
 // Build the independent by-column event stream for percussion track two.
             ~getColumnSegOrder.value;
 

@@ -16,7 +16,7 @@ There is no build step; SuperCollider evaluates source directly in the IDE (bloc
 wrapped in parens `( ... )` are evaluated as a unit with Ctrl/Cmd+Enter).
 
 The project is split across `CT8synths.scd`, `CT8tracks.scd`, and five GUI files —
-`CT8guiClock.scd`, `CT8guiAdjust.scd`, `CT8guiSynth.scd`, `CT8guiReverb.scd`,
+`CT8guiClock.scd`, `CT8guiAdjust.scd`, `CT8guiSynth.scd`, `CT8guiSynthLab.scd`,
 `CT8fakeData.scd` — but `CT8main.scd` loads all seven itself, in that order, via
 `~loadAllCt8Files` (built on `thisProcess.interpreter.executeFile`, at the top of the
 file). From a cold start (fresh boot, or after a crash), evaluating just `CT8main.scd` is
@@ -37,10 +37,11 @@ To make a live edit take effect:
   guard at the bottom of that file).
 - Changing runtime parameters (tempo, 12/24-hour, real vs. simulated time, per-track
   on/off for all 13 tracks) can also be done live via the "Clock Toy Adjust" window,
-  without re-evaluating any file. Synth Controls/Reverb Controls are currently disabled
-  (see below) pending a rewrite, so which synth plays which role on `PT1`/`PT2` and the
-  reverb's live parameters are for now only changeable by editing `CT8tracks.scd`/
-  `CT8synths.scd` directly.
+  without re-evaluating any file. Synth Controls is currently disabled (see below)
+  pending a rewrite, so which synth plays which role on `PT1`/`PT2` is for now only
+  changeable by editing `CT8tracks.scd` directly. There is no live GUI for `~clockRev`'s
+  reverb parameters either (the old Reverb Controls window was removed, not just
+  disabled) — adjust `~reverbDec`/`~reverbLpf`/`~reverbMix` in `CT8synths.scd` directly.
 
 `CT8main.scd` hardcodes the audio device as `"ASIO : Focusrite USB ASIO"` — on a machine
 without that interface, `s.boot` will fail; change `s.options.device` accordingly.
@@ -86,13 +87,26 @@ their own bullets below for exactly where the line falls:
   to set (`~rowStartSynth`/`~rowCellSynth`/`~colStartSynth`/`~colCellSynth`) now live in
   `CT8tracks.scd` instead, so `PT1`/`PT2` keep working without this window.
 
-- **`CT8guiReverb.scd`** — the "Reverb Controls" window: live Dec/LPF/Mix knobs for the
-  persistent reverb Synth (`~clockRev`, running `\ELIreverb`), calling `.set` directly on
-  it rather than going through `~synthParams` (it isn't retriggered per note like the
-  per-note synth knobs in `CT8guiSynth.scd`). **Currently disabled** alongside Synth
-  Controls, pending the same rewrite (planned to add a third reverb version and fold this
-  into Synth Controls); `~reverbDec`/`~reverbLpf`/`~reverbMix` already default in
-  `CT8synths.scd` independent of this window, so `~clockRev` is unaffected.
+- **`CT8guiSynthLab.scd`** — the "Endless Synth - Sound Lab" window (`~makeSynthLabWindow`):
+  a standalone instrument-audition panel, incorporated from a separate file the user
+  brought in (originally `Ct8synthLab.scd`). Pick a synth from a menu, hit PLAY NOTE, and
+  every one of its params gets a slider with live numeric readout (`makeSlider`, generic
+  over each `specs` entry's `[name, default, lo, hi, curve]`); some params (not envelope
+  segment timings or the pluck excitation) update the currently-sounding note live via
+  `currentSynth.set`. Entirely self-contained: its own private stereo bus/Groups/
+  `\allpassReverb` instance (`revBus`/`sourceGroup`/`fxGroup`/`reverb`, all local vars),
+  completely separate from the project's shared `~revBus`/`~clockRev` - nothing played
+  here reaches or affects the live clock composition. `~synthLabWindow` and `~stopSynthLab`
+  (the only two globals this file needs) follow the same close-on-CmdPeriod convention as
+  `~adjustWindow`/`~synthWindow`, except `~stopSynthLab` also frees the
+  private Groups/Bus, not just the window - `CT8main.scd`'s `~closeWindowsOnCmdPeriod`
+  calls it accordingly. Plays `\drone`/`\lead`/`\seq`/`\noise`/`\kick`/`\droneChord`
+  directly from `CT8synths.scd`, but keeps its own `\labPlucking`/`\labHat`/`\labCym`
+  variants defined locally (bug-fixed, single-`out`-bus versions of this project's
+  `\plucking`/`\hat`/`\cym`, replumbed for the lab's one-bus-per-instrument convention
+  rather than those three's real dry+`~revBus`-send design) rather than reusing the real
+  ones, to avoid an `outbus`-vs-`out` arg-name mismatch that would have silently routed
+  around the lab's reverb bus.
 
 - **`CT8fakeData.scd`** — standalone (not part of the CT8synths/CT8tracks dependency
   chain), a mocked-up input-data panel for the planned "Daily Piece" generative mode (see
@@ -101,8 +115,10 @@ their own bullets below for exactly where the line falls:
   down to a few minutes for quick iteration.
 
 - **`CT8synths.scd`** — owns everything sound-*generating*: SynthDefs (`\plucking`,
-  `\hat`, `\baseD`, `\cym`, `\fm`, `\ELIreverb`, plus legacy/unused `\bassDrum`/
-  `\shortWhistle`/`\clockVerb`), the `~availableSynths` table (`[synthName, [paramName,
+  `\hat`, `\baseD`, `\cym`, `\fm`, `\ELIreverb`, `\drone`/`\lead`/`\seq`/`\noise`/`\kick`/
+  `\droneChord`/`\allpassReverb` (incorporated from the user's Sound Lab file - not yet
+  wired into `~availableSynths`/any track, auditioned via `CT8guiSynthLab.scd` for now),
+  plus legacy/unused `\bassDrum`/`\shortWhistle`/`\clockVerb`), the `~availableSynths` table (`[synthName, [paramName,
   lo, hi, default, step], ...]`) that drives both the Synth Controls window and
   `~getSynthParam` (the lookup `CT8tracks.scd`'s Pbinds use to read live parameter
   values), and the reverb's own live-adjustable `~reverbDec`/`~reverbLpf`/`~reverbMix`
@@ -140,10 +156,15 @@ their own bullets below for exactly where the line falls:
   `thisProcess.interpreter.executeFile`), verifies the load actually succeeded, tears
   down any previous run (`~stopAll`, clears the old TempoClock), sets runtime parameters
   (`~tempo`, `~twelveHourClock`, `~runningRealTime`), boots the audio server, then
-  sequences: install SynthDefs → build all windows → draw initial digits → scan initial
-  events → start Pbinds → schedule a repeating per-beat check for minute rollover
-  (`~checkForNewMinute`). Also contains a FUTURE DIRECTION comment block sketching a
-  planned generative "Daily Piece" mode driven by time-of-day data tables.
+  sequences: install SynthDefs → build all windows (including `~makeSynthLabWindow`) →
+  draw initial digits → scan initial events → start Pbinds → schedule a repeating
+  per-beat check for minute rollover (`~checkForNewMinute`). Also contains a FUTURE
+  DIRECTION comment block sketching a planned generative "Daily Piece" mode driven by
+  time-of-day data tables. `s.options.memSize` is 655360 KB (640MB, up from 64MB) -
+  bumped for the Sound Lab's heavier synths (`\drone`/`\kick`/`\droneChord` each run
+  8-20+ simultaneous oscillators per note); this is boot-time-only and the only place it
+  can take effect, since the server is already running by the time any `~makeXWindow`
+  (including the Sound Lab's) gets called.
 
 Six tracks are currently active — `PT1` (row scan), `PT2` (column scan), `PT3` (a fixed
 percussion hit pattern), `HT1` (a chord-per-row harmony pad), `MT1` (a note-or-two-per-

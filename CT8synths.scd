@@ -83,10 +83,10 @@
 // ---------------------------------------------------------------------------
 // Live-adjustable parameters for the persistent ~clockRev Synth (\ELIreverb,
 // below). Unlike ~synthParams (per-note synths, read fresh via Pfunc on
-// every trigger), ~clockRev is one long-running Synth instance, so "live"
-// here means calling .set directly on it - see the Reverb Controls window
-// (CT8guiReverb.scd), which does exactly that. Persist across
-// re-evaluations, defaulting to \ELIreverb's own SynthDef defaults.
+// every trigger), ~clockRev is one long-running Synth instance. No GUI
+// currently exposes these live (the old Reverb Controls window was removed -
+// see CLAUDE.md); for now, adjust by editing these defaults directly. Persist
+// across re-evaluations, defaulting to \ELIreverb's own SynthDef defaults.
 ~reverbDec = ~reverbDec ? 4;
 ~reverbLpf = ~reverbLpf ? 1500;
 ~reverbMix = ~reverbMix ? 0.5;
@@ -158,7 +158,7 @@ SynthDef(\plucking, {
 // HAT - short metallic cymbal tick
 // ---------------------------------------------------------------------------
 SynthDef(\hat, {
-    |amp = 0.2, pan = 0, out = 0, freq = 4200 noiseFreq = 1000|
+    |amp = 0.2, pan = 0, out = 0, freq = 4200, noiseFreq = 1000|
 
     var env, noise, metal, snd;
 
@@ -349,6 +349,143 @@ SynthDef(\ELIreverb, {
     wet = LPF.ar(wet, lpf);
     wet = LeakDC.ar(wet);
     Out.ar(out, XFade2.ar(dry, wet, mix.linlin(0, 1, -1, 1)));
+}).add;
+
+// ---------------------------------------------------------------------------
+// Incorporated from Ct8synthLab.scd (the user's standalone sound-experiment
+// file) - the interface for auditioning these now lives in
+// CT8guiSynthLab.scd. Not wired into ~availableSynths yet, so none of these
+// are selectable from the (disabled) Synth Controls window or usable by a
+// track builder yet - that's a separate step for whenever they're ready to
+// be used in a track, not assumed here.
+
+// Drone: 20 detuned sawtooth voices, each independently filtered and
+// amplitude-modulated by slow LFNoise, for a shifting cluster/pad texture.
+SynthDef(\drone, { |out=0, freq=110, dur=5, amp=0.4, pan=0,
+    width=0.025, filterRatio=2|
+    var env, sig, stereo;
+    env = EnvGen.kr(Env([0, 1, 1, 0], [1, dur, 3]), doneAction: 2);
+    sig = Array.fill(20, {
+        var multiplier, ampmult, oscFreq, filterDrift, cutoff;
+        multiplier = [0.99, 1, 1.01, 1.99, 2, 2.01, 3.99, 4, 4.01].choose;
+        ampmult = multiplier.reciprocal;
+        oscFreq = LFNoise1.kr(0.5.rrand(1.0)).range(
+            freq * (1-width), freq * (1+width)) * multiplier;
+        filterDrift = LFNoise1.kr(0.15.rrand(0.45)).range(0.8, 1.25);
+        cutoff = (oscFreq * filterRatio * filterDrift).clip(30, 18000);
+        RLPF.ar(
+            LFSaw.ar(oscFreq, iphase: 0.0.rrand(2.0)),
+            freq: cutoff,
+            rq: LFNoise1.kr(0.5).range(0.1, 0.6),
+            mul: LFNoise0.kr(2).range(16.reciprocal, ampmult)
+        )
+    });
+    stereo = Splay.ar(env * sig);
+    Out.ar(out, amp * Balance2.ar(stereo[0], stereo[1],
+        pan * SinOsc.kr(LFNoise1.kr(1).range(0.05, 0.2))));
+}).add;
+
+// Lead: sawtooth through a wobbling resonant filter, thickened by a chain
+// of 10 allpass filters.
+SynthDef(\lead, { |out=0, freq=440, dur=2, amp=0.7, pan=0,
+    wobblelow=0.3, wobblehigh=1|
+    var atk = 0.5;
+    var env = EnvGen.kr(Env([0, 1, 1, 0], [atk, (dur-atk).max(0.01), 10]), doneAction: 2);
+    var freqenv = EnvGen.kr(Env([0.7, 1, 1], [0.3, dur]));
+    var sharpness = freq.cpsmidi.linlin(0, 127, 1, 15);
+    var wobble = SinOsc.kr(6).range(wobblelow, wobblehigh);
+    var sig = RLPF.ar(
+        LFSaw.ar(freqenv * freq * LFNoise1.kr(1).range(0.995, 1.005)),
+        freq * sharpness, LFNoise1.kr(3).range(0.2, 0.5), wobble
+    );
+    10.do { sig = AllpassN.ar(sig, 0.05, [Rand(0, 0.05), Rand(0, 0.05)], 1) };
+    Out.ar(out, amp * env * Pan2.ar(sig / 10, pan));
+}).add;
+
+// Seq: pulse wave through a swept lowpass, with an optional pitch glide at
+// the start of each note - a short plucky sequencer voice.
+SynthDef(\seq, { |out=0, freq=660, dur=0.5, amp=0.25, pan=0,
+    glissdir=1, gliss=0.1|
+    var laggliss = Lag.kr(gliss, 0.1);
+    var env = EnvGen.kr(Env.perc(0.01, 2), doneAction: 2);
+    var freqenv = EnvGen.kr(Env([
+        1 + (glissdir * laggliss), 1 - (glissdir * laggliss), 1, 1
+    ], [0.07, 0.07, 1]));
+    var filtenv = EnvGen.kr(Env([0.5, 1, 1], [0.15, dur]));
+    var sig = LPF.ar(Pulse.ar(freqenv * freq), freq * filtenv * 3);
+    Out.ar(out, amp * env * Pan2.ar(sig, pan));
+}).add;
+
+// Noise: filtered white noise gated by a slow random pulse, swept by a
+// slow-moving lowpass cutoff - a breathy/textural noise voice.
+SynthDef(\noise, { |out=0, dur=5, amp=0.15, pan=0|
+    var env = EnvGen.kr(Env.perc(1, dur * 0.8, curve: -10), doneAction: 2);
+    var sig = LPF.ar(WhiteNoise.ar * LFPulse.kr(LFNoise1.kr(0.5).range(3, 12)),
+        LFNoise1.kr(2).range(2, 1) * 4000);
+    Out.ar(out, Pan2.ar(env * amp * sig, pan));
+}).add;
+
+// Kick: PMOsc drum body plus a filtered-noise beater transient, each with
+// its own pitch-sweep/filter envelope; frees itself via DetectSilence once
+// both have died out (no hard safety timeout like ~baseD's, so a run of
+// parameters that never goes silent could in principle hang around - worth
+// knowing if this ever gets used in a fast-retriggering track).
+SynthDef(\kick, { |out=0, pan=0, amp=0.5, curve=(-4),
+    drumAmp=1, beaterAmp=0.02, drumFreq=50, drumHarmonic=2,
+    drumSweep=0.02, drumAtt=0.005, drumRel=0.4,
+    drumFilter=1000, modIndex=6.5, modFreq=5,
+    beaterFreq=500, beaterHarmonic=12, beaterSweep=0.03,
+    beaterAtt=0.01, beaterRel=0.3|
+    var drumEnv, drumContour, drum, beaterContour, beaterEnv, beater, snd;
+    drumEnv = Env.perc(drumAtt, drumRel, drumAmp, curve).kr;
+    drumContour = Line.kr(drumFreq * drumHarmonic, drumFreq, drumSweep);
+    drum = PMOsc.ar(drumContour, modFreq, modIndex);
+    drum = LPF.ar(drum, drumFilter, drumEnv);
+    beaterEnv = Env.perc(beaterAtt, beaterRel, beaterAmp, curve).kr;
+    beaterContour = Line.kr(beaterFreq * beaterHarmonic, beaterFreq, beaterSweep);
+    beater = HPF.ar(WhiteNoise.ar, beaterFreq);
+    beater = LPF.ar(beater, beaterContour, beaterEnv);
+    snd = Mix.ar(drum + beater) * amp;
+    DetectSilence.ar(snd, doneAction: 2);
+    Out.ar(out, Pan2.ar(snd, pan));
+}).add;
+
+// Drone chord: four simultaneous MIDI notes, eight slightly detuned sine
+// oscillators each. detune=1 is in tune; detune=0 allows up to +/- one
+// semitone per voice (named the same way as, but unrelated in code to, the
+// separately-reviewed ~droneCluster idea - that one hasn't been added).
+SynthDef(\droneChord, { |out=0, note1=48, note2=52, note3=55, note4=60,
+    amp=0.2, attack=5, sustain=30, release=10, detune=1|
+    var notes, voices, sig, env, spread;
+
+    spread = 1 - detune.clip(0, 1);
+    notes = [note1, note2, note3, note4];
+    voices = notes.collect { |note|
+        var frequency = note.midicps;
+        Splay.ar(Array.fill(8, {
+            var offset = Rand(-1.0, 1.0);
+            SinOsc.ar(
+                frequency * (2 ** ((offset * spread) / 12)),
+                Rand(0, 2pi),
+                0.125
+            )
+        }))
+    };
+    sig = Mix.new(voices) * 0.25;
+    env = EnvGen.kr(Env.linen(attack, sustain, release, 1, \sine),
+        doneAction: 2);
+    Out.ar(out, sig * env * amp);
+}).add;
+
+// Allpass reverb: a second, simpler reverb option alongside \ELIreverb - a
+// straight dry/wet allpass-chain wash rather than \ELIreverb's comb+allpass
+// design. Renamed from \labReverb (its name in the sound lab) since it's now
+// a permanent, general-purpose synth here, not lab-specific.
+SynthDef(\allpassReverb, { |in=0, out=0, wet=0.4, level=0.6|
+    var dry = In.ar(in, 2);
+    var fx = dry;
+    10.do { fx = AllpassN.ar(fx, 0.05, [Rand(0, 0.05), Rand(0, 0.05)], 1) };
+    Out.ar(out, XFade2.ar(dry, fx, wet.linlin(0, 1, -1, 1)) * level);
 }).add;
 
 };

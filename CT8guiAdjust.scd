@@ -1,31 +1,11 @@
 // ============================================================================
 // CT8guiAdjust.scd
-// CLOCKTOY - CLOCK TOY ADJUST WINDOW (CT8)
+// CLOCK TOY ADJUST WINDOW 
 // ============================================================================
-//
-// Second of the three GUI files (CT8guiClock -> CT8guiAdjust -> CT8guiSynth),
-// which were split out of the original single CT8gui.scd. Requires
-// CT8guiClock.scd's ~makeWindow to have already run (~makeAdjustWindow reads
-// w.bounds to position itself above the clock window). CT8main.scd's
-// ~loadAllGuiFiles loads all three (plus CT8fakeData.scd) in order; use
-// ~loadGuiFile.("CT8guiAdjust.scd") to reload just this one.
+// Requires CT8guiClock.scd's ~makeWindow to have already run .
 //
 // This window changes controls only. The clock drawing/flash code lives in
 // CT8guiClock.scd and is untouched by anything here.
-//
-// Laid out as nine fixed rows (each forced with .nextLine so the layout
-// does not depend on width-based auto-wrap):
-//   1. Metronome tempo
-//   2. Percussion track on/off (PT1/PT2 sound only - see makeSoundButton -
-//      plus PT3/PT4's plain on/off)
-//   3. Bass track on/off (BT1)
-//   4. Rhythm/harmony track on/off (HT1-4)
-//   5. Melody track on/off (MT1-4)
-//   6. Clock source (Real Time / Entered Time)
-//   7. Hour / Min / Sim Sec entry fields
-//   8. Clock display format (24 Hour / 12 Hour)
-//   9. Colour: PT1/PT2's flash/background color on/off (makeFlashButton) -
-//      kept at the bottom, separate from the track rows above
 //
 
 
@@ -40,7 +20,7 @@
     var adjustWidth = 420;
     var adjustHeight = 350;
     var gap = 10;
-// Stack this window directly above the clock window, using its actual
+// Stack this window directly below the clock window, using its actual
 // on-screen bounds rather than an unrelated hardcoded position.
     var adjustBounds = Rect(
         w.bounds.left,
@@ -58,15 +38,7 @@
         .alwaysOnTop_(true);
     ~adjustWindow.view.decorator = FlowLayout(~adjustWindow.view.bounds, 12@12, 8@8);
 
-// How many real-world seconds one simulated minute should take, while in
-// "Entered Time" mode. Recomputed into ~secondTime (a beat count) whenever
-// this value or the tempo changes, since t.sched waits in beats, not seconds.
-    ~minuteSeconds = ~minuteSeconds ? 10;
-    updateSimSecondTime = {
-        if(~runningRealTime.not) {
-            ~secondTime = ~minuteSeconds * (~tempo ? 3) / 60;
-        };
-    };
+
 
 // ROW 1: metronome tempo - a slider over a fixed 60-240 BPM range (replaces
 // the old NumberBox's much wider 20-400 clip), with a label showing the
@@ -196,6 +168,15 @@
     ~adjustWindow.view.decorator.nextLine;
 
 // ROW 7: Hour / Min / Sim Sec entry fields
+// How many real-world seconds one simulated minute should take, while in
+// "Entered Time" mode. Recomputed into ~secondTime (a beat count) whenever
+// this value or the tempo changes, since t.sched waits in beats, not seconds.
+    ~minuteSeconds = ~minuteSeconds ? 30;
+    updateSimSecondTime = {
+        if(~runningRealTime.not) {
+            ~secondTime = ~minuteSeconds * (~tempo ? 3) / 60;
+        };
+    };
     StaticText(~adjustWindow, 34@24).string_("Hour");
     hourBox = NumberBox(~adjustWindow, 52@24).value_(~hours ? 12).clipLo_(0).clipHi_(23).step_(1);
     StaticText(~adjustWindow, 28@24).string_("Min");
@@ -218,7 +199,7 @@
             ~stopPbinds.value;
             ~getClockRhythm.value;
             ~displayClock.value;
-            ~getLineSegOrder.value(~dashDir);
+            ~getLineSegOrder.value;
             ~getColumnSegOrder.value;
             ~updatePbinds.value;
             ~restartPbinds.value;
@@ -258,7 +239,7 @@
         ~stopPbinds.value;
         ~getClockRhythm.value;
         ~displayClock.value;
-        ~getLineSegOrder.value(~dashDir);
+        ~getLineSegOrder.value;
         ~getColumnSegOrder.value;
         ~updatePbinds.value;
         ~restartPbinds.value;
@@ -296,7 +277,7 @@
         ~stopPbinds.value;
         ~getClockRhythm.value;
         ~displayClock.value;
-        ~getLineSegOrder.value(~dashDir);
+        ~getLineSegOrder.value;
         ~getColumnSegOrder.value;
         ~updatePbinds.value;
         ~restartPbinds.value;
@@ -308,14 +289,16 @@
         ~stopPbinds.value;
         ~getClockRhythm.value;
         ~displayClock.value;
-        ~getLineSegOrder.value(~dashDir);
+        ~getLineSegOrder.value;
         ~getColumnSegOrder.value;
         ~updatePbinds.value;
         ~restartPbinds.value;
         updateFormatColors.value;
     });
+    ~adjustWindow.view.decorator.nextLine;
+    
 
-// ROW 10 (bottom): PT1/PT2 flash/background color on/off - kept separate
+// ROW 9: PT1/PT2 flash/background color on/off - kept separate
 // from the other track rows, at the bottom of the window, since it's a
 // display-only toggle rather than a track like the rows above.
     StaticText(~adjustWindow, 40@24).string_("Colour");
