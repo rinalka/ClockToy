@@ -60,17 +60,17 @@
         });
     ~adjustWindow.view.decorator.nextLine;
 
-// ROWS 2-3: track on/off, one button per track in ~trackNames (CT8tracks.scd) -
+// ROW 2: track on/off, one button per track in ~trackNames (CT8tracks.scd) -
 // including tracks with no builder registered yet. Toggling one of those is
 // harmless: ~setStartPbinds/~restartPbinds already skip any track whose
 // ~trackPatterns[name] is still nil, so it just sits enabled-but-silent
-// until a real builder gets registered for it. Grouped into the same
-// categories as ~trackNames' own comments, minus percussion and bass -
-// PT1-4/BT1-2's on/off buttons live beside each track's name in the
-// Percussion Generator window now (CT8guiPercGenerator.scd), not here.
-// Tracks with no builder yet (~trackBuilders[name].isNil) show orange in
-// both states instead of red/green, since there's nothing audible either
-// way.
+// until a real builder gets registered for it. Only MT3/MT4 are left here
+// now - PT1-4/BT1-2's on/off buttons moved to the Percussion + Bass
+// Generator window (CT8guiPercGenerator.scd), and HT1-4/MT1-2's to the
+// Harmony + Melody Generator window (CT8guiHarmonyMelodyGenerator.scd),
+// each beside that track's own name. Tracks with no builder yet
+// (~trackBuilders[name].isNil) show orange in both states instead of
+// red/green, since there's nothing audible either way.
     unbuiltColor = Color.new255(255, 165, 0);
     makeTrackButton = { |name|
         var isBuilt = ~trackBuilders[name].notNil;
@@ -95,12 +95,13 @@
             });
     };
 
-    StaticText(~adjustWindow, 40@24).string_("Harm");
-    ~trackNames.select({ |name| name.asString.beginsWith("HT") }).do(makeTrackButton);
-    ~adjustWindow.view.decorator.nextLine;
-
+// No "Harm" row any more - HT1-4's on/off buttons moved into the new
+// Harmony + Melody Generator window (CT8guiHarmonyMelodyGenerator.scd),
+// beside each track's name, same reason PT1-4/BT1-2's moved out of here
+// earlier. "Mel" only covers MT3/MT4 now - MT1/MT2 moved to that same new
+// window too.
     StaticText(~adjustWindow, 40@24).string_("Mel");
-    ~trackNames.select({ |name| name.asString.beginsWith("MT") }).do(makeTrackButton);
+    ~trackNames.select({ |name| ["MT3", "MT4"].includes(name.asString) }).do(makeTrackButton);
     ~adjustWindow.view.decorator.nextLine;
 
 // ROW 6: clock source

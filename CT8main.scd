@@ -61,6 +61,7 @@
     "CT8tracks.scd",
     "CT8guiAdjust.scd",
     "CT8guiPercGenerator.scd",
+    "CT8guiHarmonyMelodyGenerator.scd",
     "CT8guiSynthLab.scd",
     "CT8fakeData.scd"
 ];
@@ -80,13 +81,20 @@ if(
     or: { ~getLineSegOrder.isNil }
     or: { ~getColumnSegOrder.isNil }
     or: { ~installSynthDefs.isNil }
-    or: { ~nextChord.isNil }
-    or: { ~checkForNewChordBar.isNil }
+    or: { ~computeNextChord.isNil }
     or: { ~setStartPbinds.isNil }
     or: { ~trackEnabled.isNil }
 ) {
     Error("A CT8 file failed to load - check the post window above for the actual error.").throw;
 };
+
+// set current tracks true
+~trackEnabled[\PT1] = true;
+~trackEnabled[\PT2] = true;
+~trackEnabled[\PT3] = true;
+~trackEnabled[\HT1] = true;
+~trackEnabled[\MT1] = true;
+~trackEnabled[\BT1] = true;
 
 // ---------------------------------------------------------------------------
 // 2. CLEAN UP ANY PREVIOUS RUN
@@ -100,6 +108,7 @@ if(~closeWindowsOnCmdPeriod.notNil) { CmdPeriod.remove(~closeWindowsOnCmdPeriod)
     if(w.notNil) { w.close };
     if(~adjustWindow.notNil) { ~adjustWindow.close };
     if(~percGeneratorWindow.notNil) { ~percGeneratorWindow.close };
+    if(~hmGeneratorWindow.notNil) { ~hmGeneratorWindow.close };
 // ~stopSynthLab also frees its own private Groups/Bus, not just the window -
 // see CT8guiSynthLab.scd.
     if(~stopSynthLab.notNil) { ~stopSynthLab.value };
@@ -109,12 +118,13 @@ CmdPeriod.add(~closeWindowsOnCmdPeriod);
 // ---------------------------------------------------------------------------
 // 3. RUNTIME PARAMETERS
 
-// ~trackEnabled's own defaults (CT8tracks.scd, ?-guarded so live tuning
-// survives a re-evaluation) are the only thing that decides which tracks
-// start on - this used to also force PT1/PT2/PT3/HT1/MT1/BT1 true here,
-// unconditionally, on every run, which silently overrode CT8tracks.scd's
-// defaults (and any on/off tuning from the Clock Toy Adjust/Percussion
-// Generator windows) every single time. Removed as dead/conflicting code.
+// set current tracks true
+~trackEnabled[\PT1] = true;
+~trackEnabled[\PT2] = true;
+~trackEnabled[\PT3] = true;
+~trackEnabled[\HT1] = true;
+~trackEnabled[\MT1] = true;
+~trackEnabled[\BT1] = true;
 
 ~twelveHourClock = true;  // false makes it a 24-hour clock
 ~runningRealTime = true;  // false starts the clock at a fixed time and advances it using ~fakeSecond
@@ -168,7 +178,12 @@ s.waitForBoot({
      ~makeWindow.value;// Construct the  four-digit clock GUI.
      ~makeAdjustWindow.value;// Construct the separate control window.
      ~makePercGeneratorWindow.value;// Construct the PT1-PT4/BT1-BT2 instrument/pattern/pitch/volume control window.
-     ~makeSynthLabWindow.value;// Construct the standalone sound-experiment/audition window (own private reverb bus, unrelated to ~revBus).
+     ~makeHarmonyMelodyGeneratorWindow.value;// Construct the HT1-4/MT1-2 skeleton control window (not yet wired to playback).
+// Temporarily not displayed while the Percussion + Bass Generator's own
+// per-track layout is being reworked - ~makeSynthLabWindow itself is
+// untouched, just not auto-opened here; evaluate it by hand
+// (~makeSynthLabWindow.value) if you need it meanwhile.
+//     ~makeSynthLabWindow.value;// Construct the standalone sound-experiment/audition window (own private reverb bus, unrelated to ~revBus).
      ~displayClock.value;// Draw the initial four digits using ~hours and ~minutes.
      ~getLineSegOrder.value; // Scan the lit seven-segment cells and create the ordered ~clockEvents Array.
      ~getColumnSegOrder.value; // Build track two's independent by-column event stream.
@@ -220,6 +235,22 @@ s.waitForBoot({
 )
 
 
+(
+"--- PT1 config ---".postln;
+[\percSource, \percInstrument, \percPattern, \percPitchMode, \percBasePitch,
+ \percPitchStep, \percRandomPitches, \percVolumeMode, \percVolume,
+ \percVolumeLevels, \percMix].do { |g|
+    ("  " ++ g ++ ": " ++ currentEnvironment[g][\PT1]).postln;
+};
+"--- PT1 live Pbind pairs ---".postln;
+~trackPatterns[\PT1].patternpairs.postln;
+)
 
-
-
+~percBasePitch = nil; ~percVolumeLevels = nil; ~bassVolumeLevels = nil; ~currentRange = nil;
+RangeSlider.new.front;
+RangeSlider(w, Rect(20, 30, 360, 30)).lo_(0.2).hi_(0.8);
+(
+w = Window("Horizontal Only", Rect(200, 200, 400, 100)).front;
+r = RangeSlider(w, Rect(20, 30, 360, 30)).lo_(0.2).hi_(0.8);
+)
+RangeSlider.new.orientation_(\horizontal).front;

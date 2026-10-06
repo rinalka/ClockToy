@@ -23,13 +23,19 @@
 // reduces a chosen tone to its pitch class (% 12) first, then picks among
 // every octave of that pitch class that falls within the requested range -
 // so "which note" and "which octave" are two separate random choices, not
-// one.
+// one. ~currentKey transposes that pitch-class step (every ~chords entry is
+// written in the key of C) - a plain semitone offset added before the % 12,
+// not multiplied, so the requested range still means exactly what it says
+// after transposition. ~currentRange[name] is that requested range itself,
+// one [lo, hi] pair per track rather than a literal baked into each
+// builder's own ~chordNoteInRange call - see both globals' own comments,
+// below, for more.
 //
 
 (
 
 ~chords = [
-    // C Major - 3 note chords
+    // 1. C Major - 3 note chords
     [
         [60, 64, 67],       // C
         [62, 65, 69],       // Dm
@@ -39,8 +45,7 @@
         [69, 72, 76],       // Am
         [71, 74, 77]        // Bdim
     ],
-
-    // C Minor - 3 note chords
+    // 2. C Minor - 3 note chords
     [
         [60, 63, 67],       // Cm
         [62, 65, 68],       // Ddim
@@ -50,8 +55,7 @@
         [68, 72, 75],       // Ab
         [70, 74, 77]        // Bb
     ],
-
-    // C Major - 4 note chords
+    // 3. C Major - 4 note chords
     [
         [60, 64, 67, 71],   // Cmaj7
         [62, 65, 69, 72],   // Dm7
@@ -61,8 +65,7 @@
         [69, 72, 76, 79],   // Am7
         [71, 74, 77, 81]    // Bm7b5
     ],
-
-    // C Minor - 4 note chords
+    // 4. C Minor - 4 note chords
     [
         [60, 63, 67, 70],   // Cm7
         [62, 65, 68, 72],   // Dm7b5
@@ -71,6 +74,58 @@
         [67, 70, 74, 77],   // Gm7
         [68, 72, 75, 79],   // Abmaj7
         [70, 74, 77, 80]    // Bb7
+    ],
+    // 5. C Harmonic Minor - 4 note chords
+    [
+        [60, 63, 67, 71],   // Cm(maj7)
+        [62, 65, 68, 72],   // Dm7b5
+        [63, 67, 71, 74],   // Ebmaj7#5
+        [65, 68, 72, 75],   // Fm7
+        [67, 71, 74, 77],   // G7
+        [68, 72, 75, 79],   // Abmaj7
+        [71, 74, 77, 80]    // Bdim7
+    ],
+    // 6. C Melodic Minor - 4 note chords
+    [
+        [60, 63, 67, 71],   // Cm(maj7)
+        [62, 65, 69, 72],   // Dm7
+        [63, 67, 71, 74],   // Ebmaj7#5
+        [65, 69, 72, 75],   // F7
+        [67, 71, 74, 77],   // G7
+        [69, 72, 75, 79],   // Am7b5
+        [71, 74, 77, 81]    // Bm7b5
+    ],
+    // 7. C Major - 5 note chords (9ths)
+    [
+        [60, 64, 67, 71, 74], // Cmaj9
+        [62, 65, 69, 72, 76], // Dm9
+        [64, 67, 71, 74, 75], // Em7(b9)
+        [65, 69, 72, 76, 80], // Fmaj9
+        [67, 71, 74, 77, 81], // G9
+        [69, 72, 76, 79, 83], // Am9
+        [71, 74, 77, 81, 82]  // Bm7b5(b9)
+    ],
+ 
+    // 8. C Harmonic Minor - 5 note chords (9ths)
+    [
+        [60, 63, 67, 71, 74], // Cm(maj9)
+        [62, 65, 68, 72, 75], // Dm7b5(b9)
+        [63, 67, 71, 74, 77], // Ebmaj7#5(#9)
+        [65, 68, 72, 75, 79], // Fm9
+        [67, 71, 74, 77, 80], // G9(b9)
+        [68, 72, 75, 79, 83], // Abmaj9(#11)
+        [71, 74, 77, 80, 84]  // Bdim7(b9)
+    ],
+
+    // 9. C Melodic Minor - 5 note chords (9ths)
+    [
+        [60, 63, 67, 71, 74], // Cm(maj9)
+        [62, 65, 69, 72, 76], // Dm9
+        [63, 67, 71, 74, 77], // Ebmaj7#5(#9)
+        [65, 69, 72, 75, 79], // F9
+        [67, 71, 74, 77, 81], // G9
+        [69, 72, 75, 79, 83], // Am9b5
+        [71, 74, 77, 81, 84]  // Bm7b5(9)
     ]
 ];
 
@@ -80,41 +135,82 @@
 // isn't something code can read back at runtime; these two tables have to
 // be kept in sync by hand if ~chords ever changes.
 ~chordNames = [
-    // C Major - 3 note chords
+    // 1. C Major - 3 note chords
     ["C", "Dm", "Em", "F", "G", "Am", "Bdim"],
-    // C Minor - 3 note chords
+    // 2. C Minor - 3 note chords
     ["Cm", "Ddim", "Eb", "Fm", "Gm", "Ab", "Bb"],
-    // C Major - 4 note chords
+    // 3. C Major - 4 note chords
     ["Cmaj7", "Dm7", "Em7", "Fmaj7", "G7", "Am7", "Bm7b5"],
-    // C Minor - 4 note chords
-    ["Cm7", "Dm7b5", "Ebmaj7", "Fm7", "Gm7", "Abmaj7", "Bb7"]
+    // 4. C Minor - 4 note chords
+    ["Cm7", "Dm7b5", "Ebmaj7", "Fm7", "Gm7", "Abmaj7", "Bb7"],
+    // 5. C Harmonic Minor - 4 note chords
+    ["Cm(maj7)", "Dm7b5", "Ebmaj7#5", "Fm7", "G7", "Abmaj7", "Bdim7"],
+    // 6. C Melodic Minor - 4 note chords
+    ["Cm(maj7)", "Dm7", "Ebmaj7#5", "F7", "G7", "Am7b5", "Bm7b5"],
+    // 7. C Major - 5 note chords (9ths)
+    ["Cmaj9", "Dm9", "Em7(b9)", "Fmaj9", "G9", "Am9", "Bm7b5(b9)"],
+    // 8. C Harmonic Minor - 5 note chords (9ths)
+    ["Cm(maj9)", "Dm7b5(b9)", "Ebmaj7#5(#9)", "Fm9", "G9(b9)", "Abmaj9(#11)", "Bdim7(b9)"],
+    // 9. C Melodic Minor - 5 note chords (9ths)
+    ["Cm(maj9)", "Dm9", "Ebmaj7#5(#9)", "F9", "G9", "Am9b5", "Bm7b5(9)"]
 ];
 
-// Picks one tone from `chord` at random, then picks at random again among
-// every octave of that same pitch class (tone % 12) that falls within
+// ~currentKey transposes every ~chords entry (all written in the key of C)
+// up by this many semitones; ~keys is purely a name table for logging, the
+// same role ~chordNames plays for ~chords - ~keys[~currentKey] is always
+// the readable name for whatever ~currentKey currently is, and ~currentKey
+// doubles as both the array index into ~keys AND the actual semitone
+// offset (~keys[0] = "C" = 0 semitones, ~keys[1] = "C#" = 1 semitone, etc.,
+// so no separate offset table is needed). Picking ~currentKey from the last
+// two keys via its own Markov chain (mirroring ~chordMarkov) is a planned
+// future step - for now it just sits at 0 (C), a complete no-op.
+~keys = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+~currentKey = 0;
+
+// ~currentRange[name] is the [lo, hi] MIDI bounds ~chordNoteInRange (below)
+// picks within, for whichever track `name` is currently rebuilding -
+// previously a literal baked directly into each chord-aware track's own
+// ~chordNoteInRange call (HT1/MT1: 60-96; BT1/BT2: 12-59, as
+// ~bassRandomPitchLo/~bassRandomPitchHi, CT8tracks.scd) - now a live global
+// instead, starting at those exact same values, so a future per-bar-varying
+// range (some tracks' ranges narrow and fixed, others recalculated every
+// bar - not yet designed) only has to reassign this, not touch any
+// builder. A `name -> [lo, hi]` dictionary, same convention as every other
+// per-track config table in this project (~percX/~bassX, CT8tracks.scd).
+~currentRange = ~currentRange ? ();
+~currentRange[\HT1] = ~currentRange[\HT1] ? [60, 96];
+~currentRange[\MT1] = ~currentRange[\MT1] ? [60, 96];
+~currentRange[\BT1] = ~currentRange[\BT1] ? [12, 59];
+~currentRange[\BT2] = ~currentRange[\BT2] ? [12, 59];
+
+// Picks one tone from `chord` at random, transposes it by ~currentKey
+// semitones, then picks at random again among every octave of that same
+// (transposed) pitch class ((tone + ~currentKey) % 12) that falls within
 // [lo, hi] inclusive - e.g. chordNoteInRange.([62,65,68], 12, 48) can return
 // 14, 26, 38, or 50... clipped to the range, so only 14/26/38 here (50 is
-// outside). Called fresh per note (wrap the call in a Pfunc inside a Pbind,
-// don't precompute once), so which tone AND which octave both re-roll every
-// hit rather than staying fixed for a whole bar.
+// outside) - with ~currentKey still 0 (C, a no-op) in that example.
+// Transposing the pitch class BEFORE picking candidates, rather than adding
+// ~currentKey to the final result afterward, is what keeps the result
+// genuinely inside [lo, hi] - adding it after could push a result that was
+// already at the edge of the range outside it. Called fresh per note (wrap
+// the call in a Pfunc inside a Pbind, don't precompute once), so which tone
+// AND which octave both re-roll every hit rather than staying fixed for a
+// whole bar.
 ~chordNoteInRange = { |chord, lo, hi|
-    var pitchClass = chord.choose % 12;
+    var pitchClass = (chord.choose + ~currentKey) % 12;
     var candidates = (lo..hi).select { |n| (n % 12) == pitchClass };
     candidates.choose;
 };
 
-// The one shared "current chord". Read LIVE (not snapshotted into a local
-// var, so a change is heard on the very next note) by ~buildHarmonyPattern
-// (HT1) and ~buildMelodyPattern (MT1), CT8tracks.scd; ~buildBassTrackPattern
-// (BT1/BT2) also reads it, for their Random pitch mode specifically, but
-// only once per rebuild - see this file's header. This initial value only
-// matters until the first bar ends -
-// MT1's own \midinote Pfunc calls ~nextChord.value and reassigns
-// ~currentChord right as its bar wraps back to beat 0, so playback quickly
-// moves onto the Markov progression instead of staying on one fixed chord.
-// Plain assignment, not ?-guarded like the GUI-tunable ~percX globals -
-// re-evaluating this file always resets to this exact chord again.
-~currentChord = ~chords[2][1];
+// ~currentChord is the one shared "current chord". Read LIVE (not
+// snapshotted into a local var, so a change is heard on the very next
+// note) by ~buildHarmonyPattern (HT1) and ~buildMelodyPattern (MT1),
+// CT8tracks.scd; ~buildBassTrackPattern (BT1/BT2) also reads it, for their
+// Random pitch mode specifically, but only once per rebuild - see this
+// file's header. Its actual initial value is set below, in INITIAL STATE/
+// PIECE START, alongside ~chordSet/~secondLastChord/~lastChord (all four
+// need to agree with each other, so they're set together in one place
+// rather than this one living separately up here).
 
 
 // ------------------------------------------------------------
@@ -204,23 +300,15 @@
 
 
 // ------------------------------------------------------------
-// INITIAL STATE
-// ------------------------------------------------------------
-
-// Set 2 = C major/minor 4-note chords - HT1/MT1 both play 4 notes at a
-// time now (~buildHarmonyPattern/~buildMelodyPattern, CT8tracks.scd), so
-// this is the set that actually has 4 distinct tones to draw from.
-~chordSet = 2;
-
-~secondLastChord = 1;
-~lastChord = 4;
-
-
-// ------------------------------------------------------------
 // GET NEXT CHORD
 // ------------------------------------------------------------
-
-~nextChord = {
+// Pure Markov step: given the current [~secondLastChord, ~lastChord]
+// history, picks and returns the next chord's actual MIDI notes (from
+// ~chordSet), and advances the history ready for the call after this one.
+// Renamed from ~nextChord (its old name is now the lookahead VARIABLE,
+// below, that holds this function's most recent return value ahead of
+// time - the two couldn't both be called ~nextChord).
+~computeNextChord = {
 
     var entry;
     var choices;
@@ -257,6 +345,41 @@
 
 
 // ------------------------------------------------------------
+// INITIAL STATE / PIECE START
+// ------------------------------------------------------------
+// Picks one of the (now 9) chord sets at random (for now - a real "Daily
+// Piece" start trigger, ~startPiece, is a planned future step; until it
+// exists, this just runs once whenever this file is evaluated, same as
+// every other plain-assignment global here) and starts right on that
+// set's "I" chord (index 0) - ~secondLastChord/~lastChord are seeded as
+// though we'd just arrived at I from IV, the same fixed history this file
+// always used to hardcode, just now applied to whichever set got picked
+// rather than a hardcoded set 2. ~computeNextChord is then called once
+// immediately, to pre-compute the lookahead chord (~nextChord, below)
+// that ~checkForNewChordBar will need at the very first bar boundary -
+// without this, the first ~numBeats beats would have no ~nextChord ready
+// yet. (0..~chords.size - 1), not a hardcoded upper bound, so adding or
+// removing a chord set here never needs a matching edit there.
+~chordSet = (0..~chords.size - 1).choose;
+~secondLastChord = 1;
+~lastChord = 4;
+~currentChord = ~chords[~chordSet][0];
+// Matches index 0 above - kept in sync the same way ~computeNextChord
+// keeps it in sync with whatever chord IT picks, so a postln logged before
+// the first bar boundary (there isn't one yet, but just in case) would
+// still read correctly.
+~currentChordNumber = 1;
+
+// The lookahead chord - whatever ~currentChord will become at the NEXT bar
+// boundary, already computed ahead of time rather than computed in the
+// moment ~checkForNewChordBar needs it. ~computeNextChord's side effects
+// (advancing ~secondLastChord/~lastChord, writing ~currentChordNumber) are
+// exactly what both setting this up front AND refreshing it every bar
+// need, so the same function serves both without any special-casing.
+~nextChord = ~computeNextChord.value;
+
+
+// ------------------------------------------------------------
 // ADVANCE THE CHORD, ONCE PER BAR - INDEPENDENT OF ANY TRACK
 // ------------------------------------------------------------
 // Used to be called from inside ~buildMelodyPattern's own \midinote Pfunc
@@ -275,10 +398,16 @@
     ~chordBarBeatCount = ~chordBarBeatCount + 1;
     if(~chordBarBeatCount >= (~numBeats ? 1).max(1)) {
         ~chordBarBeatCount = 0;
-        ~currentChord = ~nextChord.value;
+// The lookahead chord becomes current, and ~currentChordNumber (last set
+// by whichever ~computeNextChord call produced THIS ~nextChord) already
+// correctly describes it - so log before computing the FOLLOWING lookahead
+// below, which will overwrite ~currentChordNumber again, this time to
+// describe next bar's chord instead of this one.
+        ~currentChord = ~nextChord;
         ("New chord: " ++ ~chordNames[~chordSet][~currentChordNumber - 1]
             ++ "  " ++ ~currentChord ++ "  (set " ++ ~chordSet
             ++ ", index " ++ (~currentChordNumber - 1) ++ ")").postln;
+        ~nextChord = ~computeNextChord.value;
     };
 };
 

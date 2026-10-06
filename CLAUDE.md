@@ -56,7 +56,13 @@ To make a live edit take effect:
   stay audible long enough to hear a slider move, including each one's own `\wet`/
   `\level` sliders - it is deliberately standalone, not connected to the live
   composition at all; its purpose is to audition/tune settings before dialing the same
-  values into the Percussion + Bass Generator by hand.
+  values into the Percussion + Bass Generator by hand. **Temporarily not auto-opened**
+  at boot, along with the Fake Data window (`CT8fakeData.scd`), while the Percussion +
+  Bass Generator's own per-track layout is being reworked - both files' functions are
+  still loaded and untouched, just not auto-called (`~makeSynthLabWindow.value`/
+  `~makeFakeDataWindow.value`, commented out in `CT8main.scd`/at the bottom of
+  `CT8fakeData.scd` respectively); evaluate either call by hand if you need that window
+  meanwhile.
 
 `CT8main.scd` hardcodes the audio device as `"ASIO : Focusrite USB ASIO"` — on a machine
 without that interface, `s.boot` will fail; change `s.options.device` accordingly.
@@ -110,121 +116,101 @@ their own bullets below for exactly where the line falls:
   once.
   PT1-4's blocks come first, under a "PERCUSSION + BASS GENERATOR (PT1-PT4, BT1-BT2)"
   header; BT1-2's come after, under their own "BASS GENERATOR (BT1-BT2)" sub-heading.
-  Row 1 of every block is Name + an on/off `Button` (`onOffButton`, red/green, same
-  convention as the per-track buttons `CT8guiAdjust.scd` used to have for `PT1`-`PT4`/
-  `BT1`-`BT2` - moved here, beside the name, since this window is already the sole home
-  for everything else about those six tracks; every percussion and bass track always
-  has a builder now, so unlike the old `CT8guiAdjust.scd` buttons there's no
-  orange/unbuilt case to handle). Row 2 is Source
-  (Row scan vs. Column scan) + Instrument (`\baseD`/`\cym`/`\hat`/`\kick`) + Wet/Level
-  (`~percWet[name]`/`~percLevel[name]`, that instrument's own tiny built-in
-  `~allpassWash` tail - see `CT8synths.scd`'s bullet; separate from the `~clockRev` send
-  every other track uses, and the only two of this row's controls that are read live via
-  `Pfunc` rather than needing a rebuild). Each is a plain `Slider` (`wetSlider`/
-  `levelSlider`) + a `StaticText` readout (`wetReadout`/`levelReadout`), not a
-  `NumberBox` - both are already native 0-1 ranges, so `sl.value` needs no log/exp mapping;
-  the readouts mirror their sliders as text since `Slider` has no numeric display of its
-  own (same reason `CT8guiAdjust.scd`'s tempo slider has its own label) - replaced a single
-  Mix slider driving `FreeVerb`, which turned out to be a mistake (see `CT8synths.scd`'s
-  bullet). Row 3 is Pattern; row 4 is Pitch; row 5 is Volume. Pattern is one flat list of
-  ten choices (an
-  earlier version grouped the split patterns under a Pattern menu plus a nested Variant
-  sub-menu, but that menu-within-a-menu was both confusing and, per feedback, buggy - its
-  controls only ever rendered once - so each combination now gets its own top-level entry
-  instead): First beat only; Every beat; Start of Row/Col (label tracks whichever Source
-  is selected, `\startOnly`); Random 1/8th % / Random 1/3 %
-  (`\random8thPercent`/`\random3rdPercent` - `~percSplitPercent[name]`% of beats become a
-  double hit/triplet, re-rolled fresh every rebuild - the only behavior that existed
-  before this list was flattened, hardcoded at 1/3 for 1/8th and 1/4 for 1/3); Random
-  1/8th (last of bar) / Random 1/3 (last of bar) (`\random8thLastBar`/`\random3rdLastBar`
-  - only the bar's very last beat, deterministic, every bar); Random 1/8th (last of
-  row/col) / Random 1/3 (last of row/col) (`\random8thLastRowCol`/`\random3rdLastRowCol`
-  - only the last beat of every row/column span, deterministic); Random skip!
-  (`\randomSkip` - ~1/4 of beats go silent, span unchanged, re-rolled fresh every rebuild
-  - not affected by `~percSplitPercent[name]`, which only applies to the six split
-  patterns). The Percent box (`percentBox`, plus its `percentLabel`) beside the Pattern
-  menu is built once, up front, and just toggled with `.visible_` (`
-  updatePatternPercentVisibility`, called whenever the Pattern menu changes) rather than
-  removed and recreated on every change the way an earlier version did - that version's
-  controls stopped reappearing after the first time, apparently a repaint issue with
-  dynamically adding children to an already-laid-out `CompositeView` rather than a logic
-  bug (the rebuild fired correctly every time, it just didn't always redraw), so this
-  sidesteps it by never removing the widgets at all. Pitch and Volume (below) both use
-  a different, also-proven-safe technique instead: a fixed-size placeholder
-  `CompositeView` whose children get removed and rebuilt from scratch on every mode
-  change (`pitchValuesView`/`rebuildPitchValues`, `volumeValuesView`/
-  `rebuildVolumeValues`) - safe here specifically because the *placeholder's own* size
-  never changes, so the parent `trackContainer`'s flow layout only ever sees one
-  fixed-width child regardless of what's inside it. Volume used to be built as two
-  full sibling widget sets directly in `trackContainer`, toggled with `.visible_` like
-  the Percent box - but unlike the Percent box's single extra pair, having BOTH the
-  Fixed slider AND the two Alternate sliders present as hidden-but-still-reserving-space
-  siblings meant the row's total flow width always included both sets, so Alternate's
-  two sliders didn't actually fit on the row even though only one set was ever visible -
-  switching to the placeholder-container technique fixed it, since now only the
-  currently-needed widgets exist at all. Pitch: Fixed (one Pitch box) / Rising
-  at start (Base pitch + Pitch step, unchanged from before) / Random (all 4 of
-  `~percRandomPitches[name]`, each hand-set - a future step will turn these into a
-  chord-aware pick, for now each hit just independently picks one of the 4) - **known
-  issue, deliberately not being chased**: something about this row is currently wrong per
-  feedback, not investigated, since all three Pitch modes (and Volume, next) are
-  considered placeholders due for a wholesale rework once the non-percussion tracks get
-  real chord-based pitch, which will likely inform `PT1`-`PT4` picking from a small set of
-  hand-built "chords" per instrument instead - see `CT8tracks.scd`'s PERCUSSION GENERATOR
-  CONFIG comment. Volume: Fixed (one Volume `Slider`) / Alternate (two, `Vol A`/`Vol B`,
-  `~percVolumeLevels[name]`, which `~buildPercPattern` alternates between every sounding
-  hit) - `Slider`s rather than `NumberBox`es now (per feedback), mapped to the actual 0-4
-  range via `linlin`, same technique `CT8guiAdjust.scd`'s tempo slider uses for 60-240
-  BPM; each slider has its own text readout since `Slider` has no numeric display of its
-  own. This is now the only live amp control for `PT1`-`PT4`, replacing the removed Synth
-  Controls window's per-synth amp slider - but like Pitch, is itself a placeholder
-  pending the same future chord-based rework. Formerly
-  `CT8guiPT1Generator.scd`, PT1-only; generalized once PT2's old
-  two-synth-role system and PT3's old hand-tuned `~snareTemplate` were both replaced by the
-  same generic mechanism PT1 already used (see `~buildPercPattern`, `CT8tracks.scd`). Owns
-  no generation logic itself - just sets each track's `~percSource`/`~percInstrument`/
-  `~percPattern`/`~percPitchMode`/`~percBasePitch`/`~percPitchStep`/`~percRandomPitches`/
-  `~percVolumeMode`/`~percVolume`/`~percVolumeLevels`/`~percWet`/`~percLevel`/
-  `~percSplitPercent` entry (CT8tracks.scd), which `~buildPercPattern` reads fresh on
-  every rebuild. A control
-  change only updates its global, deliberately *not* rebuilding/restarting that track
-  immediately - doing that would desync it from every other track, the same problem
-  `CT8guiTracksLab.scd` hit and fixed by waiting for a shared rebuild point. The change
-  takes effect at the clock's next natural rebuild automatically, or immediately via the
-  "Apply now" button, which reruns the full `~stopPbinds`/`~updatePbinds`/`~restartPbinds`
-  cycle (every track together) so nothing falls out of phase - and also `~rebuildFlashPatterns`/
-  `~restartFlashPlayers` (CT8guiClock.scd), so the row/col flash restarts in lockstep with
-  the Pbinds instead of continuing on its old schedule until the next natural minute
-  rollover quietly resynced it (every other full-rebuild trigger in the project already
-  did both; Apply now originally didn't, which is what caused that symptom). A second
-  "Reset to defaults" button calls `~resetPercConfig` (CT8tracks.scd) for every
-  percussion track AND `~resetBassConfig` for every bass track - unlike that file's own
-  `?`-based initialization (which only fills in a value the first time, so tuning
-  survives a re-evaluation), these unconditionally overwrite every `~percX[name]`/
-  `~bassX[name]` back to its original default - then rebuilds this whole window from
-  scratch (a plain re-call of `~makePercGeneratorWindow`, since the button's own closure
-  belongs to the window instance about to be replaced) and applies immediately the same
-  way Apply now does.
+  Every block is split into two side-by-side panes, `leftPane` (25% of the block's
+  width) and `rightPane` (75%), rather than one flat stack of rows (an earlier version's
+  layout - see git history if you need it).
+  `leftPane` holds 4 vertical `Slider`s: Mix/Vol are that instrument's own tiny built-in
+  `~allpassWash` tail (`~percWet[name]`/`~percLevel[name]` or `~bassWet[name]`/
+  `~bassLevel[name]` - see `CT8synths.scd`'s bullet; separate from the `~clockRev` send
+  every other track uses, read/written live via `Pfunc` so neither needs a rebuild) -
+  renamed from the old Wet/Level labels, same globals, same behavior, just moved and
+  relabeled. Send A/Send B are plain `Slider`s with no backing global and no `.action_`
+  - placeholders for a planned future multi-output-channel send feature, not wired to
+  anything yet.
+  `rightPane` has three rows:
+  Row 1 is the track name + an on/off `Button` (`onOffButton`) + Source + Instrument.
+  The on/off button is now a plain red/green square with no label (both `.states_`
+  entries are a bare space, `" "`) - the title text beside it already names the track;
+  same convention as the per-track buttons `CT8guiAdjust.scd` used to have for
+  `PT1`-`PT4`/`BT1`-`BT2`, just un-labeled now. Every percussion and bass track always
+  has a builder, so there's no orange/unbuilt case to handle. Source is Row scan vs.
+  Column scan (`~percSource[name]`/`~bassSource[name]`); Instrument is
+  `\baseD`/`\cym`/`\hat`/`\kick` (percussion) or `\fm`/`\plucking` (bass).
+  Row 2 is the Pattern/Pitch/Volume menus, all together on one row - each menu's own
+  sub-control (below) used to sit directly beside it on its own row; moving those down
+  into row 3 freed up room for all three menus to share row 2. Pattern is the same flat
+  list it always was: First beat only (percussion only - not a useful choice for a bass
+  part, per feedback, so `makeBassTrackSection`'s own `patternSymbols` list drops it);
+  Every beat; Start of Row/Col (label tracks whichever Source is selected, `\startOnly`);
+  Random 1/8th % / Random 1/3 % (`\random8thPercent`/`\random3rdPercent` -
+  `~percSplitPercent[name]`% of beats become a double hit/triplet, re-rolled fresh every
+  rebuild); Random 1/8th (last of bar) / Random 1/3 (last of bar)
+  (`\random8thLastBar`/`\random3rdLastBar` - only the bar's very last beat, deterministic,
+  every bar); Random 1/8th (last of row/col) / Random 1/3 (last of row/col)
+  (`\random8thLastRowCol`/`\random3rdLastRowCol` - only the last beat of every row/column
+  span, deterministic); Random skip! (`\randomSkip` - ~1/4 of beats go silent, span
+  unchanged, re-rolled fresh every rebuild, not affected by `~percSplitPercent[name]`,
+  which only applies to the six split patterns). Pitch is Fixed/Rising at
+  start/Random for percussion, Fixed/Random for bass (no Rising there). Volume is
+  Fixed/Alternate for both.
+  Row 3 has one fixed-width `CompositeView` per menu above (`patternSubView`/
+  `pitchSubView`/`volumeSubView`, each exactly as wide as its own row-2 menu so the two
+  rows visually line up), holding that menu's own sub-control:
+  Under Pattern, a Percent `Slider` (+ readout) - only visible for the two "%" split
+  patterns (`updatePatternPercentVisibility`, called whenever the Pattern menu changes) -
+  same value/meaning as the old Percent `NumberBox`, just a `Slider` now (0-1 native,
+  linlin'd to 0-100). Toggling it with `.visible_` is safe here (unlike Volume's old
+  two-widget-set problem, below) since it's the *only* content in its own dedicated
+  fixed-size sub-view, not a sibling of something that stays visible alongside it.
+  Under Pitch, a single dual-handle `RangeSlider` (+ readout) - replacing the old
+  per-mode widget set entirely (one box for Fixed/two for Rising/four for Random).
+  `~percBasePitch[name]` is now always `[lo, hi]` (percussion, Hz, mapped 20-8000); bass
+  has no equivalent `~bassBasePitch` any more and instead writes straight into
+  `~currentRange[name]` (`CT8harmonySelect.scd`, MIDI 0-127) - the same global
+  `HT1`/`MT1` already read for their own chord-note picks. Each Pitch mode just
+  interprets `[lo, hi]` differently (see `~buildPercPattern`'s own comment,
+  `CT8tracks.scd`, for the exact rule per mode) - Fixed reads `hi`; Random picks
+  anywhere in `[lo, hi]` (chord-aware for bass, via `~chordNoteInRange`; plain `rrand`
+  for percussion); Rising (percussion only) climbs from `lo` toward `hi` in 8 fixed
+  steps per hit, resetting at every row/column start. Because the same slider means
+  something sensible in every mode, it stays visible across all of them - nothing to
+  show or hide here any more, unlike the old mode-specific widget-swapping.
+  Under Volume, the same idea: one dual-handle `RangeSlider` (+ readout) for
+  `~percVolumeLevels[name]`/`~bassVolumeLevels[name]`, now always `[lo, hi]` (0-4, same
+  `linlin` mapping the old Volume `Slider`s used) - replacing the old
+  Fixed-`Slider`-or-two-Alternate-`Slider`s switch, and the fixed-size-placeholder-
+  container fix that switch used to need (two full sibling widget sets built directly
+  in the same row meant the row's flow width always included both, even hidden, so
+  Alternate's two sliders didn't actually fit - moving each mode's widgets into their
+  own dedicated child container fixed it at the time; collapsing both modes onto one
+  `RangeSlider` now makes that fix moot, since there's only ever one widget set to
+  begin with). Fixed reads `hi`; Alternate alternates `hi`, `lo` every hit, high end
+  first.
+  A control change only updates its global, deliberately *not* rebuilding/restarting
+  that track immediately - doing that would desync it from every other track, the same
+  problem `CT8guiTracksLab.scd` hit and fixed by waiting for a shared rebuild point
+  (Mix/Vol are the one exception, read live via `Pfunc`). The change takes effect at the
+  clock's next natural rebuild automatically, or immediately via the "Apply now" button,
+  which reruns the full `~stopPbinds`/`~updatePbinds`/`~restartPbinds` cycle (every
+  track together) so nothing falls out of phase - and also `~rebuildFlashPatterns`/
+  `~restartFlashPlayers` (`CT8guiClock.scd`), so the row/col flash restarts in lockstep
+  with the Pbinds. A second "Reset to defaults" button calls `~resetPercConfig`
+  (`CT8tracks.scd`) for every percussion track AND `~resetBassConfig` for every bass
+  track - unlike their own `?`-based initialization (which only fills in a value the
+  first time, so tuning survives a re-evaluation), these unconditionally overwrite every
+  `~percX[name]`/`~bassX[name]` back to its original default - then rebuilds this whole
+  window from scratch (a plain re-call of `~makePercGeneratorWindow`, since the button's
+  own closure belongs to the window instance about to be replaced) and applies
+  immediately the same way Apply now does.
 
   `makeBassTrackSection` (`BT1`/`BT2`'s block) mirrors `makeTrackSection` closely enough
   that it's kept as its own closure rather than parameterizing one function over both -
   the two tracks' choices differ enough (instrument list, pattern list, pitch units and
   mode count) that threading all of it through one shared function would need about as
-  many parameters as just writing the block twice. Differences from PT1-4's version:
-  Instrument is `\fm`/`\plucking` instead of baseD/cym/hat/kick (both newly given their
-  own `\wet`/`\level` args + `~allpassWash` tail for this - see `CT8synths.scd`'s
-  bullet); Pattern is the same nine choices minus `\firstBeat` (not a useful choice for
-  a bass part, per feedback); Pitch only has Fixed (one Pitch box, in MIDI note numbers,
-  not Hz - both instruments take a plain `\midinote` key, a plain, non-chord-aware value)
-  and Random (no extra boxes - picks a tone from `~currentChord`
-  (`CT8harmonySelect.scd`) via `~chordNoteInRange`, constrained to a fixed,
-  not-yet-adjustable range "below middle C" (`~bassRandomPitchLo`/`~bassRandomPitchHi`,
-  `CT8tracks.scd`) - same helper/global `HT1`/`MT1` use, just read once per rebuild
-  rather than live per-hit, so a mid-bar chord change isn't heard here until this
-  track's next rebuild; no Rising mode). Volume is identical to PT1-4's own
-  Fixed/Alternate pair. Sets each track's `~bassSource`/`~bassInstrument`/`~bassPattern`/
-  `~bassPitchMode`/`~bassBasePitch`/`~bassVolumeMode`/`~bassVolume`/`~bassVolumeLevels`/
-  `~bassWet`/`~bassLevel`/`~bassSplitPercent` entry (CT8tracks.scd), which
+  many parameters as just writing the block twice. Sets each track's
+  `~bassSource`/`~bassInstrument`/`~bassPattern`/`~bassPitchMode`/`~bassVolumeMode`/
+  `~bassVolumeLevels`/`~bassWet`/`~bassLevel`/`~bassSplitPercent` entry (`CT8tracks.scd`)
+  plus the shared `~currentRange[name]` (`CT8harmonySelect.scd`) for pitch, which
   `~buildBassTrackPattern` reads fresh on every rebuild - same "only updates the global,
   never rebuilds immediately" discipline as PT1-4's controls, and the same Apply
   now/Reset to defaults buttons cover both track sets together.
@@ -296,42 +282,74 @@ their own bullets below for exactly where the line falls:
   see `CT8tracks.scd`'s BASS GENERATOR CONFIG bullet - but still read `~currentChord`
   from here for their own Random pitch mode, just once per rebuild rather than live).
   `~chords[set][chordIndex]` is one
-  3- or 4-note chord, written as real MIDI note numbers already in one specific octave
-  (4 chord sets: C major/minor triads, C major/minor 7ths) - each entry's chord name
+  3-, 4-, or 5-note chord, written as real MIDI note numbers already in one specific
+  octave (9 chord sets: C major/minor triads, major/minor/harmonic-minor/melodic-minor
+  7ths, and major/harmonic-minor/melodic-minor 9ths - every set still has exactly 7
+  chords, I-VII, so `~chordMarkov`, below, stays set-agnostic) - each entry's chord name
   (`C`, `Dm7`, `Bdim`, etc.) lives only as a trailing `//` comment there, so
   `~chordNames[set][chordIndex]` is a second table in the exact same `[set][chordIndex]`
   shape holding those same names as actual strings, purely so logging (below) can print
   one - kept in sync with `~chords` by hand, since nothing can read a comment back at
-  runtime. `~chordNoteInRange.(chord, lo,
-  hi)` is the one real consumer-facing function so far - picks a tone from `chord` at
-  random, reduces it to a pitch class (`% 12`), then picks again at random among every
-  octave of that pitch class inside `[lo, hi]` inclusive, so "which note" and "which
-  octave" are two independent random choices. `~currentChord` is the one shared "current
-  chord" global. Read LIVE, not snapshotted into a local var, by `~buildHarmonyPattern`/
-  `~buildMelodyPattern` (`HT1`/`MT1`, `CT8tracks.scd`); `~buildBassTrackPattern`
-  (`BT1`/`BT2`) also reads it, for their Random pitch mode specifically, but only once
-  per rebuild - initialized as a plain assignment (`~chords[2][1]`),
-  not `?`-guarded like the GUI-tunable `~percX` globals, so re-evaluating this file always
-  resets it to that exact chord again; that initial value only matters until the first bar
-  ends, though. `~chordMarkov` (a second-order Markov table keyed by
-  `[secondLastChord, lastChord]`, chords numbered 1-7) and `~nextChord` (walks that table,
-  falling back to a flat weighted choice for any `[prev,prev]` pair it has no entry for)
-  are the chord-progression engine; `~chordSet` is `2` (the 4-note chord set - `HT1`/`MT1`
-  both play 4 notes at a time), read fresh inside `~nextChord` every call, not cached, so
-  changing it takes effect on the very next chord. `~nextChord` also now writes
-  `~currentChordNumber` (the raw 1-7 Markov chord number it picked, before the `- 1` that
-  turns it into an array index) as a global rather than a local - purely so something
-  outside `~nextChord` can report it; nothing reads it back for logic. `~checkForNewChordBar`
-  is what actually *advances* `~currentChord` - a plain beat counter
-  (`~chordBarBeatCount`), completely independent of any one track's own Pbind (it used to
-  live inside `~buildMelodyPattern`'s own `\midinote` `Pfunc`, an arbitrary coupling since
-  nearly every chord-aware track reads `~currentChord`, not just `MT1`): once
-  `~chordBarBeatCount` reaches `~numBeats` (the same row-scan bar length `PT1`/`HT1` play
-  on, re-read fresh each call so it tracks a bar length that changes mid-progression) it
-  resets to 0, calls `~nextChord.value`, reassigns `~currentChord`, and posts its name
-  (`~chordNames[~chordSet][~currentChordNumber - 1]`) alongside the raw `~currentChord`
-  array, `~chordSet`, and the actual array index (`~currentChordNumber - 1`) it came from
-  - so the Markov table's behavior can be read and verified from the post window at a
+  runtime. `~keys`/`~currentKey` are the equivalent pair for transposition: `~keys` is a
+  12-entry name table (`["C", "C#", ..., "B"]`), purely for logging, the same role
+  `~chordNames` plays for `~chords`; `~currentKey` (0-11) doubles as both the index into
+  `~keys` AND the actual semitone offset applied - no separate offset table needed, since
+  a chromatic step from C already *is* the semitone count. Picking `~currentKey` from the
+  last two keys via its own Markov chain (mirroring `~chordMarkov`, below) is a planned
+  future step; for now it just sits at `0` (C), a complete no-op. `~currentRange[name]` is
+  a `name -> [lo, hi]` dictionary (same convention as `~percX`/`~bassX`, `CT8tracks.scd`)
+  holding the MIDI bounds `~chordNoteInRange` (below) picks within, per track - replacing
+  what used to be a literal baked directly into each chord-aware track's own
+  `~chordNoteInRange` call (`HT1`/`MT1`: 60-96; `BT1`/`BT2`: 12-59). Starts at those same
+  values, just as a live global each track reads instead of a literal, so a future
+  per-bar-varying range (some tracks' ranges narrow and fixed, others recalculated every
+  bar - not yet designed) only has to reassign this, not touch any builder.
+  `~chordNoteInRange.(chord, lo, hi)` is the one real consumer-facing function so far -
+  picks a tone from `chord` at random, transposes it by `~currentKey` semitones (added
+  before the `% 12`, not multiplied, and before picking candidates - transposing the
+  final result afterward instead could push it outside the requested `[lo, hi]`), then
+  picks again at random among every octave of that (transposed) pitch class inside
+  `[lo, hi]` inclusive, so "which note" and "which octave" are two independent random
+  choices. `~currentChord` is the one shared "current chord" global. Read LIVE, not
+  snapshotted into a local var, by `~buildHarmonyPattern`/`~buildMelodyPattern`
+  (`HT1`/`MT1`, `CT8tracks.scd`); `~buildBassTrackPattern` (`BT1`/`BT2`) also reads it, for
+  their Random pitch mode specifically, but only once per rebuild. `~chordMarkov` (a
+  second-order Markov table keyed by `[secondLastChord, lastChord]`, chords numbered 1-7)
+  and `~computeNextChord` (walks that table, falling back to a flat weighted choice for
+  any `[prev,prev]` pair it has no entry for, then advances `~secondLastChord`/
+  `~lastChord` and returns the picked chord's actual MIDI notes) are the chord-progression
+  engine - renamed from `~nextChord`, which is now a plain variable instead: the
+  *lookahead* chord, holding whatever `~currentChord` will become at the next bar
+  boundary, pre-computed ahead of time via `~computeNextChord` rather than computed in the
+  moment `~checkForNewChordBar` needs it (the two couldn't both be named `~nextChord`, and
+  the variable kept the name since that's the one every consumer-facing reference to "the
+  next chord" actually means). `~computeNextChord` also writes `~currentChordNumber` (the
+  raw 1-7 Markov chord number it picked, before the `- 1` that turns it into an array
+  index) as a global rather than a local - purely so something outside it can report it;
+  nothing reads it back for logic. At piece start (currently: whenever this file is
+  evaluated - a real start trigger, `~startPiece`, is a planned future step),
+  `~chordSet` is picked at random from all 9 sets (`(0..~chords.size - 1).choose`, no
+  longer a hardcoded `2`, and no hardcoded upper bound either - it always spans however
+  many sets `~chords` actually has) and `~currentChord` is set directly to that set's
+  "I" chord (index `0`), with
+  `~secondLastChord`/`~lastChord` seeded as though just arriving at I from IV (`1`/`4` -
+  the same fixed history this file always hardcoded, just now applied to whichever set
+  got picked) - `~computeNextChord` is then called once immediately so the lookahead
+  `~nextChord` is ready before the first bar boundary ever needs it.
+  `~checkForNewChordBar` is what actually *advances* `~currentChord` - a plain beat
+  counter (`~chordBarBeatCount`), completely independent of any one track's own Pbind (it
+  used to live inside `~buildMelodyPattern`'s own `\midinote` `Pfunc`, an arbitrary
+  coupling since nearly every chord-aware track reads `~currentChord`, not just `MT1`):
+  once `~chordBarBeatCount` reaches `~numBeats` (the same row-scan bar length `PT1`/`HT1`
+  play on, re-read fresh each call so it tracks a bar length that changes mid-progression)
+  it resets to 0, moves the lookahead into place (`~currentChord = ~nextChord`), posts its
+  name (`~chordNames[~chordSet][~currentChordNumber - 1]`, still correctly in sync with
+  the chord that was just moved into `~currentChord`, since nothing has recomputed it yet)
+  alongside the raw `~currentChord` array, `~chordSet`, and the actual array index
+  (`~currentChordNumber - 1`) it came from, THEN calls `~computeNextChord` again to
+  refresh the lookahead for the bar after this one - that order matters, since computing
+  the new lookahead first would overwrite `~currentChordNumber` before the log line reads
+  it. So the Markov table's behavior can be read and verified from the post window at a
   glance, by name, not just by number. Scheduled from
   `CT8main.scd`'s boot sequence via a second `t.sched(0, {...; 1})` call, the same
   repeating-check idiom `~checkForNewMinute` already uses, once per beat. Loads right
@@ -397,24 +415,28 @@ their own bullets below for exactly where the line falls:
 - **`CT8tracks.scd`** — owns the musical-composition side only: the track registry
   (`~trackNames`/`~trackPatterns`/`~trackPlayers`/`~trackEnabled`/`~trackBuilders`), the
   Percussion Generator config for `PT1`-`PT4` (`~percSource`/`~percInstrument`/
-  `~percPattern`/`~percPitchMode`/`~percBasePitch`/`~percPitchStep`/`~percRandomPitches`/
-  `~percVolumeMode`/`~percVolume`/`~percVolumeLevels`/`~percWet`/`~percLevel`/
-  `~percSplitPercent`, each a `name -> value` dictionary keyed by track-name symbol, set
-  live by `CT8guiPercGenerator.scd` - `~percSplitPercent[name]` only matters when
-  `~percPattern[name]` is one of the two "percent" split patterns (shared between
-  `\random8thPercent`/`\random3rdPercent`, so switching a track between them keeps
-  whichever percent was already set; there's no separate "variant" global any more - the
-  split-type/variant combination is just which flat `~percPattern[name]` symbol is
-  chosen), and `~percWet[name]`/`~percLevel[name]` are the odd ones out of the whole
-  group, read via plain `Pfunc`s rather than baked into a pre-resolved array like the
-  rest, so unlike every other one of these each takes effect immediately with no rebuild
-  needed), the parallel Bass Generator config for `BT1`-`BT2` (`~bassSource`/
-  `~bassInstrument`/`~bassPattern`/`~bassPitchMode`/`~bassBasePitch`/`~bassVolumeMode`/
-  `~bassVolume`/`~bassVolumeLevels`/`~bassWet`/`~bassLevel`/`~bassSplitPercent` - same
-  shape and same live-`CT8guiPercGenerator.scd`-set/`?`-guarded-default convention as
-  percussion's, just a shorter list since bass has fewer pitch modes and no
-  per-instrument pitch-arg-name dispatch to carry - see BASS GENERATOR CONFIG's own
-  comment for exactly which differences), every
+  `~percPattern`/`~percPitchMode`/`~percBasePitch`/`~percVolumeMode`/`~percVolumeLevels`/
+  `~percWet`/`~percLevel`/`~percSplitPercent`, each a `name -> value` dictionary keyed by
+  track-name symbol, set live by `CT8guiPercGenerator.scd` - `~percBasePitch[name]`/
+  `~percVolumeLevels[name]` are both `[lo, hi]` pairs now (one dual-handle `RangeSlider`
+  each in the GUI), not single scalars, so every Pitch/Volume mode just reads the pair
+  differently rather than needing its own separate globals (the old `~percPitchStep`/
+  `~percRandomPitches`/`~percVolume` are gone, superseded); `~percSplitPercent[name]`
+  only matters when `~percPattern[name]` is one of the two "percent" split patterns
+  (shared between `\random8thPercent`/`\random3rdPercent`, so switching a track between
+  them keeps whichever percent was already set; there's no separate "variant" global any
+  more - the split-type/variant combination is just which flat `~percPattern[name]`
+  symbol is chosen), and `~percWet[name]`/`~percLevel[name]` are the odd ones out of the
+  whole group, read via plain `Pfunc`s rather than baked into a pre-resolved array like
+  the rest, so unlike every other one of these each takes effect immediately with no
+  rebuild needed), the parallel Bass Generator config for `BT1`-`BT2` (`~bassSource`/
+  `~bassInstrument`/`~bassPattern`/`~bassPitchMode`/`~bassVolumeMode`/
+  `~bassVolumeLevels`/`~bassWet`/`~bassLevel`/`~bassSplitPercent` - same shape and same
+  live-`CT8guiPercGenerator.scd`-set/`?`-guarded-default convention as percussion's, just
+  a shorter list since bass has fewer pitch modes, no per-instrument pitch-arg-name
+  dispatch to carry, and no `~bassBasePitch` of its own at all - pitch reads the shared
+  `~currentRange[name]`, `CT8harmonySelect.scd`, instead - see BASS GENERATOR CONFIG's
+  own comment for exactly which differences), every
   `~buildXPattern` function that turns `CT8guiClock.scd`'s scan output into an actual
   Pbind, and the playback lifecycle (`~setStartPbinds`, `~stopPbinds`, `~updatePbinds`,
   `~restartPbinds`, `~tempoChange`, `~stopAll`, `~syncTrackPlayer`). The old
@@ -516,10 +538,12 @@ plays every hit comes from `~percInstrument[name]` (`\baseD`/`\cym`/`\hat`/`\kic
 needs its pitch value in a different Pbind key, `\basefreq` for `\baseD`/`\cym`, `\freq`
 for `\hat`, `\drumFreq` for `\kick`, picked once per rebuild via a `pitchArgName` switch
 on the chosen instrument), how pitch
-varies from `~percPitchMode[name]` (fixed / rising-and-reset-at-start / random, drawn from
-`~percRandomPitches[name]` in the random case), and how amp varies from
-`~percVolumeMode[name]` (fixed, or alternating between `~percVolumeLevels[name]`'s two
-values every sounding hit) - this last one is a flat `Pseq`, not folded into the
+varies from `~percPitchMode[name]` (`~percBasePitch[name]` is `[lo, hi]` - fixed always
+reads `hi`; rising climbs from `lo` toward `hi` in 8 fixed steps per hit, resetting at
+every start; random picks anywhere in `[lo, hi]`), and how amp varies from
+`~percVolumeMode[name]` (`~percVolumeLevels[name]` is also `[lo, hi]` - fixed reads
+`hi`; alternate alternates `hi`/`lo` every sounding hit) - this last one is a flat
+`Pseq`, not folded into the
 `\type` Pfunc, since (unlike `restFlags`) amp has no need to read `~trackEnabled[name]`.
 `\wet`/`\level` keys (`Pfunc { ~percWet[name] }`/`Pfunc { ~percLevel[name] }`) set that
 instrument's own tiny built-in `~allpassWash` tail (CT8synths.scd) - the two keys here
@@ -543,17 +567,19 @@ row boundaries rather than on a fixed schedule of its own; its `\atk`/`\rel` are
 per-event from that beat span converted to real seconds via `t.tempo`, since the SynthDef's
 own envelope times are wall-clock seconds, not TempoClock beats. Its `\midinote` used to
 be a fixed 3-chord `Pseq`; now it's a `Pfunc` - `Array.fill(4, { ~chordNoteInRange.(
-~currentChord, 60, 96) })`, 4 independent tone-and-octave picks, any note in the three
-octaves above middle C - but still fires exactly once per row event either way, so the
+~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) })`, 4 independent
+tone-and-octave picks within `~currentRange[\HT1]` (60-96 by default, three octaves
+above middle C) - but still fires exactly once per row event either way, so the
 "one new chord per row-start" cadence is unchanged, only where the notes come from
 differs. `MT1` mirrors `HT1`'s structure exactly but from `~colPattern`/`\columnStart`
 instead of `~rowPattern`/`\rowStart` (one slot per column instead of per row): its
-`\midinote` is the same `Array.fill(4, { ~chordNoteInRange.(~currentChord, 60, 96) })`
-call, but as a live-re-rolling `Pfunc` rather than firing once per event, so the melody
-varies bar to bar even when that minute's column layout doesn't change (used to pick
-1-or-2 notes from a fixed white-keys scale instead). Neither `HT1` nor `MT1` calls
-`~nextChord` itself - see `~checkForNewChordBar`, `CT8harmonySelect.scd`'s own bullet,
-for where that lives instead.
+`\midinote` is the same `Array.fill(4, { ~chordNoteInRange.(~currentChord,
+~currentRange[\MT1][0], ~currentRange[\MT1][1]) })` call, but as a live-re-rolling
+`Pfunc` rather than firing once per event, so the melody varies bar to bar even when
+that minute's column layout doesn't change (used to pick 1-or-2 notes from a fixed
+white-keys scale instead). Neither `HT1` nor `MT1` advances the chord progression
+itself - see `~checkForNewChordBar`, `CT8harmonySelect.scd`'s own bullet, for where
+that lives instead.
 
 `BT1`/`BT2` are driven by the Bass Generator config exactly the way `PT1`-`PT4` are
 driven by the Percussion Generator config - same single-source-scan/pre-resolve-the-bar
@@ -567,10 +593,12 @@ old single `BT1`'s "both at once" behavior, just as two independent tracks inste
 one `Ppar`. `~bassInstrument[name]` picks `\fm` or `\plucking` (`BT1`/`BT2` default to one
 each) - both take a plain `\midinote` key (no per-instrument pitch-arg-name dispatch
 needed, unlike `~buildPercPattern`'s `pitchArgName` switch) and a plain `\amp` key (no
-amp-arg-name dispatch either). `~bassPitchMode[name]` is Fixed (`~bassBasePitch[name]`,
-a plain MIDI note) or Random - Random picks a tone from `~currentChord`
-(`CT8harmonySelect.scd`) via `~chordNoteInRange`, constrained to `~bassRandomPitchLo`..
-`~bassRandomPitchHi` ("below middle C"), the same helper/global `HT1`/`MT1` read live,
+amp-arg-name dispatch either). `~bassPitchMode[name]` is Fixed (reads the high end of
+`~currentRange[name]`, `CT8harmonySelect.scd`, a plain MIDI note) or Random (picks a
+tone from `~currentChord` via `~chordNoteInRange`, constrained to that same
+`[lo, hi]`) - no separate `~bassBasePitch` any more, both modes share
+`~currentRange[name]` (12-59, "below middle C", by default, and now live-adjustable
+from this window's own Pitch `RangeSlider` too), the same global `HT1`/`MT1` read live,
 just resolved once per rebuild here instead - so a mid-bar chord change isn't heard on
 `BT1`/`BT2` until their next rebuild, unlike `HT1`/`MT1`'s live per-hit read. `\fx`
 reaches `~clockRev` through `\fm`'s real `fx`/`fxsend` send (ignored by `\plucking`, which

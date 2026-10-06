@@ -122,7 +122,11 @@
         });
 };
 
-~makeFakeDataWindow.value;
+// Temporarily not auto-displayed while the Percussion + Bass Generator's
+// own per-track layout is being reworked - ~makeFakeDataWindow itself is
+// untouched, just not auto-called here; evaluate it by hand
+// (~makeFakeDataWindow.value) if you need it meanwhile.
+// ~makeFakeDataWindow.value;
 
-"Fake daily-data control panel ready. Drag points on each plot to edit; use Post Current Values to see the arrays.".postln;
+"Fake daily-data control panel ready (not auto-displayed). Drag points on each plot to edit; use Post Current Values to see the arrays.".postln;
 )

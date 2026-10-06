@@ -66,31 +66,28 @@
 //       rebuild) are silent - the beat's span is unchanged, it just doesn't
 //       sound. Not affected by ~percSplitPercent - that only applies to the
 //       six split patterns above, not to skipping.
-//   ~percPitchMode[name]  - how the pitch arg varies hit to hit, and which
-//     controls the Percussion Generator window shows for it (only the
-//     relevant ones - see CT8guiPercGenerator.scd):
-//     \fixed  - always ~percBasePitch[name]. Shows one pitch box.
-//     \rising - resets to ~percBasePitch[name] at every start, then adds
-//       ~percPitchStep[name] per hit after that. Shows Base pitch/Pitch
-//       step, unchanged from before.
-//     \random - one of ~percRandomPitches[name]'s 4 values, chosen
-//       independently each hit. Shows all 4 pitch boxes, each hand-set -
-//       no chord-aware selection yet, that's a planned future step.
+//   ~percPitchMode[name] - how the pitch arg varies hit to hit.
+//     ~percBasePitch[name] is [lo, hi] - one dual-handle RangeSlider in the
+//     Percussion Generator window (CT8guiPercGenerator.scd), not a
+//     mode-specific widget set any more:
+//     \fixed  - always the range's high end (hi).
+//     \rising - resets to lo at every start, then climbs toward hi in 8
+//       fixed steps per hit after that (clipped at hi - see this function's
+//       own basePitches comment for why 8 specifically).
+//     \random - anywhere in [lo, hi], chosen independently each hit - no
+//       chord-aware selection yet, that's a planned future step (unlike
+//       BT1/BT2's own Random pitch mode, which already is).
 //   PITCH/VOLUME REWORK (planned, not started): both ~percPitchMode and
-//   ~percVolumeMode above are considered placeholders - something about
-//   the Pitch row is currently broken (per feedback, not yet investigated,
-//   deliberately deferred) and both are due to be redesigned once the
-//   non-percussion tracks (HT1-4/MT1-4) get real chord-based pitch - PT1-4
-//   will likely end up picking from a small set of hand-built "chords" per
-//   instrument rather than these three modes. Until then, Volume's widgets
-//   were updated to Sliders (CT8guiPercGenerator.scd) but the underlying
-//   Fixed/Alternate model is unchanged.
+//   ~percVolumeMode above are considered placeholders, due to be
+//   redesigned once the non-percussion tracks (HT1-4/MT1-4) get real
+//   chord-based pitch - PT1-4 will likely end up picking from a small set
+//   of hand-built "chords" per instrument rather than these three modes.
 //   ~percVolumeMode[name] - how amp varies hit to hit (replaces the old
 //     Synth Controls window's per-synth amp slider, now removed - see
-//     CLAUDE.md):
-//     \fixed     - always ~percVolume[name]. Shows one volume Slider.
-//     \alternate - alternates between ~percVolumeLevels[name]'s two values
-//       every hit. Shows two volume Sliders.
+//     CLAUDE.md). ~percVolumeLevels[name] is also [lo, hi] now (one
+//     dual-handle RangeSlider):
+//     \fixed     - always the range's high end (hi).
+//     \alternate - alternates hi, lo every hit (high end first).
 //   ~percWet[name]/~percLevel[name] - this track's instrument's own tiny
 //     built-in reverb tail (the \wet/\level args every percussion SynthDef
 //     - \baseD/\cym/\hat/\kick, see CT8synths.scd - now takes; ~allpassWash's own
@@ -116,10 +113,7 @@
 ~percPattern = ~percPattern ? ();
 ~percPitchMode = ~percPitchMode ? ();
 ~percBasePitch = ~percBasePitch ? ();
-~percPitchStep = ~percPitchStep ? ();
-~percRandomPitches = ~percRandomPitches ? ();
 ~percVolumeMode = ~percVolumeMode ? ();
-~percVolume = ~percVolume ? ();
 ~percVolumeLevels = ~percVolumeLevels ? ();
 ~percWet = ~percWet ? ();
 ~percLevel = ~percLevel ? ();
@@ -130,21 +124,35 @@
 // SynthDef (CT8synths.scd)/Synth Lab specs table (CT8guiSynthLab.scd) -
 // baseD/cym's \basefreq, hat's \freq, kick's \drumFreq, all at their
 // SynthDef's own default, and amp likewise. Keyed by instrument rather than
-// by track so ~percBasePitch/~percVolume's defaults, below, stay correct
-// even if ~percInstrumentDefaults is changed later.
+// by track so ~percBasePitch/~percVolumeLevels' defaults, below, stay
+// correct even if ~percInstrumentDefaults is changed later.
 ~percInstrumentPitchDefaults = (baseD: 55, cym: 300, hat: 4200, kick: 50);
 ~percInstrumentVolumeDefaults = (baseD: 1, cym: 1, hat: 0.2, kick: 0.5);
+// ~percBasePitch[name]/~percVolumeLevels[name] are both now [lo, hi] pairs -
+// one dual-handle RangeSlider each in the Percussion + Bass Generator window
+// (CT8guiPercGenerator.scd), replacing Pitch's old 3-widget-set-per-mode
+// (one box/two boxes/four boxes for Fixed/Rising/Random) and Volume's old
+// Fixed-Slider-or-two-Alternate-Sliders. \fixed now just reads the high end
+// of each pair (hi); \random/\alternate use the whole [lo, hi] span; \rising
+// climbs from lo toward hi - see ~buildPercPattern's own pitch comment,
+// below, for that one's exact rule. Defaulting to [d, d] (a zero-width
+// range at each instrument's own default) means Fixed mode's default
+// behavior is unchanged from before the RangeSlider existed; Random/Rising/
+// Alternate only actually vary once the handles are dragged apart.
 ~percTrackNames.do { |name|
     ~percSource[name] = ~percSource[name] ? ~percSourceDefaults[name];
     ~percInstrument[name] = ~percInstrument[name] ? ~percInstrumentDefaults[name];
     ~percPattern[name] = ~percPattern[name] ? \everyBeat;
     ~percPitchMode[name] = ~percPitchMode[name] ? \fixed;
-    ~percBasePitch[name] = ~percBasePitch[name] ? ~percInstrumentPitchDefaults[~percInstrumentDefaults[name]];
-    ~percPitchStep[name] = ~percPitchStep[name] ? 50;
-    ~percRandomPitches[name] = ~percRandomPitches[name] ? Array.fill(4, { rrand(100, 600) });
+    ~percBasePitch[name] = ~percBasePitch[name] ? {
+        var d = ~percInstrumentPitchDefaults[~percInstrumentDefaults[name]];
+        [d, d]
+    }.value;
     ~percVolumeMode[name] = ~percVolumeMode[name] ? \fixed;
-    ~percVolume[name] = ~percVolume[name] ? ~percInstrumentVolumeDefaults[~percInstrumentDefaults[name]];
-    ~percVolumeLevels[name] = ~percVolumeLevels[name] ? [0.5, 0.15];
+    ~percVolumeLevels[name] = ~percVolumeLevels[name] ? {
+        var d = ~percInstrumentVolumeDefaults[~percInstrumentDefaults[name]];
+        [d, d]
+    }.value;
     ~percWet[name] = ~percWet[name] ? 0;
     ~percLevel[name] = ~percLevel[name] ? 1;
     ~percSplitPercent[name] = ~percSplitPercent[name] ? 33;
@@ -159,16 +167,16 @@
 // for every track, rebuilds the window so the GUI reflects the reset
 // values, then applies immediately the same way Apply now does.
 ~resetPercConfig = { |name|
+    var pitchD, volD;
     ~percSource[name] = ~percSourceDefaults[name];
     ~percInstrument[name] = ~percInstrumentDefaults[name];
     ~percPattern[name] = \everyBeat;
     ~percPitchMode[name] = \fixed;
-    ~percBasePitch[name] = ~percInstrumentPitchDefaults[~percInstrumentDefaults[name]];
-    ~percPitchStep[name] = 50;
-    ~percRandomPitches[name] = Array.fill(4, { rrand(100, 600) });
+    pitchD = ~percInstrumentPitchDefaults[~percInstrumentDefaults[name]];
+    ~percBasePitch[name] = [pitchD, pitchD];
     ~percVolumeMode[name] = \fixed;
-    ~percVolume[name] = ~percInstrumentVolumeDefaults[~percInstrumentDefaults[name]];
-    ~percVolumeLevels[name] = [0.5, 0.15];
+    volD = ~percInstrumentVolumeDefaults[~percInstrumentDefaults[name]];
+    ~percVolumeLevels[name] = [volD, volD];
     ~percWet[name] = 0;
     ~percLevel[name] = 1;
     ~percSplitPercent[name] = 33;
@@ -187,20 +195,19 @@
 //   - Both \fm/\plucking take a \midinote key directly (Pbind/Event's
 //     standard pitch-key handling converts it to \freq for us), so there's
 //     no per-instrument pitch-ARG-name dispatch the way baseD/cym/hat/kick
-//     need (~buildPercPattern's pitchArgName switch) - ~bassBasePitch/the
-//     Random pitch mode's range (below) are both plain MIDI note numbers,
-//     not Hz. Both also just take a plain \amp key for their output level,
-//     so there's no per-instrument amp-arg-name dispatch needed either
-//     (unlike pitch/amp-arg dispatch being two separate concerns for
-//     baseD/cym/hat/kick).
+//     need (~buildPercPattern's pitchArgName switch). Pitch doesn't even
+//     need its own ~bassBasePitch any more - both Fixed and Random read
+//     ~currentRange[name] directly (CT8harmonySelect.scd), the exact same
+//     global HT1/MT1 use for their own chord-note picks: Fixed uses its
+//     high end, Random picks anywhere in [lo, hi] via ~chordNoteInRange.
+//     Both instruments also just take a plain \amp key for their output
+//     level, so there's no per-instrument amp-arg-name dispatch needed
+//     either (unlike pitch/amp-arg dispatch being two separate concerns
+//     for baseD/cym/hat/kick).
 //   - Pitch only has two modes (Fixed/Random), not three - no "Rising".
-//     Random IS chord-aware (~chordNoteInRange.(~currentChord, ...) - same
-//     helper/global HT1/MT1 use, CT8harmonySelect.scd), read once per
-//     baseline slot at rebuild time rather than live per-hit; Fixed is a
-//     plain MIDI note, not chord-aware. Both Pitch and Volume here are
-//     otherwise still placeholders, same status as percussion's own
-//     Pitch/Volume, pending the planned rework once chord-based pitch/
-//     volume exist generally.
+//   - ~bassVolumeLevels[name] is a [lo, hi] pair (one dual-handle
+//     RangeSlider in the GUI) - Fixed reads its high end; Alternate uses
+//     the whole span, same idea as percussion's ~percVolumeLevels.
 //   - Pattern has no \firstBeat option (per feedback, not a useful choice
 //     for a bass part) - otherwise the exact same nine choices PT1-4 have.
 ~bassTrackNames = [\BT1, \BT2];
@@ -208,9 +215,7 @@
 ~bassInstrument = ~bassInstrument ? ();
 ~bassPattern = ~bassPattern ? ();
 ~bassPitchMode = ~bassPitchMode ? ();
-~bassBasePitch = ~bassBasePitch ? ();
 ~bassVolumeMode = ~bassVolumeMode ? ();
-~bassVolume = ~bassVolume ? ();
 ~bassVolumeLevels = ~bassVolumeLevels ? ();
 ~bassWet = ~bassWet ? ();
 ~bassLevel = ~bassLevel ? ();
@@ -220,21 +225,16 @@
 // Each instrument's own default amp, straight off its SynthDef
 // (CT8synths.scd) - same idea as ~percInstrumentVolumeDefaults, above.
 ~bassInstrumentVolumeDefaults = (fm: 0.2, plucking: 0.2);
-// Random pitch mode's range - anything "below middle C" per feedback (MIDI
-// 60), floored at MIDI 12 (the same low end BT1's old chord-aware range
-// used) - not user-adjustable yet, unlike percussion's 4 hand-set random
-// pitch boxes, since this is explicitly a placeholder (see above).
-~bassRandomPitchLo = 12;
-~bassRandomPitchHi = 59;
 ~bassTrackNames.do { |name|
     ~bassSource[name] = ~bassSource[name] ? ~bassSourceDefaults[name];
     ~bassInstrument[name] = ~bassInstrument[name] ? ~bassInstrumentDefaults[name];
     ~bassPattern[name] = ~bassPattern[name] ? \everyBeat;
     ~bassPitchMode[name] = ~bassPitchMode[name] ? \fixed;
-    ~bassBasePitch[name] = ~bassBasePitch[name] ? 36;
     ~bassVolumeMode[name] = ~bassVolumeMode[name] ? \fixed;
-    ~bassVolume[name] = ~bassVolume[name] ? ~bassInstrumentVolumeDefaults[~bassInstrumentDefaults[name]];
-    ~bassVolumeLevels[name] = ~bassVolumeLevels[name] ? [0.2, 0.08];
+    ~bassVolumeLevels[name] = ~bassVolumeLevels[name] ? {
+        var d = ~bassInstrumentVolumeDefaults[~bassInstrumentDefaults[name]];
+        [d, d]
+    }.value;
     ~bassWet[name] = ~bassWet[name] ? 0;
     ~bassLevel[name] = ~bassLevel[name] ? 1;
     ~bassSplitPercent[name] = ~bassSplitPercent[name] ? 33;
@@ -244,14 +244,14 @@
 // original defaults - mirrors ~resetPercConfig exactly, same reason (see its
 // comment, above).
 ~resetBassConfig = { |name|
+    var volD;
     ~bassSource[name] = ~bassSourceDefaults[name];
     ~bassInstrument[name] = ~bassInstrumentDefaults[name];
     ~bassPattern[name] = \everyBeat;
     ~bassPitchMode[name] = \fixed;
-    ~bassBasePitch[name] = 36;
     ~bassVolumeMode[name] = \fixed;
-    ~bassVolume[name] = ~bassInstrumentVolumeDefaults[~bassInstrumentDefaults[name]];
-    ~bassVolumeLevels[name] = [0.2, 0.08];
+    volD = ~bassInstrumentVolumeDefaults[~bassInstrumentDefaults[name]];
+    ~bassVolumeLevels[name] = [volD, volD];
     ~bassWet[name] = 0;
     ~bassLevel[name] = 1;
     ~bassSplitPercent[name] = 33;
@@ -311,10 +311,9 @@
 // fixed two-synth-role system)/~buildSnarePattern (PT3's hand-tuned
 // ~snareTemplate) - all four percussion tracks now read the same per-track
 // config (~percSource/~percInstrument/~percPattern/~percPitchMode/
-// ~percBasePitch/~percPitchStep/~percRandomPitches/~percVolumeMode/
-// ~percVolume/~percVolumeLevels/~percWet/~percLevel/~percSplitPercent - see
-// PERCUSSION GENERATOR CONFIG, above) through this one parameterized
-// builder, registered per track name below.
+// ~percBasePitch/~percVolumeMode/~percVolumeLevels/~percWet/~percLevel/
+// ~percSplitPercent - see PERCUSSION GENERATOR CONFIG, above) through this
+// one parameterized builder, registered per track name below.
 // Pre-resolves the whole bar into flat dur/pitch arrays - same technique
 // validated in CT8guiTracksLab.scd's prototype - rather than a live
 // per-event Pfunc, since ~percPattern[name] needs to change how many slots
@@ -367,40 +366,46 @@
             if(pattern == \startOnly) { startIdx } { (0..events.size - 1) }
         };
 
-// This is the ONLY place pitchOffset changes - resets to 0 whenever a
-// baseline slot IS a genuine start, otherwise grows by
-// ~percPitchStep[name] when ~percPitchMode[name] is \rising. Computed once
-// per baseline slot, before any random splitting below - a slot split into
-// a double hit or triplet gives every one of those hits the same pitch,
-// rather than advancing mid-split.
+// ~percBasePitch[name] is [lo, hi] (one dual-handle RangeSlider in the GUI,
+// CT8guiPercGenerator.scd) - \fixed always just reads hi; \random picks
+// anywhere in [lo, hi]; \rising climbs from lo toward hi over the course of
+// a row/column span, in 8 fixed steps (an arbitrary subdivision, not
+// derived from how many slots the span actually has - a span shorter than
+// 8 slots just doesn't reach hi before the next reset), resetting to lo at
+// every genuine start. This is the ONLY place pitchOffset changes. Computed
+// once per baseline slot, before any random splitting below - a slot split
+// into a double hit or triplet gives every one of those hits the same
+// pitch, rather than advancing mid-split.
         basePitches = baseSlotIdx.collect { |idx|
             var isStart = startIdx.includes(idx);
+            var lo = ~percBasePitch[name][0];
+            var hi = ~percBasePitch[name][1];
             if(isStart) {
                 pitchOffset = 0;
             } {
                 if(~percPitchMode[name] == \rising) {
-                    pitchOffset = pitchOffset + ~percPitchStep[name];
+                    pitchOffset = pitchOffset + ((hi - lo) / 8);
                 };
             };
             switch(~percPitchMode[name],
-                \fixed, { ~percBasePitch[name] },
-                \rising, { ~percBasePitch[name] + pitchOffset },
-// No chord-aware selection yet (planned) - for now, just one of the 4
-// hand-set pitch boxes, picked independently each baseline slot.
-                \random, { ~percRandomPitches[name].choose }
+                \fixed, { hi },
+                \rising, { (lo + pitchOffset).min(hi) },
+                \random, { rrand(lo, hi) }
             )
         };
 
-// Next hit's \amp, per ~percVolumeMode[name] - \fixed always the same
-// value; \alternate flips between ~percVolumeLevels[name]'s two values
-// every actual sounding hit (ampIndex counts hits, not baseline slots, so
-// a slot split into a double hit/triplet below still alternates hit to
-// hit, not just slot to slot).
+// Next hit's \amp, per ~percVolumeMode[name] - \fixed always reads
+// ~percVolumeLevels[name]'s high end; \alternate flips between its two
+// ends every actual sounding hit (ampIndex counts hits, not baseline
+// slots, so a slot split into a double hit/triplet below still alternates
+// hit to hit, not just slot to slot), high end first.
         nextAmp = {
+            var lo = ~percVolumeLevels[name][0];
+            var hi = ~percVolumeLevels[name][1];
             var v = if(~percVolumeMode[name] == \alternate) {
-                ~percVolumeLevels[name][ampIndex % 2]
+                if(ampIndex % 2 == 0) { hi } { lo }
             } {
-                ~percVolume[name]
+                hi
             };
             ampIndex = ampIndex + 1;
             v;
@@ -469,9 +474,9 @@
             \dur, Pseq(durs, inf),
             pitchArgName, Pseq(pitches, inf),
 // Replaces the old Synth Controls window's per-synth amp slider (that
-// window is gone - see CLAUDE.md); ~percVolumeMode[name]/~percVolume[name]/
-// ~percVolumeLevels[name] (Percussion Generator, this track's own Volume
-// row) are the only amp source now.
+// window is gone - see CLAUDE.md); ~percVolumeMode[name]/~percVolumeLevels[name]
+// (Percussion Generator, this track's own Volume row) are the only amp
+// source now.
             \amp, Pseq(amps, inf),
 // Wrapped in Pfunc rather than passed as a bare value - a Bus object sitting
 // directly in a Pbind pair can get walked/expanded like any other Pattern
@@ -521,11 +526,12 @@
 // that row's duration rather than a fixed, tempo-unaware length.
 //
 // \midinote used to be a fixed 3-chord Pseq (chordGroups); now picks 4
-// notes from ~currentChord (CT8harmonySelect.scd) instead, any note in the
-// three octaves above middle C (MIDI 60-96) via ~chordNoteInRange - a
-// Pfunc rather than a Pseq, but fires exactly once per row event either
-// way, so the "one new chord at every row-start, held for that row's
-// span" cadence is unchanged; only where the 4 notes come from differs.
+// notes from ~currentChord (CT8harmonySelect.scd) instead, within
+// ~currentRange[\HT1] (that file's own global, not hardcoded here any
+// more) via ~chordNoteInRange - a Pfunc rather than a Pseq, but fires
+// exactly once per row event either way, so the "one new chord at every
+// row-start, held for that row's span" cadence is unchanged; only where
+// the 4 notes come from differs.
 ~buildHarmonyPattern = {
     var events = ~rowPattern ? [];
     if(events.isEmpty) {
@@ -552,7 +558,9 @@
         ~trackPatterns[\HT1] = Pbind(
             \instrument, \fm,
             \dur, Pseq(rowDurs, inf),
-            \midinote, Pfunc { Array.fill(4, { ~chordNoteInRange.(~currentChord, 60, 96) }) },
+            \midinote, Pfunc { Array.fill(4, {
+                ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1])
+            }) },
             \mRatio, 1,
             \index, 1.5,
             \iScale, Pseq([2, 4], inf),
@@ -619,8 +627,11 @@
 // Array-valued \midinote (like HT1's \midinote) plays all its notes as one
 // simultaneous chord - 4 independent ~chordNoteInRange picks, each its own
 // tone-and-octave roll, fresh every time this key is read, rather than a
-// fixed precomputed sequence.
-            \midinote, Pfunc { Array.fill(4, { ~chordNoteInRange.(~currentChord, 60, 96) }) },
+// fixed precomputed sequence. ~currentRange[\MT1] (CT8harmonySelect.scd),
+// not hardcoded here any more.
+            \midinote, Pfunc { Array.fill(4, {
+                ~chordNoteInRange.(~currentChord, ~currentRange[\MT1][0], ~currentRange[\MT1][1])
+            }) },
             \mRatio, 2,
             \cRatio, 1,
             \index, 2,
@@ -686,11 +697,16 @@
 // grid, same as ~buildPercPattern.
         baseSlotIdx = if(pattern == \startOnly) { startIdx } { (0..events.size - 1) };
 
+// ~bassVolumeLevels[name] is [lo, hi] (one dual-handle RangeSlider in the
+// GUI, same convention as ~percVolumeLevels) - \fixed reads hi; \alternate
+// alternates hi, lo every hit, high end first, same as percussion.
         nextAmp = {
+            var lo = ~bassVolumeLevels[name][0];
+            var hi = ~bassVolumeLevels[name][1];
             var v = if(~bassVolumeMode[name] == \alternate) {
-                ~bassVolumeLevels[name][ampIndex % 2]
+                if(ampIndex % 2 == 0) { hi } { lo }
             } {
-                ~bassVolume[name]
+                hi
             };
             ampIndex = ampIndex + 1;
             v;
@@ -714,20 +730,23 @@
         baseSlotIdx.do { |idx, i|
             var nextIdx = if((i + 1) < baseSlotIdx.size) { baseSlotIdx[i + 1] } { events.size };
             var span = nextIdx - idx;
-// Pitch: Fixed always ~bassBasePitch[name] (plain MIDI note, not
-// chord-aware); Random instead picks a tone from ~currentChord
-// (CT8harmonySelect.scd) via ~chordNoteInRange, constrained "below middle
-// C" (~bassRandomPitchLo..~bassRandomPitchHi, above) - same helper/range
-// every other chord-aware track uses, just read once per baseline slot at
-// rebuild time rather than live per-hit via Pfunc (~buildPercPattern's own
-// \random pitch mode works the same way - re-rolled fresh each rebuild,
-// not per-hit), so a mid-bar chord change (~checkForNewChordBar) isn't
-// heard here until this track's next rebuild. No \rising mode, so there's
-// no pitchOffset bookkeeping to do here the way ~buildPercPattern needs.
+// Pitch: both modes read ~currentRange[name] (CT8harmonySelect.scd, one
+// dual-handle RangeSlider in the GUI, keyed by this track's own name so
+// BT1/BT2 can end up with different ranges) rather than a separate
+// ~bassBasePitch - Fixed just uses the range's high end (hi), a plain,
+// non-chord-aware MIDI note; Random instead picks a tone from
+// ~currentChord (CT8harmonySelect.scd) via ~chordNoteInRange, constrained
+// to the same [lo, hi] - same helper every other chord-aware track uses,
+// just read once per baseline slot at rebuild time rather than live
+// per-hit via Pfunc (~buildPercPattern's own \random pitch mode works the
+// same way - re-rolled fresh each rebuild, not per-hit), so a mid-bar
+// chord change (~checkForNewChordBar) isn't heard here until this track's
+// next rebuild. No \rising mode, so there's no pitchOffset bookkeeping to
+// do here the way ~buildPercPattern needs.
             var pitch = if(~bassPitchMode[name] == \random) {
-                ~chordNoteInRange.(~currentChord, ~bassRandomPitchLo, ~bassRandomPitchHi)
+                ~chordNoteInRange.(~currentChord, ~currentRange[name][0], ~currentRange[name][1])
             } {
-                ~bassBasePitch[name]
+                ~currentRange[name][1]
             };
             var shouldSplit = (splitCount > 1) and: {
                 switch(splitVariant,
