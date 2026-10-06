@@ -3,13 +3,12 @@
 // CLOCKTOY - SOUND DEFINITIONS (SYNTHDEFS + LIVE PARAMETERS)
 // ============================================================================
 //
-// Everything sound-generating lives here: SynthDefs, the ~availableSynths
-// table describing each one's live-adjustable parameters, and
-// ~getSynthParam, the lookup function CT8tracks.scd's Pbinds use to read
-// those parameters fresh on every note. This file knows nothing about
-// tracks, patterns, or the clock face - CT8tracks.scd is the file that
-// decides which synth plays when and reads its parameters via
-// ~getSynthParam.
+// Everything sound-generating lives here: SynthDefs, plus a couple of
+// globals (~reverbDec/~reverbLpf/~reverbMix) for the persistent reverb
+// Synth. This file knows nothing about tracks, patterns, or the clock face
+// - CT8tracks.scd is the file that decides which synth plays when and with
+// which parameters (its own per-track Percussion Generator config now, not
+// anything from here).
 //
 // Split out of the original CT8syn.scd (which mixed synth definitions with
 // track-generation logic) so the two concerns - "what sounds exist" vs "how
@@ -27,63 +26,11 @@
 (
 
 // ---------------------------------------------------------------------------
-// AVAILABLE SYNTHS
-// ---------------------------------------------------------------------------
-// One row per synth: [synthName, [paramName, lo, hi, default, step], ...].
-// Add a new SynthDef below, then add its row here - with as many or as few
-// [paramName, lo, hi, default, step] param specs as you want live control
-// over - to make it selectable in the Synth Controls window's Row/Col
-// Start/Cell menus. The window builds its per-synth control rows straight
-// from this table (see ~makeSynthWindow, CT8guiSynth.scd), so nothing else
-// needs to change to add a synth or give it a new live-editable parameter.
-~availableSynths = [
-    [\baseD,
-        [\basefreq, 20, 2000, 50, 1],
-        [\amp, 0, 4, 2, 0.01]
-    ],
-    [\cym,
-        [\basefreq, 20, 4000, 300, 10],
-        [\len, 0.01, 4, 0.25, 0.01],
-        [\amp, 0, 4, 0.1, 0.01]
-    ],
-    [\plucking,
-        [\freq, 20, 2000, 440, 1],
-        [\sAmp, 0, 4, 0.5, 0.01]
-    ],
-    [\hat,
-        [\freq, 20, 8000, 4200, 10],
-        [\amp, 0, 4, 0.2, 0.01]
-    ]
-];
-
-// ~synthParamSpecs: synth -> (paramName -> [lo, hi, default, step]) - a
-// quick-lookup Event built from ~availableSynths, for the GUI and
-// ~getSynthParam below.
-// ~synthParams: synth -> (paramName -> current live value). Persists across
-// re-evaluations of this file (only backfills defaults for synths/params
-// that are new since last time), so live tweaks in the Synth Controls
-// window survive re-running this file.
-~synthParamSpecs = ();
-~synthParams = ~synthParams ? ();
-~availableSynths.do { |row|
-    var synthName = row[0];
-    var specs = ();
-    ~synthParams[synthName] = ~synthParams[synthName] ? ();
-    row[1..].do { |paramSpec|
-        var pname = paramSpec[0];
-        specs[pname] = paramSpec[1..]; // [lo, hi, default, step]
-        ~synthParams[synthName][pname] = ~synthParams[synthName][pname] ? paramSpec[3];
-    };
-    ~synthParamSpecs[synthName] = specs;
-};
-
-
-// ---------------------------------------------------------------------------
 // REVERB CONTROLS
 // ---------------------------------------------------------------------------
 // Live-adjustable parameters for the persistent ~clockRev Synth (\ELIreverb,
-// below). Unlike ~synthParams (per-note synths, read fresh via Pfunc on
-// every trigger), ~clockRev is one long-running Synth instance. No GUI
+// below) - one long-running Synth instance, unlike every per-note synth
+// CT8tracks.scd triggers fresh each hit. No GUI
 // currently exposes these live (the old Reverb Controls window was removed -
 // see CLAUDE.md); for now, adjust by editing these defaults directly. Persist
 // across re-evaluations, defaulting to \ELIreverb's own SynthDef defaults.
@@ -93,19 +40,26 @@
 
 
 // ---------------------------------------------------------------------------
-// PARAMETER LOOKUP
+// SHARED ALLPASS WASH
 // ---------------------------------------------------------------------------
-// Look up a synth's current live parameter value, or fall back if that
-// synth has no such parameter (e.g. plucking/hat, which have no live
-// controls wired up yet). Used by CT8tracks.scd's Pbinds so each Pbind key
-// works uniformly no matter which specific synth is actually playing.
-~getSynthParam = { |synth, paramName, fallback|
-    if(~synthParamSpecs[synth].notNil and: { ~synthParamSpecs[synth].includesKey(paramName) }) {
-        ~synthParams[synth][paramName]
-    } {
-        fallback
-    }
+// \hat/\cym/\baseD/\kick/\fm/\plucking's own built-in \wet/\level reverb (below) - same
+// dry/wet/level algorithm as the standalone \allpassReverb synth further
+// down, just inline rather than reading from a bus: a chain of 10 AllpassN
+// filters (each channel independently randomized, so even a mono `sig`
+// comes out decorrelated-stereo), crossfaded against the dry signal by
+// `wet` and scaled by `level` afterward. `level` defaults to 1 here (not
+// \allpassReverb's own 0.6), so `wet=0, level=1` - the default every
+// caller below uses - is truly a no-op, not a volume change. This is a
+// plain helper function, not a SynthDef, so reusing it directly in
+// CT8guiSynthLab.scd's \labHat/\labCym is fine and not the kind of
+// SynthDef-sharing this project otherwise avoids across the lab split -
+// there's no bus-routing assumption baked into it to conflict with.
+~allpassWash = { |sig, wet = 0, level = 1|
+    var fx = sig;
+    10.do { fx = AllpassN.ar(fx, 0.05, [Rand(0, 0.05), Rand(0, 0.05)], 1) };
+    XFade2.ar(sig, fx, wet.linlin(0, 1, -1, 1)) * level;
 };
+
 
 
 // ---------------------------------------------------------------------------
@@ -115,24 +69,87 @@
 // project is running also installs edited SynthDefs immediately.
 ~installSynthDefs = {
 
-// PLUCK SYNTH
+// // PLUCK SYNTH
+// SynthDef(\plucking, {
+//     arg outbus = 0, amp = 0.2, sAmp = 0.5,
+//         freq = 440, pluckDecay = 0.35, coef = 0.25, pan = 0,
+//         atk = 0.001, sus = 0.015, rel = 0.10,
+//         dynamic = 0.25, wet = 0, level = 1;
+
+//     var env, excitation, snd;
+
+//     // Very short amplitude envelope
+//     env = EnvGen.kr(
+//         Env.linen(atk, sus, rel),
+//         doneAction: 2
+//     );
+
+//     // Short noise impulse excites the string
+//     excitation = BrownNoise.ar(amp)
+//         * EnvGen.kr(Env.perc(0.01, 0.008));
+
+//     snd = Pluck.ar(
+//         excitation,
+//         Impulse.kr(0),
+//         0.5,
+//         freq.reciprocal,
+//         pluckDecay,
+//         coef
+//     );
+
+//     snd = LeakDC.ar(snd).clip2;
+//     snd = Pan2.ar(snd, pan);
+
+//     // Keep existing reverb send for now - unaffected by wet/level below,
+//     // same reason as \fm's fx/fxsend (see its comment).
+//     Out.ar(~revBus, snd * env * dynamic);
+
+//     // This instrument's own tiny built-in reverb tail, same ~allpassWash
+//     // \hat/\cym/\baseD/\kick already use - added for BT1/BT2's Wet/Level
+//     // sliders (CT8guiPercGenerator.scd), which need \plucking to actually
+//     // have a wet/level knob to turn.
+//     Out.ar(outbus, ~allpassWash.(snd * env * sAmp, wet, level));
+// }).add;
+
+//Synth(\plucking, [\freq, 260, \amp, 1.5, \sus, 0.6, \dynamic, 20]);
+
 SynthDef(\plucking, {
-    arg outbus = 0, amp = 0.2, sAmp = 0.5,
-        freq = 440, pluckDecay = 0.35, coef = 0.25, pan = 0,
-        atk = 0.001, sus = 0.015, rel = 0.10,
+    arg out = 0,
+        freq = 440,
+        amp = 0.5,
+        pluckDecay = 0.35,
+        coef = 0.25,
+        pan = 0,
+        atk = 0.001,
+        sus = 0.015,
+        rel = 0.10,
+        wet = 0,
+        level = 1,
         dynamic = 0.25;
 
-    var env, excitation, snd;
 
-    // Very short amplitude envelope
+    var env, excitation, snd;
+    var bassBoost, excDecay, bassRel;
+
+    // 1.0 at middle C (261.63 Hz) and above.
+    // Gradually increases below middle C.
+    bassBoost = (261.63 / freq).sqrt.clip(1, 2.5);
+
+    // Give lower notes a somewhat longer excitation.
+    excDecay = (0.008 * bassBoost).clip(0.008, 0.025);
+
+    // Give lower notes more time to develop/ring.
+    bassRel = rel * bassBoost;
+
     env = EnvGen.kr(
-        Env.linen(atk, sus, rel),
+        Env.linen(atk, sus, bassRel),
         doneAction: 2
     );
 
-    // Short noise impulse excites the string
-    excitation = BrownNoise.ar(amp)
-        * EnvGen.kr(Env.perc(0.01, 0.008));
+    excitation = BrownNoise.ar(amp * bassBoost)
+        * EnvGen.kr(
+            Env.perc(0.005, excDecay)
+        );
 
     snd = Pluck.ar(
         excitation,
@@ -143,22 +160,25 @@ SynthDef(\plucking, {
         coef
     );
 
-    snd = LeakDC.ar(snd).clip2;
+    snd = LeakDC.ar(snd);
+    snd = snd.clip2;
     snd = Pan2.ar(snd, pan);
 
-    Out.ar(outbus, snd * env * sAmp);
-
-    // Keep existing reverb send for now.
+// ~revBus send has its own independent attenuation (dynamic) - unlike
+// wet/level below, which only control the private ~allpassWash tail on the
+// main output. Without this, the send is exactly as loud as the dry
+// signal, which (unlike \fm's deliberately quiet -25dB fxsend into this
+// same shared bus) is loud enough to dominate ~clockRev regardless of this
+// note's own wet/level/amp.
     Out.ar(~revBus, snd * env * dynamic);
+    Out.ar(out, ~allpassWash.(snd * env, wet, level));
 }).add;
-
-//Synth(\plucking, [\freq, 260, \amp, 1.5, \sus, 0.6, \dynamic, 20]);
 
 // ---------------------------------------------------------------------------
 // HAT - short metallic cymbal tick
 // ---------------------------------------------------------------------------
 SynthDef(\hat, {
-    |amp = 0.2, pan = 0, out = 0, freq = 4200, noiseFreq = 1000|
+    |amp = 0.2, pan = 0, out = 0, freq = 4200, noiseFreq = 1000, wet = 0, level = 1|
 
     var env, noise, metal, snd;
 
@@ -178,52 +198,30 @@ SynthDef(\hat, {
     snd = (noise * 0.75) + metal;
     snd = HPF.ar(snd, 5000);
     snd = snd * env * amp;
+    snd = Pan2.ar(snd, pan);
 
-    Out.ar(out, Pan2.ar(snd, pan));
+// Tiny built-in reverb tail, ~allpassWash (above) rather than FreeVerb (an
+// earlier mistake) - defaults to wet=0 (fully dry) so the real
+// composition's Pbinds, which never set \wet, are unaffected;
+// CT8guiSynthLab.scd/CT8guiTracksLab.scd and the Percussion Generator
+// (~percWet[name]/~percLevel[name], CT8tracks.scd) are the only things
+// that ever set it above 0. Caveat shared by every synth with this tail:
+// env's doneAction:2 (above) frees the whole synth - reverb tail included
+// - based on the DRY signal going silent, so a nonzero wet's tail gets cut
+// off abruptly rather than ringing all the way out. Acceptable for
+// "simple," not worth the extra complexity of decoupling the free timer
+// from the dry envelope for this.
+    snd = ~allpassWash.(snd, wet, level);
+
+    Out.ar(out, snd);
 }).add;
 
 //Synth(\hat, [ \amp, 1.9,\freq, 200, \noiseFreq, 1000]);
 
 // ---------------------------------------------------------------------------
-// BASS DRUM (legacy, unused) - replaced by \baseD
-// ---------------------------------------------------------------------------
-// Not in ~availableSynths, so the Synth Controls menus can't select it.
-// Still compiled/installed below; kept only for reference/comparison.
-SynthDef(\bassDrum, {
-    |out = 0, amp = 0.85, pan = 0|
-    var ampEnv = Env.perc(0.001, 0.32, curve: -7).ar(Done.freeSelf);
-    var pitchEnv = Env([78, 43, 34], [0.025, 0.16], curve: -5).ar;
-    var body = SinOsc.ar(pitchEnv) * ampEnv;
-    var click = HPF.ar(WhiteNoise.ar(0.10), 3500)
-        * Env.perc(0.001, 0.012).ar;
-    var snd = ((body + click) * amp).tanh;
-
-    Out.ar(out, Pan2.ar(snd, pan));
-}).add;
-
-// ---------------------------------------------------------------------------
-// SHORT WHISTLE (legacy, unused) - replaced by \cym
-// ---------------------------------------------------------------------------
-// Not in ~availableSynths, so the Synth Controls menus can't select it.
-// Still compiled/installed below; kept only for reference/comparison.
-SynthDef(\shortWhistle, {
-    |out = 0, amp = 0.16, freq = 1900, pan = 0, dynamic = 0.12|
-    var env = Env.perc(0.006, 0.11, curve: -5).ar(Done.freeSelf);
-    var pitch = XLine.kr(freq * 1.08, freq, 0.10);
-    var breath = BPF.ar(WhiteNoise.ar(0.10), pitch, 0.12);
-    var snd = (SinOsc.ar(pitch) + breath) * env * amp;
-    var stereo = Pan2.ar(snd, pan);
-
-    Out.ar(out, stereo);
-    Out.ar(~revBus, stereo * dynamic);
-}).add;
-
-//Synth(\shortWhistle, [ \amp, 0.9,\freq, 1500]);
-
-// ---------------------------------------------------------------------------
 // CYMBAL - classic 6-square-wave metallic cymbal (808/909-style technique)
 // ---------------------------------------------------------------------------
-SynthDef(\cym, {|t_trig = 1, out=0, basefreq = 300, len = 0.25, amp=1, pan = 0|
+SynthDef(\cym, {|t_trig = 1, out=0, basefreq = 300, len = 0.25, amp=1, pan = 0, wet = 0, level = 1|
 
 // Six inharmonic ratios (an approximation of a bell/cymbal's partials),
 // scaled by basefreq.
@@ -241,10 +239,12 @@ SynthDef(\cym, {|t_trig = 1, out=0, basefreq = 300, len = 0.25, amp=1, pan = 0|
  	signal = RHPF.ar(signal, 6800, 1.5);
 	signal = RHPF.ar(signal, 6800, 1.5);
 	signal = RHPF.ar(signal, 1200, 1.5);
-	signal = signal + FreeVerb.ar(signal);
 	signal = signal * EnvGen.ar(Env([0, 1, 0.4, 0, 0], [0.002, len, 0.05, 0.5], [0, -0.5, 0, -50]), t_trig, doneAction:2);
 	signal = [signal, DelayN.ar(signal, 0.005, 0.005)];
 	signal = signal * (amp * 0.4);
+// ~allpassWash (see \hat's comment for the general default/caveat every
+// synth with this tail shares) rather than FreeVerb (an earlier mistake).
+	signal = ~allpassWash.(signal, wet, level);
 	Out.ar(out, signal);
 }).add;
 //Synth(\cym, [\basefreq, 1500, \len, 1]);
@@ -253,14 +253,13 @@ SynthDef(\cym, {|t_trig = 1, out=0, basefreq = 300, len = 0.25, amp=1, pan = 0|
 // ---------------------------------------------------------------------------
 // bass drum better
 // ---------------------------------------------------------------------------
-SynthDef(\baseD, {|t_trig = 1, basefreq = 55, rq = 0.1, overdrive = 2, samplen = 100, amp = 1, pan = 0, out = 0|
+SynthDef(\baseD, {|t_trig = 1, basefreq = 55, rq = 0.1, overdrive = 2, samplen = 100, amp = 1, pan = 0, out = 0, wet = 0, level = 1|
 	var output, failsafe, safetyTimeout, makeupgain = 3.5;
 
 	output = Trig.ar(t_trig,samplen/SampleRate.ir);
 	output = BPF.ar(output,basefreq,rq,amp*makeupgain);
 	output = (output * overdrive).tanh;
 	failsafe = FreeSelf.kr(Trig.kr(t_trig) * (amp <= 0));
-	DetectSilence.ar(output, time: 0.1, doneAction:2);
 // Hard cutoff: guarantees this synth frees within 3 seconds even if
 // DetectSilence never crosses its threshold (e.g. a very low rq ringing
 // almost indefinitely). Without this, a run of unlucky parameters lets
@@ -269,6 +268,14 @@ SynthDef(\baseD, {|t_trig = 1, basefreq = 55, rq = 0.1, overdrive = 2, samplen =
 // a fixed-duration envelope, not amplitude detection.
 	safetyTimeout = Line.kr(0, 0, 3, doneAction: 2);
 	output = Pan2.ar(output, pan);
+// ~allpassWash (see \hat's comment for the general default/caveat) rather
+// than FreeVerb (an earlier mistake). DetectSilence now watches the
+// POST-wash signal (moved below) rather than the dry `output` above, so a
+// nonzero wet's tail gets to ring out fully before this synth frees -
+// identical timing to before when wet=0, since the wash is then a bit-exact
+// no-op.
+	output = ~allpassWash.(output, wet, level);
+	DetectSilence.ar(Mix.ar(output), time: 0.1, doneAction: 2);
 	Out.ar(out, output);
 }).add;
 Synth(\baseD, [\basefreq, 180]);
@@ -277,11 +284,12 @@ Synth(\baseD, [\basefreq, 180]);
 // eli fm
 // ---------------------------------------------------------------------------
 // Multi use FM synth
+
 	SynthDef(\fm, {
 		arg freq=500, mRatio=1, cRatio=1,
 		index=1, iScale=5, cAtk=4, cRel=(-4),
 		amp=0.2, atk=0.01, rel=3, pan=0,
-		out=0, fx=0, fxsend=(-25);
+		out=0, fx=0, fxsend=(-25), wet=0, level=1;
 		var car, mod, env, iEnv;
 
 		//index of modulation
@@ -302,30 +310,25 @@ Synth(\baseD, [\basefreq, 180]);
 
 		car = Pan2.ar(car, pan);
 
-		//direct out/reverb send
-		Out.ar(out, car);
+		//direct out/reverb send - fx/fxsend unaffected by wet/level below,
+		//so BT1/BT2's own Wet/Level sliders (CT8guiPercGenerator.scd) don't
+		//change how loud this reaches the shared ~clockRev send; HT1/MT1
+		//never set wet/level, so this is a no-op for them (see ~allpassWash,
+		//above).
 		Out.ar(fx, car * fxsend.dbamp);
+
+		//this instrument's own tiny built-in reverb tail, same ~allpassWash
+		//~hat/\cym/\baseD/\kick already use - added for BT1/BT2's Wet/Level
+		//sliders, which need \fm to actually have a wet/level knob to turn.
+		car = ~allpassWash.(car, wet, level);
+		Out.ar(out, car);
 	}).add;
 
 
 
 
-    // REVERB PROCESSOR (legacy, unused) - replaced by \ELIreverb, below
-// ---------------------------------------------------------------------------
-// Persistent stereo reverb processor shared by sounds that send to ~revBus.
-// Still compiled/installed below; kept only for reference/comparison.
-SynthDef(\clockVerb, {
-    |inBus = 0, outBus = 0, mix = 0.22, room = 0.65, damp = 0.35|
-// Read two channels from the private reverb bus.
-    var sig = In.ar(inBus, 2);
-// Process left/right through SuperCollider FreeVerb2.
-    var wet = FreeVerb2.ar(sig[0], sig[1], mix, room, damp);
-    Out.ar(outBus, wet);
-}).add;
-
 // Modified from ELi
-// This is now the active persistent reverb (see ~setStartPbinds, CT8tracks.scd) -
-// \clockVerb, above, is left defined but unused.
+// This is now the active persistent reverb (see ~setStartPbinds, CT8tracks.scd).
 SynthDef(\ELIreverb, {
     arg in=0, out=0, dec=4, lpf=1500, mix=0.5;
     var dry, wet;
@@ -351,13 +354,12 @@ SynthDef(\ELIreverb, {
     Out.ar(out, XFade2.ar(dry, wet, mix.linlin(0, 1, -1, 1)));
 }).add;
 
+
 // ---------------------------------------------------------------------------
 // Incorporated from Ct8synthLab.scd (the user's standalone sound-experiment
-// file) - the interface for auditioning these now lives in
-// CT8guiSynthLab.scd. Not wired into ~availableSynths yet, so none of these
-// are selectable from the (disabled) Synth Controls window or usable by a
-// track builder yet - that's a separate step for whenever they're ready to
-// be used in a track, not assumed here.
+// file) - the interface for auditioning these lives in CT8guiSynthLab.scd.
+// Not used by any track builder yet - that's a separate step for whenever
+// they're ready to be used in a track, not assumed here.
 
 // Drone: 20 detuned sawtooth voices, each independently filtered and
 // amplitude-modulated by slow LFNoise, for a shifting cluster/pad texture.
@@ -435,7 +437,7 @@ SynthDef(\kick, { |out=0, pan=0, amp=0.5, curve=(-4),
     drumSweep=0.02, drumAtt=0.005, drumRel=0.4,
     drumFilter=1000, modIndex=6.5, modFreq=5,
     beaterFreq=500, beaterHarmonic=12, beaterSweep=0.03,
-    beaterAtt=0.01, beaterRel=0.3|
+    beaterAtt=0.01, beaterRel=0.3, wet=0, level=1|
     var drumEnv, drumContour, drum, beaterContour, beaterEnv, beater, snd;
     drumEnv = Env.perc(drumAtt, drumRel, drumAmp, curve).kr;
     drumContour = Line.kr(drumFreq * drumHarmonic, drumFreq, drumSweep);
@@ -446,8 +448,17 @@ SynthDef(\kick, { |out=0, pan=0, amp=0.5, curve=(-4),
     beater = HPF.ar(WhiteNoise.ar, beaterFreq);
     beater = LPF.ar(beater, beaterContour, beaterEnv);
     snd = Mix.ar(drum + beater) * amp;
-    DetectSilence.ar(snd, doneAction: 2);
-    Out.ar(out, Pan2.ar(snd, pan));
+    snd = Pan2.ar(snd, pan);
+// ~allpassWash (see \hat's comment for the general default/caveat) rather
+// than FreeVerb (an earlier mistake). DetectSilence now watches the
+// POST-wash signal (moved below) rather than the dry `snd` above, so a
+// nonzero wet's tail gets to ring out fully before this synth frees -
+// identical timing to before when wet=0, since the wash is then a bit-exact
+// no-op - mainly relevant to CT8guiTracksLab.scd/CT8guiSynthLab.scd, the
+// only two places that ever trigger \kick with wet above 0.
+    snd = ~allpassWash.(snd, wet, level);
+    DetectSilence.ar(Mix.ar(snd), doneAction: 2);
+    Out.ar(out, snd);
 }).add;
 
 // Drone chord: four simultaneous MIDI notes, eight slightly detuned sine

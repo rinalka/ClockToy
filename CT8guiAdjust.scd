@@ -12,13 +12,13 @@
 (
 
 ~makeAdjustWindow = {
-    var tempoSlider, tempoLabel, makeTrackButton, makeSoundButton, makeFlashButton, unbuiltColor;
+    var tempoSlider, tempoLabel, makeFlashButton, makeTrackButton, unbuiltColor;
     var realTimeButton, enteredTimeButton, updateSourceColors;
     var hourBox, minuteBox, refreshTime;
     var format12Button, format24Button, updateFormatColors;
     var minuteSecondsBox, updateSimSecondTime;
     var adjustWidth = 420;
-    var adjustHeight = 350;
+    var adjustHeight = 320;
     var gap = 10;
 // Stack this window directly below the clock window, using its actual
 // on-screen bounds rather than an unrelated hardcoded position.
@@ -60,17 +60,17 @@
         });
     ~adjustWindow.view.decorator.nextLine;
 
-// ROWS 2-5: track on/off, one button per track in ~trackNames (CT8tracks.scd) -
-// including tracks with no builder registered yet (PT4, HT2-4, MT2-4).
-// Toggling one of those on/off is harmless: ~setStartPbinds/~restartPbinds
-// already skip any track whose ~trackPatterns[name] is still nil, so it just
-// sits enabled-but-silent until a real builder gets registered for it.
-// Grouped into the same four categories as ~trackNames' own comments
-// (percussion/bass/harmony/melody). Tracks with no builder registered yet
-// (~trackBuilders[name].isNil) show orange in both states instead of
-// red/green - they can still be toggled (harmlessly, per the comment above),
-// but there's nothing audible either way, so the color says "not wired up
-// yet" rather than "off"/"on".
+// ROWS 2-3: track on/off, one button per track in ~trackNames (CT8tracks.scd) -
+// including tracks with no builder registered yet. Toggling one of those is
+// harmless: ~setStartPbinds/~restartPbinds already skip any track whose
+// ~trackPatterns[name] is still nil, so it just sits enabled-but-silent
+// until a real builder gets registered for it. Grouped into the same
+// categories as ~trackNames' own comments, minus percussion and bass -
+// PT1-4/BT1-2's on/off buttons live beside each track's name in the
+// Percussion Generator window now (CT8guiPercGenerator.scd), not here.
+// Tracks with no builder yet (~trackBuilders[name].isNil) show orange in
+// both states instead of red/green, since there's nothing audible either
+// way.
     unbuiltColor = Color.new255(255, 165, 0);
     makeTrackButton = { |name|
         var isBuilt = ~trackBuilders[name].notNil;
@@ -94,63 +94,6 @@
                 ~syncTrackPlayer.(name);
             });
     };
-
-// PT1/PT2 uniquely also drive the clock-face flash/background color from
-// inside their own Pbind (\updateGUI, CT8tracks.scd) - separate buttons (Snd
-// on the Perc row, Clr on their own Colour row below) rather than the one
-// combined on/off every other track still has, so sound and flash can be
-// silenced separately. ~trackEnabled[name] still gates sound (\type -> \rest
-// when off); the new ~trackFlashEnabled[name] gates the flash call - both go
-// through ~syncTrackPlayer, which keeps the shared EventStreamPlayer running
-// as long as either one is wanted (~trackShouldPlay, CT8tracks.scd).
-    makeSoundButton = { |name|
-        Button(~adjustWindow, 58@24)
-            .states_([
-                [(name.asString ++ " Snd"), Color.black, Color.red],
-                [(name.asString ++ " Snd"), Color.black, Color.green]
-            ])
-            .value_(if(~trackEnabled[name] == false) { 0 } { 1 })
-            .action_({ |b|
-                ~trackEnabled[name] = (b.value == 1);
-                ~syncTrackPlayer.(name);
-            });
-    };
-
-    makeFlashButton = { |name|
-        Button(~adjustWindow, 58@24)
-            .states_([
-                [(name.asString ++ " Clr"), Color.black, Color.red],
-                [(name.asString ++ " Clr"), Color.black, Color.green]
-            ])
-            .value_(if(~trackFlashEnabled[name] == false) { 0 } { 1 })
-            .action_({ |b|
-                ~trackFlashEnabled[name] = (b.value == 1);
-                ~syncTrackPlayer.(name);
-// Clear the flash overlay immediately when turned off, rather than waiting
-// for the next event to (not) flash - matches the old combined button's
-// behavior.
-                if(~trackFlashEnabled[name].not) {
-                    if(name == \PT1) {
-                        ~rowFlashActive = Array.fill(5, false);
-                        4.do { |i| ~digitPanel[i].refresh };
-                    };
-                    if(name == \PT2) {
-                        ~columnFlashActive = Array.fill(12, false);
-                        4.do { |i| ~digitPanel[i].refresh };
-                    };
-                };
-            });
-    };
-
-    StaticText(~adjustWindow, 40@24).string_("Perc");
-    makeSoundButton.(\PT1);
-    makeSoundButton.(\PT2);
-    ~trackNames.select({ |name| name.asString.beginsWith("PT") and: { (name == \PT1).not and: { (name == \PT2).not } } }).do(makeTrackButton);
-    ~adjustWindow.view.decorator.nextLine;
-
-    StaticText(~adjustWindow, 40@24).string_("Bass");
-    ~trackNames.select({ |name| name.asString.beginsWith("BT") }).do(makeTrackButton);
-    ~adjustWindow.view.decorator.nextLine;
 
     StaticText(~adjustWindow, 40@24).string_("Harm");
     ~trackNames.select({ |name| name.asString.beginsWith("HT") }).do(makeTrackButton);
@@ -203,6 +146,8 @@
             ~getColumnSegOrder.value;
             ~updatePbinds.value;
             ~restartPbinds.value;
+            ~rebuildFlashPatterns.value;
+            ~restartFlashPlayers.value;
         };
     };
 
@@ -243,6 +188,8 @@
         ~getColumnSegOrder.value;
         ~updatePbinds.value;
         ~restartPbinds.value;
+        ~rebuildFlashPatterns.value;
+        ~restartFlashPlayers.value;
         updateSourceColors.value;
     });
 
@@ -281,6 +228,8 @@
         ~getColumnSegOrder.value;
         ~updatePbinds.value;
         ~restartPbinds.value;
+        ~rebuildFlashPatterns.value;
+        ~restartFlashPlayers.value;
         updateFormatColors.value;
     });
 
@@ -293,17 +242,44 @@
         ~getColumnSegOrder.value;
         ~updatePbinds.value;
         ~restartPbinds.value;
+        ~rebuildFlashPatterns.value;
+        ~restartFlashPlayers.value;
         updateFormatColors.value;
     });
     ~adjustWindow.view.decorator.nextLine;
-    
 
-// ROW 9: PT1/PT2 flash/background color on/off - kept separate
-// from the other track rows, at the bottom of the window, since it's a
-// display-only toggle rather than a track like the rows above.
+
+// ROW 9: row/col clock-face flash on/off - independent of any track now
+// (~rowFlashEnabled/~colFlashEnabled/~syncFlashPlayer, CT8guiClock.scd);
+// on by default, stays on regardless of whether any track is making sound.
+    makeFlashButton = { |which, label|
+        var isEnabled = { if(which == \row) { ~rowFlashEnabled } { ~colFlashEnabled } };
+        Button(~adjustWindow, 70@24)
+            .states_([
+                [label, Color.black, Color.red],
+                [label, Color.black, Color.green]
+            ])
+            .value_(if(isEnabled.value == false) { 0 } { 1 })
+            .action_({ |b|
+                var enabled = (b.value == 1);
+                if(which == \row) { ~rowFlashEnabled = enabled } { ~colFlashEnabled = enabled };
+                ~syncFlashPlayer.(which);
+// Clear the flash overlay immediately when turned off, rather than waiting
+// for the next event to (not) flash.
+                if(enabled.not) {
+                    if(which == \row) {
+                        ~rowFlashActive = Array.fill(5, false);
+                    } {
+                        ~columnFlashActive = Array.fill(12, false);
+                    };
+                    4.do { |i| ~digitPanel[i].refresh };
+                };
+            });
+    };
+
     StaticText(~adjustWindow, 40@24).string_("Colour");
-    makeFlashButton.(\PT1);
-    makeFlashButton.(\PT2);
+    makeFlashButton.(\row, "Row Clr");
+    makeFlashButton.(\col, "Col Clr");
     ~adjustWindow.view.decorator.nextLine;
 };
 

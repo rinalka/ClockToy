@@ -7,7 +7,12 @@
 // conversion from that geometry into abstract musical events. Its central
 // product is ~clockEvents: an ordered Array of lit cells. Each event records a
 // row, panel, segment, and an abstract role (\rowStart or \cell). The tracks
-// file (CT8tracks.scd) decides what those roles sound like.
+// file (CT8tracks.scd) decides what those roles sound like; this file owns
+// what they look like, including the row/col flash players themselves
+// (~buildRowFlashPattern/~buildColFlashPattern and their lifecycle) - flashing
+// is independent of any track, on by default, switchable via
+// ~rowFlashEnabled/~colFlashEnabled regardless of whether PT1/PT2 are
+// producing sound.
 //
 // First of the three GUI files (CT8guiClock -> CT8guiAdjust -> CT8guiSynth),
 // which were split out of the original single CT8gui.scd. CT8main.scd's
@@ -479,6 +484,10 @@
             ~updatePbinds.value;
 // Start whichever tracks are enabled.
             ~restartPbinds.value;
+// Flashing is independent of any track now - rebuild/restart it in step
+// with the scan, same as the tracks above.
+            ~rebuildFlashPatterns.value;
+            ~restartFlashPlayers.value;
         }.defer; // Defer safely updates user-facing views on the main window thread
     };
 };
@@ -541,6 +550,112 @@
         };
         nil;
     });
+};
+
+
+// ---------------------------------------------------------------------------
+// ROW/COL FLASH PLAYERS (independent of any track)
+// ---------------------------------------------------------------------------
+// Visual-only Pbinds that walk ~clockEvents/~columnEvents on the shared
+// TempoClock, calling ~flashRow/~flashColumn in step - entirely separate
+// from PT1/PT2 (CT8tracks.scd), which only care about sound now. Flashing no
+// longer depends on any track existing or being enabled; these keep running
+// regardless of PT1/PT2's own on/off state. \type is always \rest - these
+// never spawn a synth, only drive the \updateGUI side effect (the standard
+// Event mechanism for "build this event's other keys as normal, but don't
+// spawn a synth for it" - see CT8tracks.scd's \type comment).
+~rowFlashEnabled = ~rowFlashEnabled ? true;
+~colFlashEnabled = ~colFlashEnabled ? true;
+
+~buildRowFlashPattern = {
+    var events = ~clockEvents ? [];
+    if(events.isEmpty) {
+        ~rowFlashPattern = Pbind(\dur, 1, \type, \rest);
+    } {
+        ~rowFlashPattern = Pbind(
+            \dur, 1,
+            \type, \rest,
+            \clockEvent, Pseq(events, inf),
+            \updateGUI, Pfunc { |event|
+                if(~rowFlashEnabled) {
+                    var cell = event[\clockEvent];
+                    {
+                        ~flashRow.value(cell[\row], cell[\panel], cell[\segment], Color.blue);
+                    }.defer;
+                };
+// Must return non-nil regardless of the branch above - a Pfunc yielding
+// bare nil is SC's stream-protocol signal for "this stream has ended",
+// which would silently kill this Pbind after just one event.
+                \flashed
+            }
+        );
+    };
+};
+
+~buildColFlashPattern = {
+    var events = ~columnEvents ? [];
+    if(events.isEmpty) {
+        ~colFlashPattern = Pbind(\dur, 1, \type, \rest);
+    } {
+        ~colFlashPattern = Pbind(
+            \dur, 1,
+            \type, \rest,
+            \clockEvent, Pseq(events, inf),
+            \updateGUI, Pfunc { |event|
+                if(~colFlashEnabled) {
+                    var cell = event[\clockEvent];
+                    {
+                        ~flashColumn.value(cell[\column], cell[\panel], cell[\segment], Color.black);
+                    }.defer;
+                };
+                \flashed
+            }
+        );
+    };
+};
+
+// Rebuild both flash patterns from the current scan - called alongside
+// ~updatePbinds everywhere that gets called (minute rollover, source/format
+// toggles), so flashing always matches what's currently lit.
+~rebuildFlashPatterns = {
+    ~buildRowFlashPattern.value;
+    ~buildColFlashPattern.value;
+};
+
+// Stop both flash players and clear their references - called by ~stopAll
+// (CT8tracks.scd) for full cleanup, and by ~restartFlashPlayers below.
+~stopFlashPlayers = {
+    if(~rowFlashPlayer.notNil) { ~rowFlashPlayer.stop; ~rowFlashPlayer = nil };
+    if(~colFlashPlayer.notNil) { ~colFlashPlayer.stop; ~colFlashPlayer = nil };
+};
+
+// Stop both flash players, then restart whichever is enabled - called
+// alongside ~restartPbinds everywhere that gets called.
+~restartFlashPlayers = {
+    ~stopFlashPlayers.value;
+    if(~rowFlashEnabled and: { ~rowFlashPattern.notNil } and: { t.notNil }) {
+        ~rowFlashPlayer = ~rowFlashPattern.play(t, quant: 1);
+    };
+    if(~colFlashEnabled and: { ~colFlashPattern.notNil } and: { t.notNil }) {
+        ~colFlashPlayer = ~colFlashPattern.play(t, quant: 1);
+    };
+};
+
+// Stop/conditionally-restart just one of the two flash players (\row or
+// \col) - used by the Colour row's buttons (CT8guiAdjust.scd) to toggle one
+// live without touching the other.
+~syncFlashPlayer = { |which|
+    if(which == \row) {
+        if(~rowFlashPlayer.notNil) { ~rowFlashPlayer.stop; ~rowFlashPlayer = nil };
+        if(~rowFlashEnabled and: { ~rowFlashPattern.notNil } and: { t.notNil }) {
+            ~rowFlashPlayer = ~rowFlashPattern.play(t, quant: 1);
+        };
+    } {
+        if(~colFlashPlayer.notNil) { ~colFlashPlayer.stop; ~colFlashPlayer = nil };
+        if(~colFlashEnabled and: { ~colFlashPattern.notNil } and: { t.notNil }) {
+            ~colFlashPlayer = ~colFlashPattern.play(t, quant: 1);
+        };
+    };
 };
 
 

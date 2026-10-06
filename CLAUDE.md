@@ -15,17 +15,18 @@ CT8 states, not active code — don't edit them, and don't treat them as current
 There is no build step; SuperCollider evaluates source directly in the IDE (blocks
 wrapped in parens `( ... )` are evaluated as a unit with Ctrl/Cmd+Enter).
 
-The project is split across `CT8synths.scd`, `CT8tracks.scd`, and five GUI files —
-`CT8guiClock.scd`, `CT8guiAdjust.scd`, `CT8guiSynth.scd`, `CT8guiSynthLab.scd`,
-`CT8fakeData.scd` — but `CT8main.scd` loads all seven itself, in that order, via
-`~loadAllCt8Files` (built on `thisProcess.interpreter.executeFile`, at the top of the
-file). From a cold start (fresh boot, or after a crash), evaluating just `CT8main.scd` is
-the entire startup procedure — it loads everything else itself, then boots the audio
-server and starts playback. If a file fails to load (e.g. a syntax error introduced
-mid-edit), it throws an `Error` pointing back at the post-window output above it.
+The project is split across `CT8synths.scd`, `CT8harmonySelect.scd`, `CT8tracks.scd`, and
+five GUI files — `CT8guiClock.scd`, `CT8guiAdjust.scd`, `CT8guiPercGenerator.scd`,
+`CT8guiSynthLab.scd`, `CT8fakeData.scd` — but `CT8main.scd` loads all eight itself, in
+that order, via `~loadAllCt8Files` (built on `thisProcess.interpreter.executeFile`, at
+the top of the file). From a cold start (fresh boot, or after a crash), evaluating just
+`CT8main.scd` is the entire startup procedure — it loads everything else itself, then
+boots the audio server and starts playback. If a file fails to load (e.g. a syntax error
+introduced mid-edit), it throws an `Error` pointing back at the post-window output above
+it.
 
 To reload just one file after editing it (without re-running all of `CT8main.scd`), call
-`~loadCt8File.("CT8guiSynth.scd")` (or whichever filename) directly.
+`~loadCt8File.("CT8guiPercGenerator.scd")` (or whichever filename) directly.
 
 To make a live edit take effect:
 - Editing a function body in any file: re-evaluate that whole file (or use
@@ -35,13 +36,27 @@ To make a live edit take effect:
 - Editing `CT8synths.scd`'s SynthDefs specifically: re-evaluating the file re-installs
   them on the already-running server immediately (see the `if(s.serverRunning and: ...)`
   guard at the bottom of that file).
-- Changing runtime parameters (tempo, 12/24-hour, real vs. simulated time, per-track
-  on/off for all 13 tracks) can also be done live via the "Clock Toy Adjust" window,
-  without re-evaluating any file. Synth Controls is currently disabled (see below)
-  pending a rewrite, so which synth plays which role on `PT1`/`PT2` is for now only
-  changeable by editing `CT8tracks.scd` directly. There is no live GUI for `~clockRev`'s
-  reverb parameters either (the old Reverb Controls window was removed, not just
-  disabled) — adjust `~reverbDec`/`~reverbLpf`/`~reverbMix` in `CT8synths.scd` directly.
+- Changing runtime parameters (tempo, real vs. simulated time, 12/24-hour format,
+  per-track sound on/off, and row/col clock-face flash on/off) can all be done live via
+  the "Clock Toy Adjust" window, without re-evaluating any file. All four percussion
+  tracks (`PT1`-`PT4`) and both bass tracks (`BT1`-`BT2`) have their
+  instrument/pattern/pitch/volume/wet/level/source configured live via the separate
+  "Percussion + Bass Generator" window (`CT8guiPercGenerator.scd`) instead — see its own
+  bullet below; that window is now the only live amp control for those six tracks, the
+  "Synth Controls" window having been removed entirely (it had gone fully vestigial -
+  see `CT8tracks.scd`'s bullet), and also the only live control for their individual
+  built-in reverb tail (Wet/Level, `~percWet[name]`/`~percLevel[name]` for PT1-4,
+  `~bassWet[name]`/`~bassLevel[name]` for BT1-2 - separate from `~clockRev`, which
+  PT1-4 never reach anyway; see `CT8synths.scd`'s `~allpassWash` bullet). There is no
+  live GUI for `~clockRev`'s own reverb parameters either (the old Reverb Controls
+  window was removed, not just disabled) — adjust `~reverbDec`/`~reverbLpf`/`~reverbMix`
+  in `CT8synths.scd` directly. The Synth Lab window (`CT8guiSynthLab.scd`) has its own
+  "tune while it plays" mechanism: a Loop toggle + speed slider that keeps retriggering
+  the selected instrument so short/percussive synths (`\hat`/`\cym`/`\baseD`/`\kick`)
+  stay audible long enough to hear a slider move, including each one's own `\wet`/
+  `\level` sliders - it is deliberately standalone, not connected to the live
+  composition at all; its purpose is to audition/tune settings before dialing the same
+  values into the Percussion + Bass Generator by hand.
 
 `CT8main.scd` hardcodes the audio device as `"ASIO : Focusrite USB ASIO"` — on a machine
 without that interface, `s.boot` will fail; change `s.options.device` accordingly.
@@ -50,42 +65,169 @@ There is no automated test suite; verification is by ear/eye (run it and watch/l
 
 ## Architecture
 
-Eight files, coordinated entirely through interpreter environment variables (`~name`
+Nine files, coordinated entirely through interpreter environment variables (`~name`
 globals) rather than explicit module interfaces — changing a function's name or the
 shape of shared state requires grepping all files for consumers, not just the one that
 defines it. `CT8synths.scd` and `CT8tracks.scd` used to be one file (`CT8syn.scd`), split
 so "what sounds exist" and "how tracks are built" can be worked on independently — see
 their own bullets below for exactly where the line falls:
 
-- **`CT8guiClock.scd`** — owns clock geometry, the seven-segment display window, and the
-  scan from lit segments into abstract events. Its central product is `~clockEvents`
-  (row-based scan) and `~columnEvents` (column-based scan): ordered arrays of
-  `(row/column, panel, segment, role)` events, where `role` is an abstract tag like
-  `\rowStart`/`\cell` or `\columnStart`/`\columnCell` — never a sound name. Also owns
-  `~checkForNewMinute` (polled by main's TempoClock) and the flash/redraw functions
-  (`~flashRow`, `~flashColumn`, `~drawDigit`, `~drawPanel`).
+- **`CT8guiClock.scd`** — owns clock geometry, the seven-segment display window, the scan
+  from lit segments into abstract events, and the clock-face flashing itself. Its central
+  product is `~clockEvents` (row-based scan) and `~columnEvents` (column-based scan):
+  ordered arrays of `(row/column, panel, segment, role)` events, where `role` is an
+  abstract tag like `\rowStart`/`\cell` or `\columnStart`/`\columnCell` — never a sound
+  name. Also owns `~checkForNewMinute` (polled by main's TempoClock), the flash/redraw
+  functions (`~flashRow`, `~flashColumn`, `~drawDigit`, `~drawPanel`), and the row/col
+  flash *players* themselves (see below) — flashing is a property of the clock display,
+  not of any track, and keeps running independent of whether `PT1`/`PT2` exist or are
+  making sound.
 
 - **`CT8guiAdjust.scd`** — the "Clock Toy Adjust" window: tempo (a slider fixed to
-  60-240 BPM, with a label showing the current value), per-track on/off (one button per
-  track in `~trackNames`, grouped into percussion/bass/harmony/melody rows - including
-  tracks with no builder yet, shown orange and enabled-but-silent), real-time vs.
-  entered-time source, hour/minute/simulated-minute-length entry, and 12/24-hour format.
-  `PT1`/`PT2` each get two buttons instead of one, on two different rows: a Snd button
-  (`makeSoundButton`, `~trackEnabled[name]`) on the Percussion row, and a Clr button
-  (`makeFlashButton`, `~trackFlashEnabled[name]`) on a dedicated Colour row kept at the
-  very bottom of the window, separate from the track rows - so their sound and their
-  clock-face flash/background color can be silenced independently; see
-  `~trackShouldPlay`/`~syncTrackPlayer` (CT8tracks.scd) for how the shared player keeps
-  running for either.
+  60-240 BPM, with a label showing the current value), per-track sound on/off (one button
+  per track in `~trackNames`, grouped into harmony/melody rows - `makeTrackButton`,
+  via `~syncTrackPlayer` - including tracks with no builder yet, shown orange and
+  enabled-but-silent), real-time vs. entered-time source, hour/minute/simulated-minute-
+  length entry, 12/24-hour format, and a Colour row with two buttons (Row Clr / Col Clr,
+  `makeFlashButton`) toggling `~rowFlashEnabled`/`~colFlashEnabled` (CT8guiClock.scd) via
+  `~syncFlashPlayer`. No percussion or bass row any more - `PT1`-`PT4`/`BT1`-`BT2`'s
+  on/off buttons moved to the Percussion + Bass Generator window
+  (`CT8guiPercGenerator.scd`), next to each track's name, since that window is otherwise
+  the sole home for everything else about those six tracks.
 
-- **`CT8guiSynth.scd`** — the "Synth Controls" window: two pairs of dropdown menus (Row
-  Start/Cell, Col Start/Cell) to assign *any* installed synth to any of the four role
-  slots, live, plus one control row per synth in `~availableSynths` (CT8synths.scd),
-  generated generically from that table. **Currently disabled** — `CT8main.scd` no longer
-  calls `~makeSynthWindow`, pending a rewrite ("an all new method"); the function/file
-  still loads and works if called manually, but the four role-assignment defaults it used
-  to set (`~rowStartSynth`/`~rowCellSynth`/`~colStartSynth`/`~colCellSynth`) now live in
-  `CT8tracks.scd` instead, so `PT1`/`PT2` keep working without this window.
+- **`CT8guiPercGenerator.scd`** — the "Percussion + Bass Generator" window
+  (`~makePercGeneratorWindow`, dark-themed to match `CT8guiSynthLab.scd`): live control
+  over how each of `PT1`/`PT2`/`PT3`/`PT4` (via `makeTrackSection`) and `BT1`/`BT2` (via
+  `makeBassTrackSection`, a separate but near-identical closure - see its own paragraph
+  below) gets generated, independently, via one repeated multi-row control block per
+  track, each block its own `CompositeView` (`trackContainer`) sitting on a
+  randomly-rolled muted background color (`Color.rand(0.7)`, re-rolled fresh every time
+  the window is built - the same convention `CT8fakeData.scd` uses for its Actions
+  plotter panel) purely to visually separate the blocks; label text inside each block is
+  black (`labelColor`), not the window's own white, for contrast against it. The window
+  is `resizable: true` (unlike its PT1-4-only predecessor) and tall enough for all six
+  blocks plus header/buttons, in case a shorter screen still can't show all of it at
+  once.
+  PT1-4's blocks come first, under a "PERCUSSION + BASS GENERATOR (PT1-PT4, BT1-BT2)"
+  header; BT1-2's come after, under their own "BASS GENERATOR (BT1-BT2)" sub-heading.
+  Row 1 of every block is Name + an on/off `Button` (`onOffButton`, red/green, same
+  convention as the per-track buttons `CT8guiAdjust.scd` used to have for `PT1`-`PT4`/
+  `BT1`-`BT2` - moved here, beside the name, since this window is already the sole home
+  for everything else about those six tracks; every percussion and bass track always
+  has a builder now, so unlike the old `CT8guiAdjust.scd` buttons there's no
+  orange/unbuilt case to handle). Row 2 is Source
+  (Row scan vs. Column scan) + Instrument (`\baseD`/`\cym`/`\hat`/`\kick`) + Wet/Level
+  (`~percWet[name]`/`~percLevel[name]`, that instrument's own tiny built-in
+  `~allpassWash` tail - see `CT8synths.scd`'s bullet; separate from the `~clockRev` send
+  every other track uses, and the only two of this row's controls that are read live via
+  `Pfunc` rather than needing a rebuild). Each is a plain `Slider` (`wetSlider`/
+  `levelSlider`) + a `StaticText` readout (`wetReadout`/`levelReadout`), not a
+  `NumberBox` - both are already native 0-1 ranges, so `sl.value` needs no log/exp mapping;
+  the readouts mirror their sliders as text since `Slider` has no numeric display of its
+  own (same reason `CT8guiAdjust.scd`'s tempo slider has its own label) - replaced a single
+  Mix slider driving `FreeVerb`, which turned out to be a mistake (see `CT8synths.scd`'s
+  bullet). Row 3 is Pattern; row 4 is Pitch; row 5 is Volume. Pattern is one flat list of
+  ten choices (an
+  earlier version grouped the split patterns under a Pattern menu plus a nested Variant
+  sub-menu, but that menu-within-a-menu was both confusing and, per feedback, buggy - its
+  controls only ever rendered once - so each combination now gets its own top-level entry
+  instead): First beat only; Every beat; Start of Row/Col (label tracks whichever Source
+  is selected, `\startOnly`); Random 1/8th % / Random 1/3 %
+  (`\random8thPercent`/`\random3rdPercent` - `~percSplitPercent[name]`% of beats become a
+  double hit/triplet, re-rolled fresh every rebuild - the only behavior that existed
+  before this list was flattened, hardcoded at 1/3 for 1/8th and 1/4 for 1/3); Random
+  1/8th (last of bar) / Random 1/3 (last of bar) (`\random8thLastBar`/`\random3rdLastBar`
+  - only the bar's very last beat, deterministic, every bar); Random 1/8th (last of
+  row/col) / Random 1/3 (last of row/col) (`\random8thLastRowCol`/`\random3rdLastRowCol`
+  - only the last beat of every row/column span, deterministic); Random skip!
+  (`\randomSkip` - ~1/4 of beats go silent, span unchanged, re-rolled fresh every rebuild
+  - not affected by `~percSplitPercent[name]`, which only applies to the six split
+  patterns). The Percent box (`percentBox`, plus its `percentLabel`) beside the Pattern
+  menu is built once, up front, and just toggled with `.visible_` (`
+  updatePatternPercentVisibility`, called whenever the Pattern menu changes) rather than
+  removed and recreated on every change the way an earlier version did - that version's
+  controls stopped reappearing after the first time, apparently a repaint issue with
+  dynamically adding children to an already-laid-out `CompositeView` rather than a logic
+  bug (the rebuild fired correctly every time, it just didn't always redraw), so this
+  sidesteps it by never removing the widgets at all. Pitch and Volume (below) both use
+  a different, also-proven-safe technique instead: a fixed-size placeholder
+  `CompositeView` whose children get removed and rebuilt from scratch on every mode
+  change (`pitchValuesView`/`rebuildPitchValues`, `volumeValuesView`/
+  `rebuildVolumeValues`) - safe here specifically because the *placeholder's own* size
+  never changes, so the parent `trackContainer`'s flow layout only ever sees one
+  fixed-width child regardless of what's inside it. Volume used to be built as two
+  full sibling widget sets directly in `trackContainer`, toggled with `.visible_` like
+  the Percent box - but unlike the Percent box's single extra pair, having BOTH the
+  Fixed slider AND the two Alternate sliders present as hidden-but-still-reserving-space
+  siblings meant the row's total flow width always included both sets, so Alternate's
+  two sliders didn't actually fit on the row even though only one set was ever visible -
+  switching to the placeholder-container technique fixed it, since now only the
+  currently-needed widgets exist at all. Pitch: Fixed (one Pitch box) / Rising
+  at start (Base pitch + Pitch step, unchanged from before) / Random (all 4 of
+  `~percRandomPitches[name]`, each hand-set - a future step will turn these into a
+  chord-aware pick, for now each hit just independently picks one of the 4) - **known
+  issue, deliberately not being chased**: something about this row is currently wrong per
+  feedback, not investigated, since all three Pitch modes (and Volume, next) are
+  considered placeholders due for a wholesale rework once the non-percussion tracks get
+  real chord-based pitch, which will likely inform `PT1`-`PT4` picking from a small set of
+  hand-built "chords" per instrument instead - see `CT8tracks.scd`'s PERCUSSION GENERATOR
+  CONFIG comment. Volume: Fixed (one Volume `Slider`) / Alternate (two, `Vol A`/`Vol B`,
+  `~percVolumeLevels[name]`, which `~buildPercPattern` alternates between every sounding
+  hit) - `Slider`s rather than `NumberBox`es now (per feedback), mapped to the actual 0-4
+  range via `linlin`, same technique `CT8guiAdjust.scd`'s tempo slider uses for 60-240
+  BPM; each slider has its own text readout since `Slider` has no numeric display of its
+  own. This is now the only live amp control for `PT1`-`PT4`, replacing the removed Synth
+  Controls window's per-synth amp slider - but like Pitch, is itself a placeholder
+  pending the same future chord-based rework. Formerly
+  `CT8guiPT1Generator.scd`, PT1-only; generalized once PT2's old
+  two-synth-role system and PT3's old hand-tuned `~snareTemplate` were both replaced by the
+  same generic mechanism PT1 already used (see `~buildPercPattern`, `CT8tracks.scd`). Owns
+  no generation logic itself - just sets each track's `~percSource`/`~percInstrument`/
+  `~percPattern`/`~percPitchMode`/`~percBasePitch`/`~percPitchStep`/`~percRandomPitches`/
+  `~percVolumeMode`/`~percVolume`/`~percVolumeLevels`/`~percWet`/`~percLevel`/
+  `~percSplitPercent` entry (CT8tracks.scd), which `~buildPercPattern` reads fresh on
+  every rebuild. A control
+  change only updates its global, deliberately *not* rebuilding/restarting that track
+  immediately - doing that would desync it from every other track, the same problem
+  `CT8guiTracksLab.scd` hit and fixed by waiting for a shared rebuild point. The change
+  takes effect at the clock's next natural rebuild automatically, or immediately via the
+  "Apply now" button, which reruns the full `~stopPbinds`/`~updatePbinds`/`~restartPbinds`
+  cycle (every track together) so nothing falls out of phase - and also `~rebuildFlashPatterns`/
+  `~restartFlashPlayers` (CT8guiClock.scd), so the row/col flash restarts in lockstep with
+  the Pbinds instead of continuing on its old schedule until the next natural minute
+  rollover quietly resynced it (every other full-rebuild trigger in the project already
+  did both; Apply now originally didn't, which is what caused that symptom). A second
+  "Reset to defaults" button calls `~resetPercConfig` (CT8tracks.scd) for every
+  percussion track AND `~resetBassConfig` for every bass track - unlike that file's own
+  `?`-based initialization (which only fills in a value the first time, so tuning
+  survives a re-evaluation), these unconditionally overwrite every `~percX[name]`/
+  `~bassX[name]` back to its original default - then rebuilds this whole window from
+  scratch (a plain re-call of `~makePercGeneratorWindow`, since the button's own closure
+  belongs to the window instance about to be replaced) and applies immediately the same
+  way Apply now does.
+
+  `makeBassTrackSection` (`BT1`/`BT2`'s block) mirrors `makeTrackSection` closely enough
+  that it's kept as its own closure rather than parameterizing one function over both -
+  the two tracks' choices differ enough (instrument list, pattern list, pitch units and
+  mode count) that threading all of it through one shared function would need about as
+  many parameters as just writing the block twice. Differences from PT1-4's version:
+  Instrument is `\fm`/`\plucking` instead of baseD/cym/hat/kick (both newly given their
+  own `\wet`/`\level` args + `~allpassWash` tail for this - see `CT8synths.scd`'s
+  bullet); Pattern is the same nine choices minus `\firstBeat` (not a useful choice for
+  a bass part, per feedback); Pitch only has Fixed (one Pitch box, in MIDI note numbers,
+  not Hz - both instruments take a plain `\midinote` key, a plain, non-chord-aware value)
+  and Random (no extra boxes - picks a tone from `~currentChord`
+  (`CT8harmonySelect.scd`) via `~chordNoteInRange`, constrained to a fixed,
+  not-yet-adjustable range "below middle C" (`~bassRandomPitchLo`/`~bassRandomPitchHi`,
+  `CT8tracks.scd`) - same helper/global `HT1`/`MT1` use, just read once per rebuild
+  rather than live per-hit, so a mid-bar chord change isn't heard here until this
+  track's next rebuild; no Rising mode). Volume is identical to PT1-4's own
+  Fixed/Alternate pair. Sets each track's `~bassSource`/`~bassInstrument`/`~bassPattern`/
+  `~bassPitchMode`/`~bassBasePitch`/`~bassVolumeMode`/`~bassVolume`/`~bassVolumeLevels`/
+  `~bassWet`/`~bassLevel`/`~bassSplitPercent` entry (CT8tracks.scd), which
+  `~buildBassTrackPattern` reads fresh on every rebuild - same "only updates the global,
+  never rebuilds immediately" discipline as PT1-4's controls, and the same Apply
+  now/Reset to defaults buttons cover both track sets together.
 
 - **`CT8guiSynthLab.scd`** — the "Endless Synth - Sound Lab" window (`~makeSynthLabWindow`):
   a standalone instrument-audition panel, incorporated from a separate file the user
@@ -93,20 +235,52 @@ their own bullets below for exactly where the line falls:
   every one of its params gets a slider with live numeric readout (`makeSlider`, generic
   over each `specs` entry's `[name, default, lo, hi, curve]`); some params (not envelope
   segment timings or the pluck excitation) update the currently-sounding note live via
-  `currentSynth.set`. Entirely self-contained: its own private stereo bus/Groups/
-  `\allpassReverb` instance (`revBus`/`sourceGroup`/`fxGroup`/`reverb`, all local vars),
-  completely separate from the project's shared `~revBus`/`~clockRev` - nothing played
-  here reaches or affects the live clock composition. `~synthLabWindow` and `~stopSynthLab`
-  (the only two globals this file needs) follow the same close-on-CmdPeriod convention as
-  `~adjustWindow`/`~synthWindow`, except `~stopSynthLab` also frees the
+  `currentSynth.set`. A LOOP toggle + interval number box repeatedly re-fires the
+  currently-selected instrument on an `AppClock`-scheduled self-reschedule (same
+  keep-going/return-nil-to-stop idiom as `~checkForNewMinute`/`~tempoChange`) so
+  short/percussive synths (`\hat`/`\cym`/`\baseD`/`\kick`, which free themselves almost
+  instantly) stay audible long enough to actually hear a slider move - STOP NOTES and
+  `~stopSynthLab` both turn the loop off too, so it never outlives the notes it's
+  retriggering or the window itself. Entirely self-contained: its own private stereo bus/
+  Groups/`\allpassReverb` instance (`revBus`/`sourceGroup`/`fxGroup`/`reverb`, all local
+  vars), completely separate from the project's shared `~revBus`/`~clockRev` - nothing
+  played here reaches or affects the live clock composition. `~synthLabWindow` and
+  `~stopSynthLab` (the only two globals this file needs) follow the same close-on-CmdPeriod
+  convention as `~adjustWindow`/`~percGeneratorWindow`, except `~stopSynthLab` also frees the
   private Groups/Bus, not just the window - `CT8main.scd`'s `~closeWindowsOnCmdPeriod`
-  calls it accordingly. Plays `\drone`/`\lead`/`\seq`/`\noise`/`\kick`/`\droneChord`
-  directly from `CT8synths.scd`, but keeps its own `\labPlucking`/`\labHat`/`\labCym`
-  variants defined locally (bug-fixed, single-`out`-bus versions of this project's
-  `\plucking`/`\hat`/`\cym`, replumbed for the lab's one-bus-per-instrument convention
-  rather than those three's real dry+`~revBus`-send design) rather than reusing the real
-  ones, to avoid an `outbus`-vs-`out` arg-name mismatch that would have silently routed
-  around the lab's reverb bus.
+  calls it accordingly. Plays `\drone`/`\lead`/`\seq`/`\noise`/`\kick`/`\droneChord`/
+  `\baseD` directly from `CT8synths.scd` (`\baseD` already uses a single `out` arg with no
+  hardcoded extra reverb-send line, so it's directly compatible with this lab's bus
+  convention), but keeps its own `\labPlucking`/`\labHat`/`\labCym` variants defined
+  locally (bug-fixed, single-`out`-bus versions of this project's `\plucking`/`\hat`/
+  `\cym` - `\plucking` specifically needed replumbing away from the real one's two-output
+  dry+`~revBus`-send design for the lab's one-bus-per-instrument convention; `\hat`/`\cym`
+  didn't have that problem, but keep their own copies anyway, consistent with the split)
+  rather than reusing the real ones, to avoid an `outbus`-vs-`out` arg-name mismatch that
+  would have silently routed around the lab's reverb bus. `\hat`/`\cym`/`\baseD`/`\kick`
+  all now also take `\wet`/`\level` args (their own tiny built-in `~allpassWash` tail -
+  see `CT8synths.scd`'s bullet below); `\labHat`/`\labCym` had to be hand-updated to match
+  since nothing shares *SynthDef* code across this split, but both now call
+  `~allpassWash` directly rather than hand-copying its body - it's a plain helper
+  function with no bus assumptions baked in, not a SynthDef, so reusing it isn't the kind
+  of sharing this split otherwise avoids. `\baseD`/`\kick` didn't need hand-updating,
+  since this lab plays those two real SynthDefs directly already. `\fm` got the same
+  `\labX`-variant treatment for a different reason: real `\fm`'s only reverb path used to
+  be a hardcoded `fx`/`fxsend` send this lab's `trigger` never sets - playing real `\fm`
+  here directly would leak a quiet, unprocessed copy of every note straight to hardware
+  bus 0 (`fx`'s default), bypassing the lab's private reverb bus entirely. (Real `\fm` has
+  since also gained its own `\wet`/`\level`/`~allpassWash` tail - added for `BT1`/`BT2`'s
+  Wet/Level sliders, see `CT8synths.scd`'s bullet below - but that doesn't change this
+  lab's `fx`/`fxsend` leak concern, which is independent of it.) `\labFm` drops
+  `fx`/`fxsend` and adds its own `\wet`/`\level` - `~allpassWash` (CT8synths.scd) -
+  instead, same as every other `\labX` variant now (it briefly used `FreeVerb` like they
+  did, by the same mistake, since fixed); real `\fm` is otherwise untouched, since
+  `HT1`/`MT1` still depend on its `fx`/`fxsend` send to reach `~clockRev`. Its `specs`
+  entry's ranges are deliberately
+  wider than its own SynthDef defaults - wide enough to cover every real-track preset
+  already in the project (`HT1`/`MT1`'s current values, and old `PT3`'s now-retired
+  snare patch) - since the point of tuning here is finding values to hand-copy into
+  `CT8tracks.scd`, not just staying within `\fm`'s own defaults.
 
 - **`CT8fakeData.scd`** — standalone (not part of the CT8synths/CT8tracks dependency
   chain), a mocked-up input-data panel for the planned "Daily Piece" generative mode (see
@@ -114,51 +288,163 @@ their own bullets below for exactly where the line falls:
   (Actions, Heart Rate, Mood, Weather) standing in for real 24-hour data tables, scaled
   down to a few minutes for quick iteration.
 
+- **`CT8harmonySelect.scd`** (new, in progress) — owns the shared harmonic concept the
+  rhythm/harmony and melody tracks (`HT1`-`4`, `MT1`-`4`) are meant to eventually generate
+  around: a "current chord" those tracks pick notes from, rather than each inventing its
+  own pitch material independently (`PT1`-`4` are unaffected, staying on the Percussion
+  Generator's own Pitch modes; `BT1`-`2` moved onto the generic Bass Generator config -
+  see `CT8tracks.scd`'s BASS GENERATOR CONFIG bullet - but still read `~currentChord`
+  from here for their own Random pitch mode, just once per rebuild rather than live).
+  `~chords[set][chordIndex]` is one
+  3- or 4-note chord, written as real MIDI note numbers already in one specific octave
+  (4 chord sets: C major/minor triads, C major/minor 7ths) - each entry's chord name
+  (`C`, `Dm7`, `Bdim`, etc.) lives only as a trailing `//` comment there, so
+  `~chordNames[set][chordIndex]` is a second table in the exact same `[set][chordIndex]`
+  shape holding those same names as actual strings, purely so logging (below) can print
+  one - kept in sync with `~chords` by hand, since nothing can read a comment back at
+  runtime. `~chordNoteInRange.(chord, lo,
+  hi)` is the one real consumer-facing function so far - picks a tone from `chord` at
+  random, reduces it to a pitch class (`% 12`), then picks again at random among every
+  octave of that pitch class inside `[lo, hi]` inclusive, so "which note" and "which
+  octave" are two independent random choices. `~currentChord` is the one shared "current
+  chord" global. Read LIVE, not snapshotted into a local var, by `~buildHarmonyPattern`/
+  `~buildMelodyPattern` (`HT1`/`MT1`, `CT8tracks.scd`); `~buildBassTrackPattern`
+  (`BT1`/`BT2`) also reads it, for their Random pitch mode specifically, but only once
+  per rebuild - initialized as a plain assignment (`~chords[2][1]`),
+  not `?`-guarded like the GUI-tunable `~percX` globals, so re-evaluating this file always
+  resets it to that exact chord again; that initial value only matters until the first bar
+  ends, though. `~chordMarkov` (a second-order Markov table keyed by
+  `[secondLastChord, lastChord]`, chords numbered 1-7) and `~nextChord` (walks that table,
+  falling back to a flat weighted choice for any `[prev,prev]` pair it has no entry for)
+  are the chord-progression engine; `~chordSet` is `2` (the 4-note chord set - `HT1`/`MT1`
+  both play 4 notes at a time), read fresh inside `~nextChord` every call, not cached, so
+  changing it takes effect on the very next chord. `~nextChord` also now writes
+  `~currentChordNumber` (the raw 1-7 Markov chord number it picked, before the `- 1` that
+  turns it into an array index) as a global rather than a local - purely so something
+  outside `~nextChord` can report it; nothing reads it back for logic. `~checkForNewChordBar`
+  is what actually *advances* `~currentChord` - a plain beat counter
+  (`~chordBarBeatCount`), completely independent of any one track's own Pbind (it used to
+  live inside `~buildMelodyPattern`'s own `\midinote` `Pfunc`, an arbitrary coupling since
+  nearly every chord-aware track reads `~currentChord`, not just `MT1`): once
+  `~chordBarBeatCount` reaches `~numBeats` (the same row-scan bar length `PT1`/`HT1` play
+  on, re-read fresh each call so it tracks a bar length that changes mid-progression) it
+  resets to 0, calls `~nextChord.value`, reassigns `~currentChord`, and posts its name
+  (`~chordNames[~chordSet][~currentChordNumber - 1]`) alongside the raw `~currentChord`
+  array, `~chordSet`, and the actual array index (`~currentChordNumber - 1`) it came from
+  - so the Markov table's behavior can be read and verified from the post window at a
+  glance, by name, not just by number. Scheduled from
+  `CT8main.scd`'s boot sequence via a second `t.sched(0, {...; 1})` call, the same
+  repeating-check idiom `~checkForNewMinute` already uses, once per beat. Loads right
+  after `CT8guiClock.scd` and before `CT8tracks.scd`, since `~buildHarmonyPattern`/
+  `~buildMelodyPattern` need `~chords`/`~currentChord`/`~chordNoteInRange` to already
+  exist (though only at the point their builder is actually *called*, not at file-load
+  time, so the ordering constraint is looser than it looks).
+
 - **`CT8synths.scd`** — owns everything sound-*generating*: SynthDefs (`\plucking`,
   `\hat`, `\baseD`, `\cym`, `\fm`, `\ELIreverb`, `\drone`/`\lead`/`\seq`/`\noise`/`\kick`/
-  `\droneChord`/`\allpassReverb` (incorporated from the user's Sound Lab file - not yet
-  wired into `~availableSynths`/any track, auditioned via `CT8guiSynthLab.scd` for now),
-  plus legacy/unused `\bassDrum`/`\shortWhistle`/`\clockVerb`), the `~availableSynths` table (`[synthName, [paramName,
-  lo, hi, default, step], ...]`) that drives both the Synth Controls window and
-  `~getSynthParam` (the lookup `CT8tracks.scd`'s Pbinds use to read live parameter
-  values), and the reverb's own live-adjustable `~reverbDec`/`~reverbLpf`/`~reverbMix`
-  (separate from `~availableSynths`/`~synthParams`, since `~clockRev` is one long-running
-  Synth rather than a per-note one). Knows nothing about tracks, patterns, or the clock
-  face - globals are declared before any function, so `~availableSynths` and the reverb
-  defaults are visible at a glance. `\fm` is a multi-use FM synth brought in from another
-  project — not wired into `~availableSynths` (so it isn't selectable from the Synth
-  Controls window's Row/Col menus, and doesn't get live per-parameter knobs); `CT8tracks.scd`
-  uses it directly for `PT3`/`HT1`/`MT1`/`BT1`, each with FM params hardcoded rather than
-  read from a shared table. `\fm`'s `fx` (reverb-send) arg must be passed explicitly as
-  `~revBus` (wrapped in `Pfunc { ~revBus }` inside a Pbind, since a bare Bus value in a
-  Pbind key is suspect — see `~buildRowPattern`'s `\fx` comment, CT8tracks.scd), since a
-  SynthDef default can't reference a bus that doesn't exist until the server boots.
+  `\droneChord`/`\allpassReverb` - incorporated from the user's Sound Lab file, not yet
+  used by any track, auditioned via `CT8guiSynthLab.scd` for now; the legacy/unused
+  `\bassDrum`/`\shortWhistle`/`\clockVerb` that used to live here too have been deleted
+  outright, not just left unused, since nothing referenced them), `~allpassWash` (a plain
+  helper function, not a SynthDef - a chain of 10 `AllpassN` filters crossfaded against
+  the dry signal by `wet` and scaled by `level`, same algorithm `\allpassReverb` itself
+  uses but inline rather than reading from a bus; `level` defaults to 1 here, not
+  `\allpassReverb`'s own 0.6, so `wet=0, level=1` is truly a no-op), and the reverb's own
+  live-adjustable `~reverbDec`/`~reverbLpf`/`~reverbMix` (for `~clockRev`, one
+  long-running Synth rather than a per-note one). `\hat`/`\cym`/`\baseD`/`\kick`/`\fm`/
+  `\plucking` each call `~allpassWash` on their own output now for a tiny built-in reverb
+  tail, defaulting to `wet=0`/`level=1` (a no-op) so it's inaudible wherever nothing sets
+  it - this *used* to be `FreeVerb` for the first four, which turned out to be a mistake
+  and was swapped out project-wide. For `\baseD`/`\cym`/`\hat`/`\kick` this tail exists
+  because they never had any reverb path at all - they don't declare an `\fx` arg, so the
+  `\fx` key `~buildPercPattern` passes them (CT8tracks.scd) is silently ignored, unlike
+  `\fm`'s real `\fx`/`\fxsend` send to `~clockRev` - so this per-voice tail is genuinely
+  the only reverb `PT1`-`PT4` (via the Percussion Generator's `~percWet[name]`/
+  `~percLevel[name]`/Wet+Level sliders) or `CT8guiSynthLab.scd`/`CT8guiTracksLab.scd`
+  (auditioning `\baseD`/`\cym`/`\hat`/`\kick` standalone) can ever have - deliberately
+  separate from `~clockRev`, not a replacement for it. `\fm`/`\plucking` got the same
+  tail added later for a different reason - both already had a working path to
+  `~clockRev` (`\fm`'s `fx`/`fxsend`, `\plucking`'s hardcoded `~revBus` send), but neither
+  had a *per-track*, independently dialable tail the way the other four did, which is
+  what `BT1`/`BT2`'s own Wet/Level sliders (Bass Generator config, `CT8tracks.scd`) need;
+  both existing sends are passed through unaffected by `wet`/`level` (see each SynthDef's
+  own comment). One caveat, not yet addressed for every instrument with this tail:
+  `\baseD`/`\kick` free themselves via `DetectSilence` watching the tail's own
+  POST-`~allpassWash` output, so a nonzero `wet`'s tail rings out fully before the synth
+  frees; `\hat`/`\cym`/`\fm`/`\plucking` still free via a fixed-duration envelope/
+  `Done.freeSelf` tied to the *dry* signal instead, so a nonzero `wet` on any of those
+  four still gets cut off abruptly rather than ringing out - acceptable for "simple," not
+  yet decoupled for these four. Knows
+  nothing about tracks, patterns, or the clock face - globals are declared before any
+  function, so the reverb defaults are visible at a glance. Used
+  to also own `~availableSynths`/`~synthParams`/`~getSynthParam` (a per-synth live-param
+  table feeding the old Synth Controls window and `CT8tracks.scd`'s amp lookups) - removed
+  entirely once the Percussion Generator's own Volume row (see `CT8guiPercGenerator.scd`)
+  took over as PT1-4's only amp source and the Synth Controls window (its only other
+  consumer) was deleted; nothing in the project reads a per-synth param table any more.
+  `\fm` is a multi-use FM synth brought in from another project; `CT8tracks.scd` uses it
+  directly for `HT1`/`MT1` (no longer `PT3` - that track moved onto the generic
+  Percussion Generator's `\baseD`/`\cym`/`\hat`/`\kick` instruments along with `PT1`/`PT2`/
+  `PT4`) and as one of `BT1`/`BT2`'s two selectable Bass Generator instruments (the
+  other, `\plucking`, has its own hand-tuned bass-register envelope - see its own
+  comment in this file), each of HT1/MT1's FM params hardcoded rather than read from a
+  shared table (BT1/BT2 read theirs from the generic Bass Generator config instead, same
+  idea as PT1-4). `\fm`'s `fx` (reverb-send) arg must be passed explicitly as `~revBus`
+  (wrapped in `Pfunc { ~revBus }` inside a Pbind, since a bare Bus value in a Pbind key is
+  suspect — see `~buildPercPattern`'s `\fx` comment, CT8tracks.scd), since a SynthDef
+  default can't reference a bus that doesn't exist until the server boots.
 
-- **`CT8tracks.scd`** — owns the musical-composition side: the track registry
-  (`~trackNames`/`~trackPatterns`/`~trackPlayers`/`~trackEnabled`/`~trackFlashEnabled`/
-  `~trackBuilders`), the row/col→synth role-assignment defaults
-  (`~rowStartSynth`/`~rowCellSynth`/`~colStartSynth`/`~colCellSynth`), every
+- **`CT8tracks.scd`** — owns the musical-composition side only: the track registry
+  (`~trackNames`/`~trackPatterns`/`~trackPlayers`/`~trackEnabled`/`~trackBuilders`), the
+  Percussion Generator config for `PT1`-`PT4` (`~percSource`/`~percInstrument`/
+  `~percPattern`/`~percPitchMode`/`~percBasePitch`/`~percPitchStep`/`~percRandomPitches`/
+  `~percVolumeMode`/`~percVolume`/`~percVolumeLevels`/`~percWet`/`~percLevel`/
+  `~percSplitPercent`, each a `name -> value` dictionary keyed by track-name symbol, set
+  live by `CT8guiPercGenerator.scd` - `~percSplitPercent[name]` only matters when
+  `~percPattern[name]` is one of the two "percent" split patterns (shared between
+  `\random8thPercent`/`\random3rdPercent`, so switching a track between them keeps
+  whichever percent was already set; there's no separate "variant" global any more - the
+  split-type/variant combination is just which flat `~percPattern[name]` symbol is
+  chosen), and `~percWet[name]`/`~percLevel[name]` are the odd ones out of the whole
+  group, read via plain `Pfunc`s rather than baked into a pre-resolved array like the
+  rest, so unlike every other one of these each takes effect immediately with no rebuild
+  needed), the parallel Bass Generator config for `BT1`-`BT2` (`~bassSource`/
+  `~bassInstrument`/`~bassPattern`/`~bassPitchMode`/`~bassBasePitch`/`~bassVolumeMode`/
+  `~bassVolume`/`~bassVolumeLevels`/`~bassWet`/`~bassLevel`/`~bassSplitPercent` - same
+  shape and same live-`CT8guiPercGenerator.scd`-set/`?`-guarded-default convention as
+  percussion's, just a shorter list since bass has fewer pitch modes and no
+  per-instrument pitch-arg-name dispatch to carry - see BASS GENERATOR CONFIG's own
+  comment for exactly which differences), every
   `~buildXPattern` function that turns `CT8guiClock.scd`'s scan output into an actual
   Pbind, and the playback lifecycle (`~setStartPbinds`, `~stopPbinds`, `~updatePbinds`,
-  `~restartPbinds`, `~tempoChange`, `~stopAll`, `~trackShouldPlay`, `~syncTrackPlayer`).
-  Globals are declared before any function, for the same reason as `CT8synths.scd`. This
-  is expected to be the most actively-changing file as the planned generative "Daily
-  Piece" hierarchy (Piece → Phrase → Bar → Beat) gets designed on top of what's here now
-  — see the FUTURE DIRECTION note in `CT8main.scd`. Reads `~availableSynths`/
-  `~getSynthParam` from `CT8synths.scd` and `~rowPattern`/`~colPattern`/`~clockEvents`/
-  `~columnEvents` from `CT8guiClock.scd`; converts those into simultaneous Pbind tracks,
-  two of which (`PT1`/`PT2`) read `~rowStartSynth`/`~rowCellSynth` or
-  `~colStartSynth`/`~colCellSynth` to decide which installed synth plays which role —
-  freely reassignable live, not fixed to a particular track.
+  `~restartPbinds`, `~tempoChange`, `~stopAll`, `~syncTrackPlayer`). The old
+  `~rowStartSynth`/`~rowCellSynth`/`~colStartSynth`/`~colCellSynth` (vestigial since `PT1`/
+  `PT2` moved onto the Percussion Generator) are gone too, now that the Synth Controls
+  window that was their only remaining reader has been deleted. Knows nothing about
+  flashing - that moved entirely to `CT8guiClock.scd`, so this file only has to care that
+  `~rowPattern`/`~colPattern` exist and stay in sync, not whether anything visual is on or
+  off. Globals are declared before any function, for the same reason as `CT8synths.scd`.
+  This is expected to be the most actively-changing file as the planned generative "Daily
+  Piece" hierarchy (Piece → Phrase → Bar → Beat) gets designed on top of what's here now —
+  see the FUTURE DIRECTION note in `CT8main.scd`. Reads `~rowPattern`/`~colPattern`/
+  `~clockEvents`/`~columnEvents` from `CT8guiClock.scd`; converts those into simultaneous
+  Pbind tracks. `PT1`/`PT2`/`PT3`/`PT4` all read the Percussion Generator's per-track
+  config globals via one shared, parameterized builder (`~buildPercPattern.(name)` - see
+  below), rather than each having its own bespoke builder the way they used to; `BT1`/
+  `BT2` mirror that exactly via their own shared builder, `~buildBassTrackPattern.(name)`,
+  reading the Bass Generator config instead.
 
 - **`CT8main.scd`** — the coordinator. Loads `CT8synths.scd`, `CT8guiClock.scd`,
-  `CT8tracks.scd`, and the four remaining GUI files itself (`~loadAllCt8Files`, via
+  `CT8harmonySelect.scd`, `CT8tracks.scd`, and the four remaining GUI files itself
+  (`~loadAllCt8Files`, via
   `thisProcess.interpreter.executeFile`), verifies the load actually succeeded, tears
   down any previous run (`~stopAll`, clears the old TempoClock), sets runtime parameters
   (`~tempo`, `~twelveHourClock`, `~runningRealTime`), boots the audio server, then
   sequences: install SynthDefs → build all windows (including `~makeSynthLabWindow`) →
-  draw initial digits → scan initial events → start Pbinds → schedule a repeating
-  per-beat check for minute rollover (`~checkForNewMinute`). Also contains a FUTURE
+  draw initial digits → scan initial events → start Pbinds → schedule two repeating
+  per-beat checks, one for minute rollover (`~checkForNewMinute`) and one for the shared
+  chord progression (`~checkForNewChordBar` - `CT8harmonySelect.scd`'s own bullet has the
+  detail). Also contains a FUTURE
   DIRECTION comment block sketching a planned generative "Daily Piece" mode driven by
   time-of-day data tables. `s.options.memSize` is 655360 KB (640MB, up from 64MB) -
   bumped for the Sound Lab's heavier synths (`\drone`/`\kick`/`\droneChord` each run
@@ -166,77 +452,149 @@ their own bullets below for exactly where the line falls:
   can take effect, since the server is already running by the time any `~makeXWindow`
   (including the Sound Lab's) gets called.
 
-Six tracks are currently active — `PT1` (row scan), `PT2` (column scan), `PT3` (a fixed
-percussion hit pattern), `HT1` (a chord-per-row harmony pad), `MT1` (a note-or-two-per-
-column melody), `BT1` (a two-pitch bass hit on every row/column start) — one of each of
-percussion/bass/rhythm-harmony/melody from 13 planned tracks (4 percussion `PT1-4`, 1
-bass `BT1`, 4 rhythm/harmony `HT1-4`, 4 melody `MT1-4`) for a planned generative "Daily
-Piece" mode; `PT4`/`HT2-4`/`MT2-4` are registered but inert. See the TRACK REGISTRY block
-in `CT8tracks.scd`:
+Only three tracks are currently enabled by default — `PT1`, `PT2`, `PT3` (all three
+Percussion Generator-driven, see below) — out of 13 planned tracks (4 percussion
+`PT1-4`, 2 bass `BT1-2`, 4 rhythm/harmony `HT1-4`, 4 melody `MT1-4`) for a planned
+generative "Daily Piece" mode. `PT4`, `BT1`, `BT2`, `HT1` (a chord-per-row harmony pad),
+and `MT1` (a note-or-two-per-column melody) all have real builders too (`PT4`/`BT1`/`BT2`
+share the two generic builders, `~buildPercPattern`/`~buildBassTrackPattern`; `HT1`/`MT1`
+their own bespoke ones) and are fully playable - just disabled by default until toggled
+on in the Percussion + Bass Generator window (`PT4`/`BT1`/`BT2`, beside each one's name)
+or the Clock Toy Adjust window (`HT1`/`MT1`); `HT2-4`/`MT2-4` are still registered but
+inert (no builder exists for them yet). See the TRACK REGISTRY block in `CT8tracks.scd`:
 - **`~trackNames`** — all 13 track name symbols.
 - **`~trackPatterns[name]`** / **`~trackPlayers[name]`** / **`~trackEnabled[name]`** — that
   track's built Pbind, its playing `EventStreamPlayer`, and whether the user wants its
   sound playing, each a `name -> value` Event rather than one-off globals per track.
-- **`~trackFlashEnabled[name]`** — PT1/PT2-only: whether that track's clock-face flash/
-  background color is wanted, independent of `~trackEnabled`'s sound switch (see the two
-  paragraphs below). **`~trackShouldPlay.(name)`** — whether that track's
-  `EventStreamPlayer` should be running at all (normally just `~trackEnabled[name]`,
-  except PT1/PT2 also count `~trackFlashEnabled`). **`~syncTrackPlayer.(name)`** — stops a
-  track's current player, then restarts it if `~trackShouldPlay` and a pattern exist;
-  called by every on/off button (CT8guiAdjust.scd) so both kinds of toggle resync the same
-  way.
+- **`~syncTrackPlayer.(name)`** — stops a track's current player, then restarts it if
+  `~trackEnabled[name]` and a pattern exist; used for any future per-track on/off UI.
 - **`~trackBuilders[name]`** — the function that (re)builds `~trackPatterns[name]`;
-  currently `PT1`/`PT2`/`PT3`/`HT1`/`MT1`/`BT1` have one registered (`~buildRowPattern`/
-  `~buildColumnPattern`/`~buildSnarePattern`/`~buildHarmonyPattern`/`~buildMelodyPattern`/
-  `~buildBassPattern`). Registering a builder for a new track name is the only step
-  needed to bring it under the existing
+  currently `PT1`/`PT2`/`PT3`/`PT4`/`BT1`/`BT2`/`HT1`/`MT1` have one registered. `PT1`-`PT4`
+  each get a small wrapper closure (`{ ~buildPercPattern.(\PT1) }`, etc.) around the one
+  shared `~buildPercPattern` function; `BT1`/`BT2` mirror that with their own shared
+  `~buildBassTrackPattern`; `HT1`/`MT1` keep their own bespoke builders
+  (`~buildHarmonyPattern`/`~buildMelodyPattern`). Registering a builder
+  for a new track name is the only step needed to bring it under the existing
   `~setStartPbinds`/`~stopPbinds`/`~updatePbinds`/`~restartPbinds` machinery, which all
   loop generically over `~trackNames` rather than hardcoding specific tracks.
 
-`PT1` scans lit segments row-by-row (5 visual rows; first lit cell per row is
-`\rowStart`, rest are `\cell`); `PT2` scans column-by-column (12 columns across 4 digits;
-first lit cell per column is `\columnStart`, rest are `\columnCell`). Which synth plays
-each role is picked by `~rowStartSynth`/`~rowCellSynth`/`~colStartSynth`/`~colCellSynth`
-— not fixed to a particular track, freely reassignable by editing those globals directly
-while the Synth Controls window (which used to expose them live) is disabled. Both
-Pbinds' sound and clock-face flash are independently switchable even though they come
-from the same event stream: each has a `\type` key that goes to `\rest` when
-`~trackEnabled[name]` is off (the standard Event mechanism for "build this event's other
-keys as normal, but don't spawn a synth for it"), and an `\updateGUI` key that skips its
-flash call when `~trackFlashEnabled[name]` is off - both keys always return a non-nil
-value regardless of which branch runs, since a Pfunc yielding bare `nil` is SC's
-stream-protocol signal for "this stream has ended" (see `~dbgBeatBar`'s comment, same
-file, for the bug this avoids).
-`PT3` is different in kind: a hand-tuned `\fm` "snare" patch on a fixed 64-step hit/rest
-template (`~snareTemplate`), nearest-neighbor resampled to `~numBeats` on every rebuild so
-its loop always spans exactly one `PT1` bar; it isn't derived from `~clockEvents`/
-`~columnEvents` at all, so unlike `PT1`/`PT2` it has no segment/flash tied to its hits, and
-it bypasses `~availableSynths`/`~getSynthParam` entirely (its FM params are hardcoded
-directly in `~buildSnarePattern` rather than being live-adjustable from the Synth Controls
-window). `HT1` is also `\fm`-based and also bypasses `~availableSynths`, but unlike `PT3`
-it is derived from `~rowPattern`: it plays one new chord (`\midinote` set to an array,
-which Event/Pbind expands into simultaneous notes) at every `\rowStart` in the current
+`PT1`/`PT2`/`PT3`/`PT4` are now all driven identically by the Percussion Generator window
+(`CT8guiPercGenerator.scd`) through one shared, parameterized builder,
+`~buildPercPattern.(name)` (`CT8tracks.scd`) - replacing what used to be three different
+mechanisms (PT1's own generator-driven pre-resolve, PT2's fixed two-synth-role system,
+PT3's hand-tuned `~snareTemplate`). For each track, `~buildPercPattern` first picks its
+scan source from `~percSource[name]`: `\row` reads `~rowPattern`/`~clockEvents` (start
+role `\rowStart`), `\col` reads `~colPattern`/`~columnEvents` (start role `\columnStart`)
+- defaults preserve each track's historical identity (`PT1`/`PT3` default `\row`, `PT2`/
+`PT4` default `\col`). It then pre-resolves the whole bar into flat `dur`/pitch/rest
+arrays (the same technique `CT8guiTracksLab.scd`'s prototype validated), per
+`~percPattern[name]`: `\firstBeat`/`\everyBeat`/`\startOnly` just pick which beats of a
+plain every-beat grid get a slot (one, all, or row/column-starts only); the other seven
+choices all start from that same full every-beat grid and then replace some slots with
+something else. Six of those seven are a (split-type, variant) combination flattened
+into one symbol each - `splitCount`/`splitVariant`, derived from `pattern` via two
+`switch`es, un-flatten it back inside `~buildPercPattern` - rather than a Pattern menu
+plus a nested Variant sub-menu (an earlier version had exactly that, but it was both
+confusing and, per feedback, buggy: the sub-menu's controls only ever rendered once; now
+each combination is its own top-level `~percPattern[name]` value, so there's nothing left
+to nest or to go stale). Split-type: `\random8th*` double the hit (each half the
+original span), `\random3rd*` triple it (each a third). Variant: `*Percent`
+(`~percSplitPercent[name]`% of beats, re-rolled fresh every rebuild, same as
+`~percPitchMode[name]`'s own `\random` option - this was the only behavior that existed
+before this list was flattened, hardcoded to 1/3 for the 1/8th case and 1/4 for the 1/3
+case), `*LastBar` (only the bar's very last beat, deterministic, every bar), or
+`*LastRowCol` (only the last beat of every row/column span, deterministic - computed as
+`startIdx.drop(1).collect(_ - 1) ++ [events.size - 1]`, i.e. one beat before each start
+after the first, plus the bar's final beat for the last span). The seventh, `\randomSkip`
+(silence, ~1/4 of beats, span unchanged, always the plain-random rule, re-rolled fresh
+every rebuild, never affected by `~percSplitPercent[name]`), stands alone - it has no
+split-type/variant combination, just the one behavior. Which beats
+actually rest - from either `\randomSkip` or `~trackEnabled[name]` being off - is tracked
+via a parallel `restFlags` array and a `beatIndex` counter inside `\type`'s `Pfunc`, since
+a `Pfunc` has no direct access to another key's own `Pseq` position. Which single instrument
+plays every hit comes from `~percInstrument[name]` (`\baseD`/`\cym`/`\hat`/`\kick` - each
+needs its pitch value in a different Pbind key, `\basefreq` for `\baseD`/`\cym`, `\freq`
+for `\hat`, `\drumFreq` for `\kick`, picked once per rebuild via a `pitchArgName` switch
+on the chosen instrument), how pitch
+varies from `~percPitchMode[name]` (fixed / rising-and-reset-at-start / random, drawn from
+`~percRandomPitches[name]` in the random case), and how amp varies from
+`~percVolumeMode[name]` (fixed, or alternating between `~percVolumeLevels[name]`'s two
+values every sounding hit) - this last one is a flat `Pseq`, not folded into the
+`\type` Pfunc, since (unlike `restFlags`) amp has no need to read `~trackEnabled[name]`.
+`\wet`/`\level` keys (`Pfunc { ~percWet[name] }`/`Pfunc { ~percLevel[name] }`) set that
+instrument's own tiny built-in `~allpassWash` tail (CT8synths.scd) - the two keys here
+that are genuinely live, since each is a single flat value with nothing to pre-resolve,
+unlike everything else in this Pbind.
+All four are purely musical - `\type` goes to `\rest` when `~trackEnabled[name]` is off or
+(for `\randomSkip`) when this beat was chosen as a rest (the standard Event mechanism for
+"build this event's other keys as normal, but don't spawn a synth for it"), but none of
+them drive the clock-face
+flash; that's a fully independent process (`~buildRowFlashPattern`/`~buildColFlashPattern`,
+`CT8guiClock.scd` - see below), tied only to `PT1`/`PT2`'s roles regardless of whether
+those tracks are enabled, built, or even exist. `HT1`/`MT1` are both `\fm`-based, with
+their params hardcoded directly in each builder rather than read from any shared table,
+and both read the one shared `~currentChord` global (`CT8harmonySelect.scd`)
+live - not snapshotted into a local var, so a chord change is heard on whichever track's
+very next hit comes after it, regardless of which of them is enabled/playing. `HT1` is
+derived from `~rowPattern`: it plays one new chord at every `\rowStart` in the current
 scan, holding for exactly that row's span in beats (computed fresh each rebuild from
 `~rowPattern`, same grid `PT1` plays on) - so it changes chord in lockstep with `PT1`'s
 row boundaries rather than on a fixed schedule of its own; its `\atk`/`\rel` are computed
 per-event from that beat span converted to real seconds via `t.tempo`, since the SynthDef's
-own envelope times are wall-clock seconds, not TempoClock beats. `MT1` mirrors `HT1`'s
-structure exactly but from `~colPattern`/`\columnStart` instead of `~rowPattern`/
-`\rowStart` (one slot per column instead of per row): rather than a fixed precomputed
-chord sequence, its `\midinote` is a `Pfunc` that re-rolls live on every read, picking 1 or
-2 random notes from the white keys (natural notes) one octave above `HT1`'s chord
-register, so the melody varies bar to bar even when that minute's column layout doesn't
-change. `BT1` is the low `\fm` hit that used to fire once per `PT1` cycle, before it was
-pulled out into its own track: `~buildBassPattern` builds two independent sub-patterns -
-one hit at every `\rowStart` in `~rowPattern` (midinote 20, same pitch as the original
-hit) and one hit at every `\columnStart` in `~colPattern` (midinote 32, an octave higher)
-- run simultaneously via `Ppar`, since the row-scan and column-scan grids have different
-beat counts and can't share one `\dur` sequence; each sub-pattern's `\dur` is however many
-beats that row/column spans, mirroring `HT1`/`MT1`'s row/column-span technique. All six,
-plus every other still-unbuilt track, can be toggled independently at runtime via
-`~trackEnabled[name]` - every track in `~trackNames` now has its own on/off button in the
-Clock Toy Adjust window (`CT8guiAdjust.scd`), not just `PT1`/`PT2`; `PT1`/`PT2`
-additionally have a separate `~trackFlashEnabled[name]` toggle for their flash.
+own envelope times are wall-clock seconds, not TempoClock beats. Its `\midinote` used to
+be a fixed 3-chord `Pseq`; now it's a `Pfunc` - `Array.fill(4, { ~chordNoteInRange.(
+~currentChord, 60, 96) })`, 4 independent tone-and-octave picks, any note in the three
+octaves above middle C - but still fires exactly once per row event either way, so the
+"one new chord per row-start" cadence is unchanged, only where the notes come from
+differs. `MT1` mirrors `HT1`'s structure exactly but from `~colPattern`/`\columnStart`
+instead of `~rowPattern`/`\rowStart` (one slot per column instead of per row): its
+`\midinote` is the same `Array.fill(4, { ~chordNoteInRange.(~currentChord, 60, 96) })`
+call, but as a live-re-rolling `Pfunc` rather than firing once per event, so the melody
+varies bar to bar even when that minute's column layout doesn't change (used to pick
+1-or-2 notes from a fixed white-keys scale instead). Neither `HT1` nor `MT1` calls
+`~nextChord` itself - see `~checkForNewChordBar`, `CT8harmonySelect.scd`'s own bullet,
+for where that lives instead.
+
+`BT1`/`BT2` are driven by the Bass Generator config exactly the way `PT1`-`PT4` are
+driven by the Percussion Generator config - same single-source-scan/pre-resolve-the-bar
+technique, through their own shared, parameterized builder,
+`~buildBassTrackPattern.(name)` (`CT8tracks.scd`), replacing `BT1`'s old bespoke builder
+(a fixed `Ppar` of a row-start AND a column-start sub-pattern running simultaneously,
+always both at once) and giving `BT2` a real builder for the first time. Each of
+`BT1`/`BT2` instead picks ONE scan via `~bassSource[name]` (`\row`/`\col`, same as
+`PT1`-`4`) - running `BT1` on `\row` and `BT2` on `\col` (their defaults) approximates the
+old single `BT1`'s "both at once" behavior, just as two independent tracks instead of
+one `Ppar`. `~bassInstrument[name]` picks `\fm` or `\plucking` (`BT1`/`BT2` default to one
+each) - both take a plain `\midinote` key (no per-instrument pitch-arg-name dispatch
+needed, unlike `~buildPercPattern`'s `pitchArgName` switch) and a plain `\amp` key (no
+amp-arg-name dispatch either). `~bassPitchMode[name]` is Fixed (`~bassBasePitch[name]`,
+a plain MIDI note) or Random - Random picks a tone from `~currentChord`
+(`CT8harmonySelect.scd`) via `~chordNoteInRange`, constrained to `~bassRandomPitchLo`..
+`~bassRandomPitchHi` ("below middle C"), the same helper/global `HT1`/`MT1` read live,
+just resolved once per rebuild here instead - so a mid-bar chord change isn't heard on
+`BT1`/`BT2` until their next rebuild, unlike `HT1`/`MT1`'s live per-hit read. `\fx`
+reaches `~clockRev` through `\fm`'s real `fx`/`fxsend` send (ignored by `\plucking`, which
+has no `\fx` arg - its own hardcoded, independently-attenuated `~revBus` send, via its
+own `dynamic` arg, is separate and untouched either way - see `CT8synths.scd`'s bullet);
+`\wet`/`\level` are each instrument's own tiny built-in `~allpassWash` tail, same
+live-`Pfunc` convention as `~percWet[name]`/`~percLevel[name]`. Every
+built track (`PT1-4`/`BT1-2`/`HT1`/`MT1`), plus every other still-unbuilt track, can be
+toggled independently at runtime via `~trackEnabled[name]` - `PT1`-`4`/`BT1`-`2` have
+their on/off buttons in the Percussion + Bass Generator window
+(`CT8guiPercGenerator.scd`), beside each track's name; every other track has its own
+on/off button in the Clock Toy Adjust window (`CT8guiAdjust.scd`) instead.
+
+Row/col clock-face flashing is a separate, independent process from any of the above now
+— see `CT8guiClock.scd`'s "ROW/COL FLASH PLAYERS" section: `~buildRowFlashPattern`/
+`~buildColFlashPattern` build visual-only Pbinds (always `\type, \rest`, so they never
+spawn a synth) that walk the same `~clockEvents`/`~columnEvents` PT1/PT2 read, calling
+`~flashRow`/`~flashColumn` via `\updateGUI`, gated by `~rowFlashEnabled`/
+`~colFlashEnabled` (both default `true`). `~rebuildFlashPatterns`/`~restartFlashPlayers`/
+`~stopFlashPlayers` mirror `~updatePbinds`/`~restartPbinds`/`~stopPbinds`'s shape but are
+called alongside them, not through them - every place that rebuilds tracks after a scan
+(minute rollover, source/format toggles) also rebuilds the flash patterns, and
+`~stopAll` also calls `~stopFlashPlayers`. `~syncFlashPlayer.(\row` or `\col)` is what the
+Colour row's two buttons (`CT8guiAdjust.scd`) call to toggle one live.
 
 `~rowPattern`/`~colPattern` are separate from the above: plain Arrays (not Pbinds),
 re-published from `~clockEvents`/`~columnEvents` every time the scan re-runs, meant as

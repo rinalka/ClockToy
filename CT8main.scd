@@ -57,9 +57,10 @@
 ~ct8FileNames = [
     "CT8synths.scd",
     "CT8guiClock.scd",
+    "CT8harmonySelect.scd",
     "CT8tracks.scd",
     "CT8guiAdjust.scd",
-    "CT8guiSynth.scd",
+    "CT8guiPercGenerator.scd",
     "CT8guiSynthLab.scd",
     "CT8fakeData.scd"
 ];
@@ -79,19 +80,13 @@ if(
     or: { ~getLineSegOrder.isNil }
     or: { ~getColumnSegOrder.isNil }
     or: { ~installSynthDefs.isNil }
+    or: { ~nextChord.isNil }
+    or: { ~checkForNewChordBar.isNil }
     or: { ~setStartPbinds.isNil }
     or: { ~trackEnabled.isNil }
 ) {
     Error("A CT8 file failed to load - check the post window above for the actual error.").throw;
 };
-
-// set current tracks true
-~trackEnabled[\PT1] = true;
-~trackEnabled[\PT2] = true;
-~trackEnabled[\PT3] = true;
-~trackEnabled[\HT1] = true;
-~trackEnabled[\MT1] = true;
-~trackEnabled[\BT1] = true;
 
 // ---------------------------------------------------------------------------
 // 2. CLEAN UP ANY PREVIOUS RUN
@@ -104,7 +99,7 @@ if(~closeWindowsOnCmdPeriod.notNil) { CmdPeriod.remove(~closeWindowsOnCmdPeriod)
 ~closeWindowsOnCmdPeriod = {
     if(w.notNil) { w.close };
     if(~adjustWindow.notNil) { ~adjustWindow.close };
-    if(~synthWindow.notNil) { ~synthWindow.close };
+    if(~percGeneratorWindow.notNil) { ~percGeneratorWindow.close };
 // ~stopSynthLab also frees its own private Groups/Bus, not just the window -
 // see CT8guiSynthLab.scd.
     if(~stopSynthLab.notNil) { ~stopSynthLab.value };
@@ -114,13 +109,12 @@ CmdPeriod.add(~closeWindowsOnCmdPeriod);
 // ---------------------------------------------------------------------------
 // 3. RUNTIME PARAMETERS
 
-// set current tracks true
-~trackEnabled[\PT1] = true;
-~trackEnabled[\PT2] = true;
-~trackEnabled[\PT3] = true;
-~trackEnabled[\HT1] = true;
-~trackEnabled[\MT1] = true;
-~trackEnabled[\BT1] = true;
+// ~trackEnabled's own defaults (CT8tracks.scd, ?-guarded so live tuning
+// survives a re-evaluation) are the only thing that decides which tracks
+// start on - this used to also force PT1/PT2/PT3/HT1/MT1/BT1 true here,
+// unconditionally, on every run, which silently overrode CT8tracks.scd's
+// defaults (and any on/off tuning from the Clock Toy Adjust/Percussion
+// Generator windows) every single time. Removed as dead/conflicting code.
 
 ~twelveHourClock = true;  // false makes it a 24-hour clock
 ~runningRealTime = true;  // false starts the clock at a fixed time and advances it using ~fakeSecond
@@ -162,7 +156,7 @@ AppClock.sched(1.0, {
 
     // Start the audio server asynchronously.
     s.boot;
-    nil;
+    // nil;
 });
 
 s.waitForBoot({
@@ -173,7 +167,7 @@ s.waitForBoot({
     {
      ~makeWindow.value;// Construct the  four-digit clock GUI.
      ~makeAdjustWindow.value;// Construct the separate control window.
-     ~makeSynthWindow.value;// Construct the per-synth live control window.
+     ~makePercGeneratorWindow.value;// Construct the PT1-PT4/BT1-BT2 instrument/pattern/pitch/volume control window.
      ~makeSynthLabWindow.value;// Construct the standalone sound-experiment/audition window (own private reverb bus, unrelated to ~revBus).
      ~displayClock.value;// Draw the initial four digits using ~hours and ~minutes.
      ~getLineSegOrder.value; // Scan the lit seven-segment cells and create the ordered ~clockEvents Array.
@@ -183,6 +177,10 @@ s.waitForBoot({
     AppClock.sched(0.15, {// Delay briefly so GUI construction can settle before musical playback begins.
         t = TempoClock.new(~tempo);// Create the project TempoClock at the requested beats-per-second value.
         ~setStartPbinds.value;// Build and start the clock pattern and persistent reverb synth.
+// Flashing is independent of any track - build and start it alongside the
+// tracks above, not through ~setStartPbinds (CT8guiClock.scd owns this).
+        ~rebuildFlashPatterns.value;
+        ~restartFlashPlayers.value;
 
 // Auto-stop after ~pieceLengthSecs. ~playSessionToken guards against a
 // stale timer from an earlier CT8main.scd run firing during a later one
@@ -205,6 +203,14 @@ s.waitForBoot({
             ~checkForNewMinute.value;// Compare/update clock time and rebuild display/music when the minute changes.
             ~secondTime; // Return the number of TempoClock beats to wait before running this function again.
         });
+// Separate repeating check, once per beat, for the shared chord progression
+// (~checkForNewChordBar, CT8harmonySelect.scd) - independent of
+// ~checkForNewMinute/~secondTime above, since the chord advances on its own
+// ~numBeats-beat cycle, not on real/simulated minutes.
+        t.sched(0, {
+            ~checkForNewChordBar.value;
+            1;
+        });
         "                     ".postln;
         "ClockToy initialized.".postln;
 	        nil;
@@ -212,6 +218,7 @@ s.waitForBoot({
 });
 
 )
+
 
 
 

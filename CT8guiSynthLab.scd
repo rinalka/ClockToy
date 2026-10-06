@@ -16,7 +16,7 @@
 //     itself.
 //   - The window is now ~synthLabWindow (was a local `window` var) and the
 //     cleanup function is ~stopSynthLab (was ~endlessLabStop, and did less -
-//     see below), matching how ~adjustWindow/~synthWindow are tracked and
+//     see below), matching how ~adjustWindow/~percGeneratorWindow are tracked and
 //     closed on CmdPeriod (CT8main.scd's
 //     ~closeWindowsOnCmdPeriod calls ~stopSynthLab too, so it frees this
 //     window's private Groups/Bus as well as closing it, not just the
@@ -30,7 +30,22 @@
 //     already-adapted \labPlucking/\labHat/\labCym variants (bug-fixed
 //     versions of the originals, replumbed to this lab's single `out`-per-
 //     instrument bus convention rather than the real \plucking's two-output
-//     dry+~revBus-send design) purely for standalone auditioning here.
+//     dry+~revBus-send design) purely for standalone auditioning here. Any
+//     param added to the real \hat/\cym later (e.g. \wet/\level, their own
+//     tiny built-in ~allpassWash tail - see CT8synths.scd) has to be
+//     hand-copied into \labHat/\labCym too, same as everything else about
+//     this split.
+//   - \fm needed the same treatment for a different reason: real \fm's only
+//     reverb mechanism is a hardcoded `Out.ar(fx, car * fxsend.dbamp)` send,
+//     and this lab's `trigger` never sets `\fx` for any synth - so playing
+//     real \fm here directly would leak a quiet but real, unprocessed copy
+//     of every note straight to hardware bus 0 (fx's default), bypassing
+//     this lab's private reverb bus entirely. \labFm, below, drops
+//     `fx`/`fxsend` and gets the same `\wet`/`\level`-driven `~allpassWash`
+//     tail as every other \labX variant instead, so it's never a leak risk
+//     and reverb here always means the same one thing. Real \fm keeps
+//     `fx`/`fxsend` untouched - HT1/MT1/BT1 still depend on it to reach
+//     ~clockRev.
 //
 // Each instrument outputs to this window's own private stereo reverb bus,
 // entirely separate from the project's shared ~revBus/~clockRev - playing
@@ -45,6 +60,12 @@
     var specs, names, selected = \drone, values, controls, menu, panel;
     var revBus, sourceGroup, fxGroup, reverb, active = List.new;
     var status, rebuild, trigger, makeSlider, synthNames, currentSynth, currentInstrument, revWet = 0.4, revLevel = 0.6;
+// Loop: repeatedly retriggers the selected instrument so there's continuous
+// sound to tune against - short/percussive synths (hat/cym/baseD/kick) free
+// themselves almost instantly, too fast to hear a slider move while one
+// note plays, unlike the sustained ones (drone/lead/droneChord).
+    var loopButton, loopActive = false, loopInterval = 1, loopTick;
+    var loopSpeedSlider, loopSpeedReadout;
 
 // Free a previous lab instance's window/Groups/Bus (if this is a re-run)
 // before creating new ones, so repeated hot-reloads don't leave duplicate
@@ -71,7 +92,7 @@
         Out.ar(out, snd * env * sAmp * dynamic);
     }).add;
 
-    SynthDef(\labHat, { |out=0, amp=0.2, pan=0, freq=4200, noiseFreq=1000|
+    SynthDef(\labHat, { |out=0, amp=0.2, pan=0, freq=4200, noiseFreq=1000, wet=0, level=1|
         var env, noise, metal, snd;
         env = Env.perc(0.001, 0.018).ar(Done.freeSelf);
         noise = HPF.ar(WhiteNoise.ar, noiseFreq);
@@ -81,10 +102,17 @@
         snd = (noise * 0.75) + metal;
         snd = HPF.ar(snd, 5000);
         snd = snd * env * amp;
-        Out.ar(out, Pan2.ar(snd, pan));
+        snd = Pan2.ar(snd, pan);
+// Same tiny \wet/\level ~allpassWash tail as the real \hat (CT8synths.scd,
+// defined there not here since it's a plain helper function, not a
+// SynthDef - safe to call directly, unlike reusing a whole real SynthDef)
+// - kept in sync by hand with the real one's own signal chain, like every
+// other \labX/real pair in this file.
+        snd = ~allpassWash.(snd, wet, level);
+        Out.ar(out, snd);
     }).add;
 
-    SynthDef(\labCym, { |out=0, basefreq=300, len=0.25, amp=1, pan=0|
+    SynthDef(\labCym, { |out=0, basefreq=300, len=0.25, amp=1, pan=0, wet=0, level=1|
         var freqs, signal, pulseEnv;
         freqs = basefreq * [
             1, 1.4823959094229, 1.800048697346,
@@ -107,7 +135,28 @@
         );
         signal = [signal, DelayN.ar(signal, 0.005, 0.005)];
         signal = Balance2.ar(signal[0], signal[1], pan) * (amp * 0.4);
+// Same \wet/\level ~allpassWash tail as the real \cym - see \labHat above.
+        signal = ~allpassWash.(signal, wet, level);
         Out.ar(out, signal);
+    }).add;
+
+// Same as real \fm (CT8synths.scd) except \fx/\fxsend (its external send to
+// ~clockRev - meaningless here, see this file's header) are dropped in
+// favor of \wet/\level - ~allpassWash (CT8synths.scd), matching every other
+// \labX variant's own tail (real \fm has never used FreeVerb anywhere -
+// this lab-only variant briefly did, by mistake, now fixed). Keep in sync
+// by hand with real \fm's own freq/mRatio/cRatio/index/iScale/cAtk/cRel/
+// amp/atk/rel/pan if those ever change.
+    SynthDef(\labFm, { |freq=500, mRatio=1, cRatio=1, index=1, iScale=5,
+        cAtk=4, cRel=(-4), amp=0.2, atk=0.01, rel=3, pan=0, out=0, wet=0, level=1|
+        var car, mod, env, iEnv;
+        iEnv = EnvGen.kr(Env([index, index * iScale, index], [atk, rel], [cAtk, cRel]));
+        env = EnvGen.kr(Env.perc(atk, rel, curve: [cAtk, cRel]), doneAction: 2);
+        mod = SinOsc.ar(freq * mRatio, mul: freq * mRatio * iEnv);
+        car = SinOsc.ar(freq * cRatio + mod) * env * amp;
+        car = Pan2.ar(car, pan);
+        car = ~allpassWash.(car, wet, level);
+        Out.ar(out, car);
     }).add;
 
     specs = IdentityDictionary.new;
@@ -145,7 +194,9 @@
             [\beaterHarmonic, 12, 1, 20, \lin],
             [\beaterSweep, 0.03, 0.001, 0.3, \exp],
             [\beaterAtt, 0.01, 0.001, 0.1, \exp],
-            [\beaterRel, 0.3, 0.02, 2, \lin]
+            [\beaterRel, 0.3, 0.02, 2, \lin],
+            [\wet, 0, 0, 1, \lin],
+            [\level, 1, 0, 1, \lin]
     ]);
     specs.put(\plucking, [
             [\freq, 440, 50, 2000, \exp],
@@ -161,13 +212,48 @@
     specs.put(\hat, [
             [\amp, 0.2, 0, 1, \lin], [\pan, 0, -1, 1, \lin],
             [\freq, 4200, 300, 12000, \exp],
-            [\noiseFreq, 1000, 100, 12000, \exp]
+            [\noiseFreq, 1000, 100, 12000, \exp],
+            [\wet, 0, 0, 1, \lin],
+            [\level, 1, 0, 1, \lin]
     ]);
     specs.put(\cym, [
             [\basefreq, 300, 60, 2000, \exp],
             [\len, 0.25, 0.03, 4, \exp],
             [\amp, 1, 0, 2, \lin],
-            [\pan, 0, -1, 1, \lin]
+            [\pan, 0, -1, 1, \lin],
+            [\wet, 0, 0, 1, \lin],
+            [\level, 1, 0, 1, \lin]
+    ]);
+    specs.put(\baseD, [
+            [\basefreq, 55, 20, 2000, \exp],
+            [\amp, 1, 0, 4, \lin],
+            [\rq, 0.1, 0.01, 2, \exp],
+            [\overdrive, 2, 1, 20, \exp],
+            [\samplen, 100, 10, 500, \lin],
+            [\pan, 0, -1, 1, \lin],
+            [\wet, 0, 0, 1, \lin],
+            [\level, 1, 0, 1, \lin]
+    ]);
+// Range chosen wide enough to cover every real-track preset already in the
+// project (HT1/MT1/BT1's current values, and old PT3's now-retired
+// index=100/cRatio=45.9 snare patch) - not just this SynthDef's own
+// defaults - since the point of tuning here is finding values to carry
+// into CT8tracks.scd by hand (see CLAUDE.md's \mix bullet for the general
+// Lab-to-real workflow).
+    specs.put(\fm, [
+            [\freq, 500, 20, 2000, \exp],
+            [\mRatio, 1, 0.1, 20, \exp],
+            [\cRatio, 1, 0.1, 20, \exp],
+            [\index, 1, 0.01, 150, \exp],
+            [\iScale, 5, 0, 10, \lin],
+            [\cAtk, 4, -20, 20, \lin],
+            [\cRel, -4, -20, 20, \lin],
+            [\amp, 0.2, 0, 2, \lin],
+            [\atk, 0.01, 0.001, 2, \exp],
+            [\rel, 3, 0.01, 10, \exp],
+            [\pan, 0, -1, 1, \lin],
+            [\wet, 0, 0, 1, \lin],
+            [\level, 1, 0, 1, \lin]
     ]);
     specs.put(\droneChord, [
             [\note1, 48, 0, 127, \lin],
@@ -180,21 +266,27 @@
             [\release, 10, 0.01, 120, \exp],
             [\detune, 1, 0, 1, \lin]
     ]);
-    names = [\drone, \lead, \seq, \noise, \kick, \plucking, \hat, \cym, \droneChord];
+    names = [\drone, \lead, \seq, \noise, \kick, \plucking, \hat, \cym, \baseD, \fm, \droneChord];
 
 // Maps each entry in `names` to the SynthDef that actually plays it -
-// \drone/\lead/\seq/\noise/\kick/\droneChord are the shared synths now in
-// CT8synths.scd; \plucking/\hat/\cym point to this file's own \labX variants
-// (see the file header for why).
+// \drone/\lead/\seq/\noise/\kick/\droneChord/\baseD are the shared synths
+// now in CT8synths.scd (\baseD already uses a single `out` arg with no
+// hardcoded extra reverb-send line, so it's directly compatible with this
+// lab's bus convention - no \labBaseD variant needed); \plucking/\hat/\cym/
+// \fm point to this file's own \labX variants (see the file header for why -
+// \fm's is about its fx/fxsend send leaking to hardware output, not a bus-
+// convention mismatch like the other three).
     synthNames = IdentityDictionary.new;
     synthNames.put(\drone, \drone);
     synthNames.put(\lead, \lead);
     synthNames.put(\seq, \seq);
     synthNames.put(\noise, \noise);
     synthNames.put(\kick, \kick);
+    synthNames.put(\fm, \labFm);
     synthNames.put(\plucking, \labPlucking);
     synthNames.put(\hat, \labHat);
     synthNames.put(\cym, \labCym);
+    synthNames.put(\baseD, \baseD);
     synthNames.put(\droneChord, \droneChord);
     values = IdentityDictionary.new;
     names.do { |name|
@@ -215,6 +307,7 @@
 // matters because the guard at the top of this function calls whatever the
 // PREVIOUS invocation last assigned here.
     ~stopSynthLab = {
+        loopActive = false;
         if(~synthLabWindow.notNil) { ~synthLabWindow.onClose = nil; ~synthLabWindow.close };
         if(sourceGroup.notNil) { sourceGroup.free };
         if(fxGroup.notNil) { fxGroup.free };
@@ -238,7 +331,48 @@
     Button(~synthLabWindow, 120@28).states_([["PLAY NOTE", Color.black, Color(0.65, 0.85, 0.65)]])
         .action_({ trigger.value });
     Button(~synthLabWindow, 120@28).states_([["STOP NOTES", Color.white, Color(0.5, 0.24, 0.24)]])
-        .action_({ sourceGroup.freeAll; active.clear; currentSynth = nil; currentInstrument = nil });
+        .action_({
+            sourceGroup.freeAll; active.clear; currentSynth = nil; currentInstrument = nil;
+            loopActive = false; loopButton.value = 0;
+        });
+
+// Loop: re-fires `trigger` every `loopInterval` seconds while active, so a
+// short/percussive note (hat/cym/baseD/kick) keeps sounding instead of
+// dying before a slider move can be heard against it. Self-reschedules by
+// returning loopInterval from the AppClock-scheduled function (same
+// keep-going/return-nil-to-stop idiom as ~checkForNewMinute/~tempoChange in
+// CT8guiClock.scd/CT8tracks.scd) and stops itself - rather than relying on
+// whoever flips loopActive off to also cancel a pending schedule - the
+// instant loopActive goes false, including when the lab itself tears down
+// (~stopSynthLab, above).
+    loopTick = {
+        if(loopActive) { trigger.value };
+        if(loopActive) { loopInterval } { nil };
+    };
+    loopButton = Button(~synthLabWindow, 110@28).states_([
+        ["LOOP: OFF", Color.white, Color(0.3, 0.3, 0.3)],
+        ["LOOP: ON", Color.black, Color(0.65, 0.85, 0.65)]
+    ]).action_({ |b|
+        loopActive = (b.value == 1);
+        if(loopActive) { AppClock.sched(0, loopTick) };
+    });
+// Speed, not interval: dragging right makes the loop faster (shorter
+// loopInterval), same left-slow/right-fast feel as any other speed
+// control, via an exponential mapping over the same 0.05-10 second range
+// the old plain NumberBox clipped to (slider 0 -> 10s/slow, slider 1 ->
+// 0.05s/fast - inverted from a plain \exp curve, which would run the
+// other way). loopSpeedReadout mirrors the actual interval as text, same
+// reason every other Slider in this file pairs with one.
+    StaticText(~synthLabWindow, 85@28).string_("Loop speed")
+        .stringColor_(Color.white);
+    loopSpeedSlider = Slider(~synthLabWindow, 80@28)
+        .value_((loopInterval / 10).log / (0.05 / 10).log)
+        .action_({ |sl|
+            loopInterval = 10 * ((0.05 / 10) ** sl.value);
+            loopSpeedReadout.string_(loopInterval.round(0.01).asString);
+        });
+    loopSpeedReadout = StaticText(~synthLabWindow, 45@28)
+        .string_(loopInterval.round(0.01).asString).stringColor_(Color.white);
 
     status = StaticText(~synthLabWindow, 620@22).string_("Ready")
         .stringColor_(Color(0.7, 0.85, 0.75));
