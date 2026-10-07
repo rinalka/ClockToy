@@ -212,15 +212,20 @@
 //     standard pitch-key handling converts it to \freq for us), so there's
 //     no per-instrument pitch-ARG-name dispatch the way baseD/cym/hat/kick
 //     need (~buildPercPattern's pitchArgName switch). Pitch doesn't even
-//     need its own ~bassBasePitch any more - both Fixed and Random read
+//     need its own ~bassBasePitch any more - all three pitch modes read
 //     ~currentRange[name] directly (CT8harmonySelect.scd), the exact same
-//     global HT1/MT1 use for their own chord-note picks: Fixed uses its
-//     high end, Random picks anywhere in [lo, hi] via ~chordNoteInRange.
-//     Both instruments also just take a plain \amp key for their output
-//     level, so there's no per-instrument amp-arg-name dispatch needed
-//     either (unlike pitch/amp-arg dispatch being two separate concerns
-//     for baseD/cym/hat/kick).
-//   - Pitch only has two modes (Fixed/Random), not three - no "Rising".
+//     global HT1/MT1 use for their own chord-note picks: Fixed is
+//     ~chordRootInRange (the chord's own root note, deterministic, not a
+//     random pick); Random is ~chordNoteInRange (any chord tone, any
+//     octave, picked anew each baseline slot); Rising is
+//     ~makeRisingPitchGen (starts at the same root ~chordRootInRange
+//     would give, then climbs ~scales[~chordSet] one degree per baseline
+//     slot - not per row/column-start - wrapping back to the root once
+//     the climb would exceed the range's high end, and resetting fully
+//     only at the next bar). Both instruments also just take a plain
+//     \amp key for their output level, so there's no per-instrument
+//     amp-arg-name dispatch needed either (unlike pitch/amp-arg dispatch
+//     being two separate concerns for baseD/cym/hat/kick).
 //   - ~bassVolumeLevels[name] is a [lo, hi] pair (one dual-handle
 //     RangeSlider in the GUI) - Fixed reads its high end; Alternate uses
 //     the whole span, same idea as percussion's ~percVolumeLevels.
@@ -681,18 +686,23 @@
 // segments ("entries")). Used to play a 4-note chord stab per column-slot,
 // identical in shape to HT1's own \midinote - per feedback, a MELODY track
 // should only ever play one note at a time, never a chord, so this is now
-// a single ~chordNoteInRange pick instead of Array.fill(4, {...}) (still
-// read fresh every time this key is called, live, not precomputed once per
-// rebuild - the melody still varies bar to bar even when the column layout
-// itself doesn't change this minute). Picks from ~currentChord (the one
-// shared "current chord" - CT8harmonySelect.scd, read fresh every call
-// rather than snapshotted into a local var, so a chord change is heard on
-// the very next note), constrained to ~currentRange[\MT1] via
-// ~chordNoteInRange. Doesn't advance ~currentChord itself -
-// ~checkForNewChordBar (CT8harmonySelect.scd, scheduled from CT8main.scd)
-// does that independently of any one track's Pbind, since nearly every
-// track ends up reading ~currentChord and tying the advance to one
-// particular track's own beat-counter was an awkward, arbitrary coupling.
+// a single pitch per column-slot instead of Array.fill(4, {...}). Reads
+// ~currentChord (the one shared "current chord" - CT8harmonySelect.scd),
+// constrained to ~currentRange[\MT1], via the SAME ~chordPitchMode-style
+// Fixed/Random/Rising scheme ~buildBassTrackPattern now uses - see that
+// function's own comment for the three modes' exact rules. No longer a
+// live Pfunc re-rolling fresh every hit even when the bar hasn't changed -
+// pitch is now pre-resolved into a flat array once per rebuild, same as
+// colDurs/amps, per feedback that melody should be structured the same
+// way bass is (this is also what lets \rising climb across the whole bar
+// at all). A mid-bar chord change (~checkForNewChordBar) now isn't heard
+// here until this track's next rebuild, matching bass exactly - it used
+// to be heard on the very next note, back when pitch was live. Doesn't
+// advance ~currentChord itself - ~checkForNewChordBar (CT8harmonySelect.scd,
+// scheduled from CT8main.scd) does that independently of any one track's
+// Pbind, since nearly every track ends up reading ~currentChord and tying
+// the advance to one particular track's own beat-counter was an awkward,
+// arbitrary coupling.
 // \amp now matches bass's own structure too, per feedback - a melody track
 // should be built the same way a bass track is, not just single-note:
 // ~hmVolumeMode[\MT1]/~hmVolumeLevels[\MT1] (the Harmony + Melody
@@ -711,7 +721,8 @@
 // rowStartIdx; always at least one, for the same reason (the empty-events
 // case above already handled the only way there could be zero).
         var colStartIdx, colDurs, amps, ampIndex = 0, nextAmp;
-        var normalDurStream, copyPair;
+        var pitches, fixedNote, risingGen, pitchFor;
+        var normalDurStream, normalMidinoteStream, copyPair;
 
         colStartIdx = [];
         events.do { |ev, i| if(ev[\role] == \columnStart) { colStartIdx = colStartIdx.add(i) } };
@@ -742,16 +753,42 @@
         };
         amps = colDurs.collect { nextAmp.value };
 
+// Pitch: same three modes, same ~chordRootInRange/~chordNoteInRange/
+// ~makeRisingPitchGen helpers (CT8harmonySelect.scd), as
+// ~buildBassTrackPattern now uses - see that function's own comment for
+// why \fixed/\rising are each resolved ONCE here rather than per
+// column-slot. Pre-resolved into a flat array now, like colDurs/amps,
+// rather than MT1's old live-per-hit Pfunc - needed for \rising to be able
+// to climb across the whole bar at all, and brings \fixed/\random in line
+// with how every other chord-aware track already resolves its own pitch
+// (once per rebuild, not live), per feedback that melody should be
+// structured the same way bass is.
+        if(~hmPitchMode[\MT1] == \fixed) {
+            fixedNote = ~chordRootInRange.(~currentChord, ~currentRange[\MT1][0], ~currentRange[\MT1][1]);
+        };
+        if(~hmPitchMode[\MT1] == \rising) {
+            risingGen = ~makeRisingPitchGen.(
+                ~currentChord, ~chordSet, ~currentRange[\MT1][0], ~currentRange[\MT1][1]
+            );
+        };
+        pitchFor = {
+            switch(~hmPitchMode[\MT1],
+                \fixed, { fixedNote },
+                \random, { ~chordNoteInRange.(~currentChord, ~currentRange[\MT1][0], ~currentRange[\MT1][1]) },
+                \rising, { risingGen.value }
+            )
+        };
+        pitches = colDurs.collect { pitchFor.value };
+
 // \dur/\midinote go through ~makeCopyAwarePair (TRACK COPY section, below)
-// rather than a plain Pseq/Pfunc, so a Copy T playback in progress on MT1
-// can transparently splice in - normalDurStream is a retained manual
-// stream (not re-derived each call) so pausing it mid-cycle to serve a
-// copy and resuming afterward picks up exactly where it left off; the
-// normal \midinote pick stays exactly as live/chord-aware as before.
+// rather than a plain Pseq, so a Copy T playback in progress on MT1 can
+// transparently splice in - both retained manual streams (not re-derived
+// each call) mean pausing them mid-cycle to serve a copy and resuming
+// afterward picks up exactly where they left off.
         normalDurStream = Pseq(colDurs, inf).asStream;
+        normalMidinoteStream = Pseq(pitches, inf).asStream;
         copyPair = ~makeCopyAwarePair.(\MT1,
-            { normalDurStream.next },
-            { ~chordNoteInRange.(~currentChord, ~currentRange[\MT1][0], ~currentRange[\MT1][1]) }
+            { normalDurStream.next }, { normalMidinoteStream.next }
         );
 
         ~trackPatterns[\MT1] = Pbind(
@@ -1056,30 +1093,46 @@
             );
         };
 
-// Pitch: both modes read ~currentRange[name] (CT8harmonySelect.scd, one
-// dual-handle RangeSlider in the GUI, keyed by this track's own name so
-// BT1/BT2 can end up with different ranges) rather than a separate
-// ~bassBasePitch - Fixed just uses the range's high end (hi), a plain,
-// non-chord-aware MIDI note; Random instead picks a tone from
-// ~currentChord (CT8harmonySelect.scd) via ~chordNoteInRange, constrained
-// to the same [lo, hi] - same helper every other chord-aware track uses,
-// just read once per baseline slot at rebuild time rather than live
-// per-hit via Pfunc (~buildPercPattern's own \random pitch mode works the
-// same way - re-rolled fresh each rebuild, not per-hit), so a mid-bar
-// chord change (~checkForNewChordBar) isn't heard here until this track's
-// next rebuild. No \rising mode, so there's no pitchOffset bookkeeping to
-// do here the way ~buildPercPattern needs. Pulled out into its own
-// function, pitchFor, since a merged group needs this computed just once
-// at the group's start slot and reused for all 3 merged hits, same "same
-// pitch throughout the group" rule the splits/merges above already use.
+// Pitch: all three modes read ~currentRange[name] (CT8harmonySelect.scd,
+// one dual-handle RangeSlider in the GUI, keyed by this track's own name
+// so BT1/BT2 can end up with different ranges) rather than a separate
+// ~bassBasePitch. \fixed and \rising are resolved ONCE here, before the
+// main loop below, not per-slot inside pitchFor - \fixed because
+// ~chordRootInRange is deterministic (recomputing it per slot would just
+// give the same answer every time); \rising because ~makeRisingPitchGen
+// is a stateful generator that has to keep climbing across the WHOLE bar,
+// not restart fresh at every slot. \random still re-picks a chord tone
+// via ~chordNoteInRange per slot, same as always - read once per baseline
+// slot at rebuild time rather than live per-hit via Pfunc
+// (~buildPercPattern's own \random pitch mode works the same way -
+// re-rolled fresh each rebuild, not per-hit), so a mid-bar chord change
+// (~checkForNewChordBar) isn't heard here until this track's next
+// rebuild. pitchFor stays the one thing the main loop below calls either
+// way, since a merged group needs its pitch computed just once at the
+// group's start slot and reused for all 3 merged hits, same "same pitch
+// throughout the group" rule the splits/merges above already use - and,
+// per feedback, \rising advances once per BASELINE SLOT this way too
+// (every hit in one split/merge group shares its one climb step), not
+// once per individual sub-hit; that's a placeholder default pending a
+// separate, later pass specifically on how pitch should treat split/merge
+// groups.
         {
             var pitchFor, slotI = 0;
+            var fixedNote, risingGen;
+            if(~bassPitchMode[name] == \fixed) {
+                fixedNote = ~chordRootInRange.(~currentChord, ~currentRange[name][0], ~currentRange[name][1]);
+            };
+            if(~bassPitchMode[name] == \rising) {
+                risingGen = ~makeRisingPitchGen.(
+                    ~currentChord, ~chordSet, ~currentRange[name][0], ~currentRange[name][1]
+                );
+            };
             pitchFor = { |idx|
-                if(~bassPitchMode[name] == \random) {
-                    ~chordNoteInRange.(~currentChord, ~currentRange[name][0], ~currentRange[name][1])
-                } {
-                    ~currentRange[name][1]
-                }
+                switch(~bassPitchMode[name],
+                    \fixed, { fixedNote },
+                    \random, { ~chordNoteInRange.(~currentChord, ~currentRange[name][0], ~currentRange[name][1]) },
+                    \rising, { risingGen.value }
+                )
             };
             while ({ slotI < baseSlotIdx.size }) {
                 if(mergeStart[slotI]) {

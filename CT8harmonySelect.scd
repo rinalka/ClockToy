@@ -129,6 +129,35 @@
     ]
 ];
 
+~scales = [
+    // 1. C Major - 3 note chords
+    [0, 2, 4, 5, 7, 9, 11],
+
+    // 2. C Natural Minor - 3 note chords
+    [0, 2, 3, 5, 7, 8, 10],
+
+    // 3. C Major - 4 note chords
+    [0, 2, 4, 5, 7, 9, 11],
+
+    // 4. C Natural Minor - 4 note chords
+    [0, 2, 3, 5, 7, 8, 10],
+
+    // 5. C Harmonic Minor - 4 note chords
+    [0, 2, 3, 5, 7, 8, 11],
+
+    // 6. C Melodic Minor - 4 note chords
+    [0, 2, 3, 5, 7, 9, 11],
+
+    // 7. C Major - 5 note chords
+    [0, 2, 4, 5, 7, 9, 11],
+
+    // 8. C Harmonic Minor - 5 note chords
+    [0, 2, 3, 5, 7, 8, 11],
+
+    // 9. C Melodic Minor - 5 note chords
+    [0, 2, 3, 5, 7, 9, 11]
+];
+
 // Same [set][chordIndex] shape as ~chords, holding the chord-name strings
 // that live as trailing comments next to each ~chords entry above - purely
 // for readable logging (~checkForNewChordBar, below), since a comment
@@ -179,7 +208,13 @@
 // per-track config table in this project (~percX/~bassX, CT8tracks.scd).
 ~currentRange = ~currentRange ? ();
 ~currentRange[\HT1] = ~currentRange[\HT1] ? [60, 96];
+~currentRange[\HT2] = ~currentRange[\HT2] ? [60, 96];
+~currentRange[\HT3] = ~currentRange[\HT3] ? [60, 96];
+~currentRange[\HT4] = ~currentRange[\HT4] ? [60, 96];
 ~currentRange[\MT1] = ~currentRange[\MT1] ? [60, 96];
+~currentRange[\MT2] = ~currentRange[\MT2] ? [60, 96];
+~currentRange[\MT3] = ~currentRange[\MT3] ? [60, 96];
+~currentRange[\MT4] = ~currentRange[\MT4] ? [60, 96];
 ~currentRange[\BT1] = ~currentRange[\BT1] ? [12, 59];
 ~currentRange[\BT2] = ~currentRange[\BT2] ? [12, 59];
 
@@ -210,6 +245,58 @@
     var hiI = hi.floor.asInteger;
     var candidates = (loI..hiI).select { |n| (n % 12) == pitchClass };
     candidates.choose;
+};
+
+// Deterministic sibling of ~chordNoteInRange, for the Fixed and Rising
+// pitch modes (~buildBassTrackPattern/~buildMelodyPattern, CT8tracks.scd) -
+// always the chord's own FIRST written note (chord[0], its root in every
+// ~chords entry here), transposed by ~currentKey, mapped to the LOWEST
+// octave of that pitch class inside [lo, hi] - not a random pick among
+// every octave the way ~chordNoteInRange is. Fixed reads this once per
+// rebuild and holds it for the whole bar; ~makeRisingPitchGen (below) uses
+// it as the climb's own starting point.
+~chordRootInRange = { |chord, lo, hi|
+    var pitchClass = (chord[0] + ~currentKey) % 12;
+    var loI = lo.ceil.asInteger;
+    var hiI = hi.floor.asInteger;
+    var candidates = (loI..hiI).select { |n| (n % 12) == pitchClass };
+    candidates.first;
+};
+
+// Returns a stateful zero-arg generator for the Rising pitch mode: call it
+// once per hit, in order, across one whole bar - a fresh generator is made
+// each rebuild, same as the plain dur/pitch arrays every chord-aware track
+// already pre-resolves once per bar. Starts at ~chordRootInRange's own
+// note, then each later call climbs one degree further up
+// ~scales[scaleSet] (the parent scale for the current chord's own set -
+// see ~scales' own header comment, below), extending into higher octaves
+// once the scale's 7 degrees are exhausted. Once the next degree would
+// land above `hi`, the climb wraps back to the start note and begins
+// again - "the whole thing starts over," per feedback - rather than
+// clamping and staying there the way the OLD (percussion-only) Rising
+// pitch mode does. Resets ONLY at the next full bar (a fresh call to this
+// function from that track's next rebuild), per feedback - NOT at every
+// row/column-start within the bar the way percussion's own Rising does; a
+// row/column-boundary-aware version is a planned, separate, future step.
+~makeRisingPitchGen = { |chord, scaleSet, lo, hi|
+    var scale = ~scales[scaleSet];
+    var startNote = ~chordRootInRange.(chord, lo, hi);
+    var stepIdx = 0;
+    {
+        var octave = stepIdx div: scale.size;
+        var degree = stepIdx mod: scale.size;
+        var candidate = startNote + scale[degree] + (octave * 12);
+        if(candidate > hi) {
+// Wrap: re-emit the start note and resume climbing from the SECOND degree
+// next call, not the first again - otherwise the start note would sound
+// twice in a row right at the wrap point.
+            candidate = startNote;
+            stepIdx = 1;
+        } {
+            stepIdx = stepIdx + 1;
+        };
+        candidate;
+    };
 };
 
 // ~currentChord is the one shared "current chord". Read LIVE (not

@@ -56,7 +56,9 @@
 //          (First beat only - percussion only/Every beat/Start of Row-or-
 //          Col/the six 1/8th-1/3rd split variants/the three 4/3 merge
 //          variants/Skip %); Pitch is Fixed/Rising at start/Random for
-//          percussion, Fixed/Random for bass; Volume is Fixed/Alternate for
+//          percussion (its own separate Hz-based scheme); Fixed/Random/
+//          Rising for bass (chord/scale-based - see ~buildBassTrackPattern's
+//          own comment, CT8tracks.scd); Volume is Fixed/Alternate for
 //          both.
 //   Row 3: one sub-control per menu above, in three same-width columns so
 //          each lines up under its own menu:
@@ -583,10 +585,10 @@
                 statusText.string_("Changed - not yet applied.");
             });
         pitchMenu = PopUpMenu(rightPane, 120@22)
-            .items_(["Fixed", "Random"])
-            .value_([\fixed, \random].indexOf(~bassPitchMode[name]) ? 0)
+            .items_(["Fixed", "Random", "Rising"])
+            .value_([\fixed, \random, \rising].indexOf(~bassPitchMode[name]) ? 0)
             .action_({ |m|
-                ~bassPitchMode[name] = [\fixed, \random][m.value];
+                ~bassPitchMode[name] = [\fixed, \random, \rising][m.value];
                 statusText.string_("Changed - not yet applied.");
             });
         volumeMenu = PopUpMenu(rightPane, 120@22)

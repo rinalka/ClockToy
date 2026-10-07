@@ -166,7 +166,10 @@ their own bullets below for exactly where the line falls:
   rebuild - it used to be a fixed, non-adjustable ~1/4, now it shares the same Percent
   slider/global as the "%" split/merge patterns above, so switching between any of them
   keeps whichever percent was already set). Pitch is Fixed/Rising at
-  start/Random for percussion, Fixed/Random for bass (no Rising there). Volume is
+  start/Random for percussion (its own separate Hz-based scheme - unrelated to the
+  below); Fixed/Random/Rising for bass, in that menu order (chord/scale-based - see
+  `~buildBassTrackPattern`'s own bullet, `CT8tracks.scd`, and `~chordRootInRange`/
+  `~makeRisingPitchGen`, `CT8harmonySelect.scd`'s own bullet). Volume is
   Fixed/Alternate for both.
   Row 3 has one fixed-width `CompositeView` per menu above (`patternSubView`/
   `pitchSubView`/`volumeSubView`, each exactly as wide as its own row-2 menu so the two
@@ -306,7 +309,13 @@ their own bullets below for exactly where the line falls:
   `~chordNames[set][chordIndex]` is a second table in the exact same `[set][chordIndex]`
   shape holding those same names as actual strings, purely so logging (below) can print
   one - kept in sync with `~chords` by hand, since nothing can read a comment back at
-  runtime. `~keys`/`~currentKey` are the equivalent pair for transposition: `~keys` is a
+  runtime. `~scales[set]` is a third table, flat (not `[set][chordIndex]` - every chord
+  within one set shares the same parent scale, so the extra dimension would just repeat
+  the same array seven times) holding that set's own 7-degree scale as semitone offsets
+  from the tonic (e.g. `~scales[0]` is `[0, 2, 4, 5, 7, 9, 11]`, the major scale, for set
+  0's major triads) - what the Rising pitch mode (`~buildBassTrackPattern`/
+  `~buildMelodyPattern`, `CT8tracks.scd`) climbs through. No chromatic scale is defined -
+  no chord set needs one. `~keys`/`~currentKey` are the equivalent pair for transposition: `~keys` is a
   12-entry name table (`["C", "C#", ..., "B"]`), purely for logging, the same role
   `~chordNames` plays for `~chords`; `~currentKey` (0-11) doubles as both the index into
   `~keys` AND the actual semitone offset applied - no separate offset table needed, since
@@ -320,13 +329,26 @@ their own bullets below for exactly where the line falls:
   values, just as a live global each track reads instead of a literal, so a future
   per-bar-varying range (some tracks' ranges narrow and fixed, others recalculated every
   bar - not yet designed) only has to reassign this, not touch any builder.
-  `~chordNoteInRange.(chord, lo, hi)` is the one real consumer-facing function so far -
-  picks a tone from `chord` at random, transposes it by `~currentKey` semitones (added
-  before the `% 12`, not multiplied, and before picking candidates - transposing the
-  final result afterward instead could push it outside the requested `[lo, hi]`), then
-  picks again at random among every octave of that (transposed) pitch class inside
-  `[lo, hi]` inclusive, so "which note" and "which octave" are two independent random
-  choices. `~currentChord` is the one shared "current chord" global. Read LIVE, not
+  `~chordNoteInRange.(chord, lo, hi)` picks a tone from `chord` at random, transposes it
+  by `~currentKey` semitones (added before the `% 12`, not multiplied, and before picking
+  candidates - transposing the final result afterward instead could push it outside the
+  requested `[lo, hi]`), then picks again at random among every octave of that
+  (transposed) pitch class inside `[lo, hi]` inclusive, so "which note" and "which octave"
+  are two independent random choices - the Random pitch mode's own function.
+  `~chordRootInRange.(chord, lo, hi)` is its deterministic sibling, for Fixed and Rising -
+  same transpose-then-match-every-octave approach, but always `chord[0]` (the chord's own
+  root, as written) and always the LOWEST matching octave inside `[lo, hi]`, not a random
+  pick. `~makeRisingPitchGen.(chord, scaleSet, lo, hi)` returns a stateful zero-arg
+  generator for the Rising pitch mode: starts at `~chordRootInRange`'s own note, then each
+  later call climbs one further degree up `~scales[scaleSet]`, extending into higher
+  octaves once the scale's 7 degrees are exhausted; once the next degree would land above
+  `hi`, it wraps back to the start note and climbs again ("the whole thing starts over,"
+  per feedback, not clamping and staying there the way percussion's own, unrelated Rising
+  pitch mode does). A fresh generator is made once per rebuild (same as the plain
+  `durs`/pitch arrays every chord-aware track already pre-resolves once per bar), so the
+  climb resets only at the next full bar, never at a row/column-start within it - a
+  row/column-boundary-aware version is a planned, separate, future step, per feedback.
+  `~currentChord` is the one shared "current chord" global. Read LIVE, not
   snapshotted into a local var, by `~buildHarmonyPattern`/`~buildMelodyPattern`
   (`HT1`/`MT1`, `CT8tracks.scd`); `~buildBassTrackPattern` (`BT1`/`BT2`) also reads it, for
   their Random pitch mode specifically, but only once per rebuild. `~chordMarkov` (a
@@ -611,21 +633,28 @@ tone-and-octave picks within `~currentRange[\HT1]` (60-96 by default, three octa
 above middle C) - but still fires exactly once per row event either way, so the
 "one new chord per row-start" cadence is unchanged, only where the notes come from
 differs. `MT1` mirrors `HT1`'s structure but from `~colPattern`/`\columnStart`
-instead of `~rowPattern`/`\rowStart` (one slot per column instead of per row), with two
-deliberate differences from `HT1`, per feedback that a MELODY track should be built the
-same way a BASS track is rather than just being `HT1` on a different scan: its
-`\midinote` is a single `~chordNoteInRange.(~currentChord, ~currentRange[\MT1][0],
-~currentRange[\MT1][1])` pick, not an `Array.fill(4, {...})` chord stab - a melody plays
-one note at a time, never a chord, unlike `HT1` (still a live-re-rolling `Pfunc`, so the
-melody varies bar to bar even when that minute's column layout doesn't change - used to
-pick 1-or-2 notes from a fixed white-keys scale, before the `Array.fill(4, ...)` chord
-version, before this single-note version); and its `\amp` is no longer a hardcoded flat
-value but reads `~hmVolumeMode[\MT1]`/`~hmVolumeLevels[\MT1]` (the Harmony + Melody
-Generator window's own Volume row, `CT8guiHarmonyMelodyGenerator.scd` - built earlier as
-a placeholder, now actually wired up for this one track), resolved once per column-slot
-via the exact same Fixed-reads-hi/Alternate-flips-hi-lo `nextAmp` convention
-`~buildBassTrackPattern` uses for `BT1`/`BT2`, rather than live per-hit. Neither `HT1`
-nor `MT1` advances the chord progression itself - see `~checkForNewChordBar`,
+instead of `~rowPattern`/`\rowStart` (one slot per column instead of per row), with
+several deliberate differences from `HT1`, per feedback that a MELODY track should be
+built the same way a BASS track is rather than just being `HT1` on a different scan: it
+plays a single note per column-slot, never a chord (used to pick 1-or-2 notes from a
+fixed white-keys scale, then an `Array.fill(4, {...})` chord stab, before this
+single-note version); its `\midinote` is now pre-resolved into a flat array once per
+rebuild, same as its own `\dur`, rather than a live `Pfunc` re-rolling fresh every hit -
+needed for its Rising pitch mode (below) to be able to climb across a whole bar at all,
+and the reason a mid-bar chord change is no longer heard until MT1's own next rebuild,
+matching `BT1`/`BT2` exactly (it used to be heard on the very next note, back when pitch
+was live); its `\amp` is no longer a hardcoded flat value but reads
+`~hmVolumeMode[\MT1]`/`~hmVolumeLevels[\MT1]` (the Harmony + Melody Generator window's
+own Volume row, `CT8guiHarmonyMelodyGenerator.scd` - built earlier as a placeholder, now
+actually wired up for this one track), resolved once per column-slot via the exact same
+Fixed-reads-hi/Alternate-flips-hi-lo `nextAmp` convention `~buildBassTrackPattern` uses
+for `BT1`/`BT2`; and its Pitch mode is the same three-way Fixed/Random/Rising scheme
+`~buildBassTrackPattern` now has (see that bullet, below, and `~chordRootInRange`/
+`~makeRisingPitchGen`, `CT8harmonySelect.scd`'s own bullet, for the three modes'
+exact rules) via `~hmPitchMode[\MT1]`, reading/writing the same `~currentRange[\MT1]`
+Pitch `RangeSlider` bass's own analogous control uses - not a separate, now-retired
+`~hmBasePitch`, which that slider used to be a pure, unwired placeholder for. Neither
+`HT1` nor `MT1` advances the chord progression itself - see `~checkForNewChordBar`,
 `CT8harmonySelect.scd`'s own bullet, for where that lives instead.
 
 `BT1`/`BT2` are driven by the Bass Generator config exactly the way `PT1`-`PT4` are
@@ -640,14 +669,22 @@ old single `BT1`'s "both at once" behavior, just as two independent tracks inste
 one `Ppar`. `~bassInstrument[name]` picks `\fm` or `\plucking` (`BT1`/`BT2` default to one
 each) - both take a plain `\midinote` key (no per-instrument pitch-arg-name dispatch
 needed, unlike `~buildPercPattern`'s `pitchArgName` switch) and a plain `\amp` key (no
-amp-arg-name dispatch either). `~bassPitchMode[name]` is Fixed (reads the high end of
-`~currentRange[name]`, `CT8harmonySelect.scd`, a plain MIDI note) or Random (picks a
-tone from `~currentChord` via `~chordNoteInRange`, constrained to that same
-`[lo, hi]`) - no separate `~bassBasePitch` any more, both modes share
-`~currentRange[name]` (12-59, "below middle C", by default, and now live-adjustable
-from this window's own Pitch `RangeSlider` too), the same global `HT1`/`MT1` read live,
-just resolved once per rebuild here instead - so a mid-bar chord change isn't heard on
-`BT1`/`BT2` until their next rebuild, unlike `HT1`/`MT1`'s live per-hit read. `\fx`
+amp-arg-name dispatch either). `~bassPitchMode[name]` is Fixed (`~chordRootInRange` -
+the chord's own root note, deterministic, not a random pick), Random (`~chordNoteInRange`
+- any chord tone, any octave, re-picked per baseline slot), or Rising
+(`~makeRisingPitchGen` - starts at the same root `~chordRootInRange` would give, then
+climbs `~scales[~chordSet]` one degree per baseline slot, not per row/column-start,
+wrapping back to the root once the climb would exceed the range's high end, and
+resetting fully only at the next bar - see that function's own bullet,
+`CT8harmonySelect.scd`, for the exact rule) - no separate `~bassBasePitch` any more, all
+three modes share `~currentRange[name]` (12-59, "below middle C", by default, and
+live-adjustable from this window's own Pitch `RangeSlider` too), the same global
+`HT1`/`MT1` read live, just resolved once per rebuild here instead - so a mid-bar chord
+change isn't heard on `BT1`/`BT2` until their next rebuild, unlike `HT1`'s live per-hit
+read. Per feedback, which split/merge group a hit falls under (the six 1/8th-1/3rd/4/3
+families) doesn't yet change how Rising advances - every hit in one such group still
+shares its one pitch/one climb-step, same "same pitch throughout the group" rule Fixed/
+Random already followed - pending a separate, later pass specifically on that. `\fx`
 reaches `~clockRev` through `\fm`'s real `fx`/`fxsend` send (ignored by `\plucking`, which
 has no `\fx` arg - its own hardcoded, independently-attenuated `~revBus` send, via its
 own `dynamic` arg, is separate and untouched either way - see `CT8synths.scd`'s bullet);

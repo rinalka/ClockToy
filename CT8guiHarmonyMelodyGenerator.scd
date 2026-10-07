@@ -11,23 +11,26 @@
 // under each on row 3 - copied here as a starting skeleton for HT1-4/MT1-2,
 // per explicit request ("we will rework it step at a time").
 //
-// Deliberately NOT yet wired into ~buildHarmonyPattern/~buildMelodyPattern
-// (CT8tracks.scd) - those two are still their own bespoke, chord-based
-// builders, untouched by this file. Every control here besides on/off and
-// MT1's own Volume row reads and writes a brand new set of placeholder
-// globals (~hmX, below) that don't affect playback yet - this window's job
-// for now is just to exist with the right shape; what each control should
-// actually DO for a chord-aware harmony/melody track is a later step. The
-// on/off button IS real, though: same ~trackEnabled[name]/~syncTrackPlayer
-// every other window's on/off button already uses, and shows orange (not
-// red/green, same convention CT8guiAdjust.scd's own buttons use) for
-// HT2-4/MT2, which have no builder yet - HT1/MT1 are the only two of these
-// six with a real builder right now. MT1's Volume menu/RangeSlider is also
-// real now - ~buildMelodyPattern reads ~hmVolumeMode[\MT1]/
-// ~hmVolumeLevels[\MT1] directly (same Fixed/Alternate convention
-// ~buildBassTrackPattern uses for BT1/BT2), since per feedback a melody
-// track should be structured the same way a bass track is - single note,
-// same volume handling - not just "single note, hardcoded amp".
+// Deliberately NOT yet wired into ~buildHarmonyPattern (CT8tracks.scd) -
+// HT1 is still its own bespoke, chord-based builder, untouched by this
+// file. Every control here besides on/off and MT1's own Volume/Pitch rows
+// reads and writes a brand new set of placeholder globals (~hmX, below)
+// that don't affect playback yet - this window's job for now is just to
+// exist with the right shape; what each control should actually DO for a
+// chord-aware harmony/melody track is a later step. The on/off button IS
+// real, though: same ~trackEnabled[name]/~syncTrackPlayer every other
+// window's on/off button already uses, and shows orange (not red/green,
+// same convention CT8guiAdjust.scd's own buttons use) for HT2-4/MT2, which
+// have no builder yet - HT1/MT1 are the only two of these six with a real
+// builder right now. MT1's Volume AND Pitch controls are also real now -
+// ~buildMelodyPattern reads ~hmVolumeMode[\MT1]/~hmVolumeLevels[\MT1] and
+// ~hmPitchMode[\MT1] directly (same Fixed/Alternate volume convention,
+// and the same Fixed/Random/Rising pitch convention, ~buildBassTrackPattern
+// uses for BT1/BT2), since per feedback a melody track should be
+// structured the same way a bass track is. The Pitch RangeSlider writes
+// straight into ~currentRange[\MT1] (CT8harmonySelect.scd) now too, same
+// as bass's own Pitch RangeSlider does - not the separate, now-retired
+// ~hmBasePitch this used to be a pure placeholder for.
 //
 // One shared closure (makeHmTrackSection) builds all six tracks, rather
 // than splitting into separate harmony/melody versions the way
@@ -47,7 +50,6 @@
 ~hmInstrument = ~hmInstrument ? ();
 ~hmPattern = ~hmPattern ? ();
 ~hmPitchMode = ~hmPitchMode ? ();
-~hmBasePitch = ~hmBasePitch ? ();
 ~hmVolumeMode = ~hmVolumeMode ? ();
 ~hmVolumeLevels = ~hmVolumeLevels ? ();
 ~hmWet = ~hmWet ? ();
@@ -64,7 +66,6 @@
     ~hmInstrument[name] = ~hmInstrument[name] ? ~hmInstrumentDefaults[name];
     ~hmPattern[name] = ~hmPattern[name] ? \everyBeat;
     ~hmPitchMode[name] = ~hmPitchMode[name] ? \fixed;
-    ~hmBasePitch[name] = ~hmBasePitch[name] ? [60, 60];
     ~hmVolumeMode[name] = ~hmVolumeMode[name] ? \fixed;
     ~hmVolumeLevels[name] = ~hmVolumeLevels[name] ? [0.2, 0.2];
     ~hmWet[name] = ~hmWet[name] ? 0;
@@ -80,12 +81,17 @@
     ~hmInstrument[name] = ~hmInstrumentDefaults[name];
     ~hmPattern[name] = \everyBeat;
     ~hmPitchMode[name] = \fixed;
-    ~hmBasePitch[name] = [60, 60];
     ~hmVolumeMode[name] = \fixed;
     ~hmVolumeLevels[name] = [0.2, 0.2];
     ~hmWet[name] = 0;
     ~hmLevel[name] = 1;
     ~hmSplitPercent[name] = 33;
+// Also resets ~currentRange[name] (CT8harmonySelect.scd) back to its own
+// original default - mirrors ~resetBassConfig's identical addition
+// (CT8tracks.scd) for the same reason: this window's Pitch RangeSlider
+// writes straight into ~currentRange[name] now (not a separate
+// ~hmBasePitch any more), so this button needs to be able to recover it.
+    ~currentRange[name] = [60, 96];
 };
 
 ~makeHarmonyMelodyGeneratorWindow = {
@@ -263,10 +269,10 @@
                 statusText.string_("Changed (not yet wired to playback).");
             });
         pitchMenu = PopUpMenu(rightPane, 120@22)
-            .items_(["Fixed", "Rising at start", "Random"])
-            .value_([\fixed, \rising, \random].indexOf(~hmPitchMode[name]) ? 0)
+            .items_(["Fixed", "Random", "Rising"])
+            .value_([\fixed, \random, \rising].indexOf(~hmPitchMode[name]) ? 0)
             .action_({ |m|
-                ~hmPitchMode[name] = [\fixed, \rising, \random][m.value];
+                ~hmPitchMode[name] = [\fixed, \random, \rising][m.value];
                 statusText.string_("Changed (not yet wired to playback).");
             });
         volumeMenu = PopUpMenu(rightPane, 120@22)
@@ -306,21 +312,28 @@
         };
         updatePatternPercentVisibility.value;
 
-// Pitch range, in plain MIDI notes (0-127) - not chord-aware yet, unlike
-// BT1/BT2's own Random pitch mode, which already reads ~currentRange
-// (CT8harmonySelect.scd). Hooking this up to the shared chord system is
-// exactly the kind of "rework" step planned for later.
+// Pitch range, in plain MIDI notes (0-127) - writes straight into
+// ~currentRange[name] (CT8harmonySelect.scd) now, same as bass's own
+// Pitch RangeSlider (CT8guiPercGenerator.scd), rather than the separate,
+// now-retired ~hmBasePitch this used to be a pure placeholder for. .round,
+// not left as the raw linlin float - ~chordRootInRange/~chordNoteInRange's
+// own mod-12 matching need whole-number bounds, same reason bass's own
+// slider was fixed to round (see CT8tracks.scd/~resetBassConfig's own
+// comment for what happens if it doesn't: Random/Rising silently go
+// permanently silent).
         pitchRangeSlider = RangeSlider(pitchSubView, Rect(2, 2, 116, 18))
-            .lo_(~hmBasePitch[name][0].linlin(0, 127, 0, 1))
-            .hi_(~hmBasePitch[name][1].linlin(0, 127, 0, 1));
+            .lo_(~currentRange[name][0].linlin(0, 127, 0, 1))
+            .hi_(~currentRange[name][1].linlin(0, 127, 0, 1));
         pitchRangeReadout = StaticText(pitchSubView, Rect(2, 21, 116, 16)).stringColor_(labelColor);
         updatePitchRangeReadout = {
             pitchRangeReadout.string_(
-                ~hmBasePitch[name][0].round(1).asString ++ " - " ++ ~hmBasePitch[name][1].round(1).asString
+                ~currentRange[name][0].round(1).asString ++ " - " ++ ~currentRange[name][1].round(1).asString
             );
         };
         pitchRangeSlider.action_({ |rs|
-            ~hmBasePitch[name] = [rs.lo.linlin(0, 1, 0, 127), rs.hi.linlin(0, 1, 0, 127)];
+            ~currentRange[name] = [
+                rs.lo.linlin(0, 1, 0, 127).round, rs.hi.linlin(0, 1, 0, 127).round
+            ];
             updatePitchRangeReadout.value;
             statusText.string_("Changed (not yet wired to playback).");
         });
