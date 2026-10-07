@@ -28,12 +28,10 @@
 // ---------------------------------------------------------------------------
 // Build the application window and its four digit panels, plus two thin
 // black UserViews used purely as divider bars between them.
-"making window".postln;
-
 ~makeWindow = {
 // Close earlier SuperCollider windows before creating a fresh ClockToy display.
     Window.closeAll;
-    w = Window("My Daily Digital Clock", Rect(800, 800, 500, 212), resizable: true, border: true)
+    w = Window("My Daily Digital Clock", Rect(1400, 400, 500, 212), resizable: true, border: true)
         .background_(Color.black)
         .front
         .alwaysOnTop_(true);
@@ -193,10 +191,6 @@
 // actually be computed; CT8tracks.scd's builders just read the result.
     ~rowPattern = ~clockEvents;
     ~numBeats = ~rowPattern.size;
-// Posted here rather than in ~checkForNewMinute specifically, so it covers
-// every trigger that actually changes ~rowPattern (minute rollover, plus
-// the adjust window's source/format toggles) with one line, not several.
-    ~rowPattern.postln;
 
 // Kept only for backward compatibility/inspection - each event's panel and
 // segment index, flattened out of ~clockEvents.
@@ -462,7 +456,6 @@
 // Rebuild the clock only when a minute boundary has actually been crossed.
     if (~minutes != lastMinute) {
         {
-            "Time change detected... updating pattern clocks.".postln;
             lastMinute = ~minutes;
             if (~minutes == 60) { ~minutes = 0 };
             if (~minutes == 0) { ~hours = ~hours + 1 };

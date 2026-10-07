@@ -198,7 +198,17 @@
 // whole bar.
 ~chordNoteInRange = { |chord, lo, hi|
     var pitchClass = (chord.choose + ~currentKey) % 12;
-    var candidates = (lo..hi).select { |n| (n % 12) == pitchClass };
+// lo/hi must be whole numbers for (lo..hi)'s mod-12 matching below to work -
+// a non-integer lo (e.g. straight off a RangeSlider's raw linlin output,
+// with no .round) shifts every candidate by that same fraction, so `n % 12`
+// never exactly equals the integer pitchClass and candidates comes back
+// empty every single time, silently (candidates.choose on an empty array
+// just returns nil, which then kills the Pbind reading it as \midinote).
+// .ceil/.floor here, not .round, so the usable range never extends beyond
+// what [lo, hi] actually asked for.
+    var loI = lo.ceil.asInteger;
+    var hiI = hi.floor.asInteger;
+    var candidates = (loI..hiI).select { |n| (n % 12) == pitchClass };
     candidates.choose;
 };
 
@@ -394,20 +404,34 @@
 // Scheduled from CT8main.scd's boot sequence via t.sched(0, {...; 1}),
 // the same repeating-check idiom ~checkForNewMinute already uses.
 ~chordBarBeatCount = 0;
+// ~chordHeld - set from the Clock Toy Adjust window's "Hold Chord" button
+// (CT8guiAdjust.scd) - when true, the bar-boundary check below still
+// resets ~chordBarBeatCount every bar (so releasing it lands cleanly on
+// the next natural boundary rather than firing an overdue advance
+// immediately), it just skips actually moving ~currentChord/~nextChord
+// forward. Lets a test run hold on one hand-picked chord (that same
+// window's Set/Chord boxes, which write ~currentChord directly) for as
+// long as wanted, rather than only ever a Markov-chosen one.
+~chordHeld = ~chordHeld ? false;
 ~checkForNewChordBar = {
     ~chordBarBeatCount = ~chordBarBeatCount + 1;
     if(~chordBarBeatCount >= (~numBeats ? 1).max(1)) {
         ~chordBarBeatCount = 0;
+        if(~chordHeld.not) {
 // The lookahead chord becomes current, and ~currentChordNumber (last set
 // by whichever ~computeNextChord call produced THIS ~nextChord) already
-// correctly describes it - so log before computing the FOLLOWING lookahead
-// below, which will overwrite ~currentChordNumber again, this time to
-// describe next bar's chord instead of this one.
-        ~currentChord = ~nextChord;
-        ("New chord: " ++ ~chordNames[~chordSet][~currentChordNumber - 1]
-            ++ "  " ++ ~currentChord ++ "  (set " ++ ~chordSet
-            ++ ", index " ++ (~currentChordNumber - 1) ++ ")").postln;
-        ~nextChord = ~computeNextChord.value;
+// correctly describes it - so update the GUI readout before computing the
+// FOLLOWING lookahead below, which will overwrite ~currentChordNumber
+// again, this time to describe next bar's chord instead of this one.
+            ~currentChord = ~nextChord;
+// ~onChordChanged (CT8guiAdjust.scd) updates that window's chord-name
+// readout - guarded with .notNil since this can in principle fire before
+// that window exists (or if ClockToy is ever run without it). Same
+// ordering reason as above: ~currentChordNumber still describes THIS
+// chord here, not yet overwritten by ~computeNextChord below.
+            if(~onChordChanged.notNil) { ~onChordChanged.value };
+            ~nextChord = ~computeNextChord.value;
+        };
     };
 };
 

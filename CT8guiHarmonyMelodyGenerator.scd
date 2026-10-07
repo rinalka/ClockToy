@@ -13,16 +13,21 @@
 //
 // Deliberately NOT yet wired into ~buildHarmonyPattern/~buildMelodyPattern
 // (CT8tracks.scd) - those two are still their own bespoke, chord-based
-// builders, untouched by this file. Every control here besides on/off reads
-// and writes a brand new set of placeholder globals (~hmX, below) that
-// don't affect playback yet - this window's job for now is just to exist
-// with the right shape; what each control should actually DO for a
-// chord-aware harmony/melody track is a later step. The on/off button IS
-// real, though: same ~trackEnabled[name]/~syncTrackPlayer every other
-// window's on/off button already uses, and shows orange (not red/green,
-// same convention CT8guiAdjust.scd's own buttons use) for HT2-4/MT2, which
-// have no builder yet - HT1/MT1 are the only two of these six with a real
-// builder right now.
+// builders, untouched by this file. Every control here besides on/off and
+// MT1's own Volume row reads and writes a brand new set of placeholder
+// globals (~hmX, below) that don't affect playback yet - this window's job
+// for now is just to exist with the right shape; what each control should
+// actually DO for a chord-aware harmony/melody track is a later step. The
+// on/off button IS real, though: same ~trackEnabled[name]/~syncTrackPlayer
+// every other window's on/off button already uses, and shows orange (not
+// red/green, same convention CT8guiAdjust.scd's own buttons use) for
+// HT2-4/MT2, which have no builder yet - HT1/MT1 are the only two of these
+// six with a real builder right now. MT1's Volume menu/RangeSlider is also
+// real now - ~buildMelodyPattern reads ~hmVolumeMode[\MT1]/
+// ~hmVolumeLevels[\MT1] directly (same Fixed/Alternate convention
+// ~buildBassTrackPattern uses for BT1/BT2), since per feedback a melody
+// track should be structured the same way a bass track is - single note,
+// same volume handling - not just "single note, hardcoded amp".
 //
 // One shared closure (makeHmTrackSection) builds all six tracks, rather
 // than splitting into separate harmony/melody versions the way
@@ -85,7 +90,7 @@
 
 ~makeHarmonyMelodyGeneratorWindow = {
     var statusText, applyNow, makeHmTrackSection;
-    var hmGenWidth = 600;
+    var hmGenWidth = 640;
     var hmGenHeight = 1360;
     var hmGenBounds = Rect(700, 40, hmGenWidth, hmGenHeight);
 
@@ -135,15 +140,20 @@
             \firstBeat, \everyBeat, \startOnly,
             \random8thPercent, \random8thLastBar, \random8thLastRowCol,
             \random3rdPercent, \random3rdLastBar, \random3rdLastRowCol,
+            \random4to3Percent, \random4to3LastBar, \random4to3LastRowCol,
             \randomSkip
         ];
+// "Random" dropped from every label - mirrors CT8guiPercGenerator.scd's own
+// patternLabelsFor (kept in sync even though this window isn't wired to
+// playback yet).
         var patternLabelsFor = { |source|
             [
                 "First beat only", "Every beat",
                 "Start of " ++ (if(source == \row) { "Row" } { "Col" }),
-                "Random 1/8th %", "Random 1/8th (last of bar)", "Random 1/8th (last of row/col)",
-                "Random 1/3 %", "Random 1/3 (last of bar)", "Random 1/3 (last of row/col)",
-                "Random skip!"
+                "1/8th %", "1/8th (last of bar)", "1/8th (last of row/col)",
+                "1/3 %", "1/3 (last of bar)", "1/3 (last of row/col)",
+                "4/3 %", "4/3 (last of bar)", "4/3 (last of row/col)",
+                "Skip %"
             ]
         };
 
@@ -282,7 +292,9 @@
             .string_(~hmSplitPercent[name].round(1).asString ++ "%").stringColor_(labelColor);
         updatePatternPercentVisibility = {
             var pattern = ~hmPattern[name];
-            var isPercentPattern = (pattern == \random8thPercent) or: { pattern == \random3rdPercent };
+            var isPercentPattern = #[
+                \random8thPercent, \random3rdPercent, \random4to3Percent, \randomSkip
+            ].includes(pattern);
             percentSlider.visible_(isPercentPattern);
             percentReadout.visible_(isPercentPattern);
         };

@@ -40,32 +40,48 @@
 //     Hz-based pitch arg (not a scale degree), which is why pitch below is
 //     plain Hz too.
 //   ~percPattern[name]    - which beats in that source actually get a hit.
-//     All ten choices are one flat list in the Percussion Generator (no
+//     All thirteen choices are one flat list in the Percussion Generator (no
 //     mode-within-mode submenu) - the split/variant combinations used to be
 //     a single \random8th/\random3rd choice plus a separate
 //     ~percSplitVariant[name], but that hid five of the six actual
 //     behaviors behind an extra menu, so each combination now gets its own
-//     top-level entry instead:
+//     top-level entry instead. Every percent-driven entry's menu label ends
+//     in "%" (the only ones the Percussion Generator shows its Percent box
+//     for); the deterministic "(last of bar)"/"(last of row/col)" entries
+//     don't, since there's no percent to set for those:
 //     \firstBeat  - one hit per bar, at the very first beat.
 //     \everyBeat  - one hit per beat, no skipping.
 //     \startOnly  - one hit at every row/column-start (skips plain cells).
-//     \random8thPercent/\random3rdPercent - every beat, but
-//       ~percSplitPercent[name]% of them (chosen fresh each rebuild,
+//     \random8thPercent/\random3rdPercent ("1/8th %"/"1/3 %") - every beat,
+//       but ~percSplitPercent[name]% of them (chosen fresh each rebuild,
 //       independently per beat) are replaced by a double hit/triplet - the
 //       beat's own span split evenly in two/three, same pitch throughout.
-//       The only one of these ten where ~percSplitPercent[name] matters
-//       (and the only one the Percussion Generator shows a Percent box
-//       for).
 //     \random8thLastBar/\random3rdLastBar - same double-hit/triplet split,
 //       but deterministic: only the bar's very last beat, always, every
 //       bar - no randomness, no percent.
 //     \random8thLastRowCol/\random3rdLastRowCol - same split, deterministic,
 //       but on the last beat of every row/column span instead - one split
 //       per row/col, not just one per bar.
-//     \randomSkip - every beat, but ~1/4 of beats (chosen fresh each
-//       rebuild) are silent - the beat's span is unchanged, it just doesn't
-//       sound. Not affected by ~percSplitPercent - that only applies to the
-//       six split patterns above, not to skipping.
+//     \random4to3Percent/\random4to3LastBar/\random4to3LastRowCol
+//       ("4/3 %"/"4/3 (last of bar)"/"4/3 (last of row/col)") - the inverse
+//       of the 1/8th/1/3 families: instead of expanding ONE beat into 2/3
+//       sub-hits, these MERGE a run of 4 consecutive baseline beats into 3
+//       equal-length hits spanning that same total time (same pitch
+//       throughout the merged group, same "same pitch across the group"
+//       convention the splits above already use). \random4to3Percent rolls
+//       ~percSplitPercent[name]% per non-overlapping group of 4, scanning
+//       from the bar's start; \random4to3LastBar merges only the bar's
+//       final 4 beats, every bar; \random4to3LastRowCol merges the final 4
+//       beats of every row/column span. A bar or span shorter than 4 beats
+//       simply can't merge and is left as individual beats, unchanged -
+//       expect this with \random4to3LastRowCol especially, since most
+//       columns and many rows won't have 4 beats to begin with.
+//     \randomSkip ("Skip %") - every beat, but ~percSplitPercent[name]% of
+//       them (chosen fresh each rebuild) are silent - the beat's span is
+//       unchanged, it just doesn't sound. Now shares ~percSplitPercent[name]
+//       with the "%" split/merge patterns above (switching between any of
+//       these keeps whichever percent was already set) - it used to be a
+//       fixed, non-adjustable ~1/4.
 //   ~percPitchMode[name] - how the pitch arg varies hit to hit.
 //     ~percBasePitch[name] is [lo, hi] - one dual-handle RangeSlider in the
 //     Percussion Generator window (CT8guiPercGenerator.scd), not a
@@ -209,7 +225,7 @@
 //     RangeSlider in the GUI) - Fixed reads its high end; Alternate uses
 //     the whole span, same idea as percussion's ~percVolumeLevels.
 //   - Pattern has no \firstBeat option (per feedback, not a useful choice
-//     for a bass part) - otherwise the exact same nine choices PT1-4 have.
+//     for a bass part) - otherwise the exact same twelve choices PT1-4 have.
 ~bassTrackNames = [\BT1, \BT2];
 ~bassSource = ~bassSource ? ();
 ~bassInstrument = ~bassInstrument ? ();
@@ -255,6 +271,11 @@
     ~bassWet[name] = 0;
     ~bassLevel[name] = 1;
     ~bassSplitPercent[name] = 33;
+// Also resets ~currentRange[name] (CT8harmonySelect.scd) back to its own
+// original default - [12, 59] there, duplicated here since nothing shared
+// exposes it - previously missed here, which meant this button couldn't
+// recover a track whose Pitch RangeSlider had left it holding a bad value.
+    ~currentRange[name] = [12, 59];
 };
 
 
@@ -335,6 +356,7 @@
         var instrument = ~percInstrument[name];
         var pattern = ~percPattern[name];
         var splitCount, splitVariant, lastOfGroupIdx;
+        var isMergePattern, mergeVariant, mergeStart;
 // The arg name a pitch value actually needs to go in differs by instrument -
 // baseD/cym use \basefreq, hat uses \freq, kick uses \drumFreq (its own
 // pitch-sweep's settled frequency - see CT8guiTracksLab.scd's header for
@@ -435,39 +457,109 @@
 // group immediately before it.
         lastOfGroupIdx = startIdx.drop(1).collect(_ - 1) ++ [events.size - 1];
 
+// The three \random4to3* patterns are a separate mechanism from the six
+// splitCount ones above - those EXPAND one baseline slot into 2/3 sub-hits;
+// these MERGE a run of 4 consecutive baseline slots into 3 equal-length
+// hits spanning the same total time instead (see this function's own header
+// comment, PERCUSSION GENERATOR CONFIG section above, for the full
+// explanation of each variant). mergeStart[i] (i an index into baseSlotIdx,
+// not a raw event index - baseSlotIdx is always the full 0..events.size-1
+// grid whenever a merge pattern is selected, same as every split/skip
+// pattern, so the two index spaces coincide here) marks the start of a
+// 4-slot group that should merge; any bar/span shorter than 4 slots just
+// never gets marked, so it's left as individual beats - the "ignore the
+// problem" case this pattern's own description calls out.
+        isMergePattern = #[\random4to3Percent, \random4to3LastBar, \random4to3LastRowCol].includes(pattern);
+        mergeVariant = switch(pattern,
+            \random4to3LastBar, { \lastOfBar },
+            \random4to3LastRowCol, { \lastOfRowCol },
+            { \random }
+        );
+        mergeStart = Array.fill(baseSlotIdx.size, { false });
+        if(isMergePattern) {
+            switch(mergeVariant,
+// Non-overlapping groups of 4, scanning from the bar's start - group k
+// covers slots [4k, 4k+3]; a group with fewer than 4 slots left before the
+// bar ends just isn't offered a roll at all.
+                \random, {
+                    var groupStart = 0;
+                    while ({ (groupStart + 3) < baseSlotIdx.size }) {
+                        if(100.0.rand < ~percSplitPercent[name]) { mergeStart[groupStart] = true };
+                        groupStart = groupStart + 4;
+                    };
+                },
+// Deterministic: only the bar's final 4 slots, every bar.
+                \lastOfBar, {
+                    if(baseSlotIdx.size >= 4) { mergeStart[baseSlotIdx.size - 4] = true };
+                },
+// Deterministic: the final 4 slots of every row/column span (startIdx[k] ..
+// lastOfGroupIdx[k]) - skipped for any span shorter than 4 slots.
+                \lastOfRowCol, {
+                    startIdx.do { |spanStart, k|
+                        var spanEnd = lastOfGroupIdx[k];
+                        if((spanEnd - spanStart + 1) >= 4) { mergeStart[spanEnd - 3] = true };
+                    };
+                }
+            );
+        };
+
 // Expand each baseline slot into its final hit(s). A slot's span is the gap
 // to the next baseline slot, or to the end of the bar for the last one -
-// the same row/column-span technique HT1/MT1/BT1 use. The six split
+// the same row/column-span technique HT1/MT1/BT1 use. The six splitCount
 // patterns subdivide a slot's own span into splitCount equal hits instead
 // of changing that span, for whichever beats shouldSplit picks (per
 // splitVariant - \random re-rolls fresh per slot here at rebuild time, same
 // as ~percPitchMode's own \random option; \lastOfBar/\lastOfRowCol are
-// deterministic, no rolling involved); \randomSkip keeps one hit per slot
-// but may mark it a rest instead.
-        baseSlotIdx.do { |idx, i|
-            var nextIdx = if((i + 1) < baseSlotIdx.size) { baseSlotIdx[i + 1] } { events.size };
-            var span = nextIdx - idx;
-            var pitch = basePitches[i];
-            var shouldSplit = (splitCount > 1) and: {
-                switch(splitVariant,
-                    \random, { 100.0.rand < ~percSplitPercent[name] },
-                    \lastOfBar, { idx == (events.size - 1) },
-                    \lastOfRowCol, { lastOfGroupIdx.includes(idx) }
-                )
+// deterministic, no rolling involved); the three \random4to3* patterns
+// instead consume 4 slots at once wherever mergeStart marks a group, ahead
+// of all of that; \randomSkip keeps one hit per slot but may mark it a rest
+// instead. A manual while loop, not .do, since a merged group advances the
+// index by 4 instead of 1.
+        {
+            var slotI = 0;
+            while ({ slotI < baseSlotIdx.size }) {
+                if(mergeStart[slotI]) {
+                    var groupSpan = 0;
+                    var pitch = basePitches[slotI];
+                    4.do { |k|
+                        var kk = slotI + k;
+                        var kIdx = baseSlotIdx[kk];
+                        var kNextIdx = if((kk + 1) < baseSlotIdx.size) { baseSlotIdx[kk + 1] } { events.size };
+                        groupSpan = groupSpan + (kNextIdx - kIdx);
+                    };
+                    durs = durs.addAll(Array.fill(3, { groupSpan / 3 }));
+                    pitches = pitches.addAll(Array.fill(3, { pitch }));
+                    restFlags = restFlags.addAll(Array.fill(3, { false }));
+                    amps = amps.addAll(Array.fill(3, { nextAmp.value }));
+                    slotI = slotI + 4;
+                } {
+                    var idx = baseSlotIdx[slotI];
+                    var nextIdx = if((slotI + 1) < baseSlotIdx.size) { baseSlotIdx[slotI + 1] } { events.size };
+                    var span = nextIdx - idx;
+                    var pitch = basePitches[slotI];
+                    var shouldSplit = (splitCount > 1) and: {
+                        switch(splitVariant,
+                            \random, { 100.0.rand < ~percSplitPercent[name] },
+                            \lastOfBar, { idx == (events.size - 1) },
+                            \lastOfRowCol, { lastOfGroupIdx.includes(idx) }
+                        )
+                    };
+                    if(shouldSplit) {
+                        durs = durs.addAll(Array.fill(splitCount, { span / splitCount }));
+                        pitches = pitches.addAll(Array.fill(splitCount, { pitch }));
+                        restFlags = restFlags.addAll(Array.fill(splitCount, { false }));
+                        amps = amps.addAll(Array.fill(splitCount, { nextAmp.value }));
+                    } {
+                        var isSkip = (pattern == \randomSkip) and: { 100.0.rand < ~percSplitPercent[name] };
+                        durs = durs.add(span);
+                        pitches = pitches.add(pitch);
+                        restFlags = restFlags.add(isSkip);
+                        amps = amps.add(nextAmp.value);
+                    };
+                    slotI = slotI + 1;
+                };
             };
-            if(shouldSplit) {
-                durs = durs.addAll(Array.fill(splitCount, { span / splitCount }));
-                pitches = pitches.addAll(Array.fill(splitCount, { pitch }));
-                restFlags = restFlags.addAll(Array.fill(splitCount, { false }));
-                amps = amps.addAll(Array.fill(splitCount, { nextAmp.value }));
-            } {
-                var isSkip = (pattern == \randomSkip) and: { 1.0.rand < (1/4) };
-                durs = durs.add(span);
-                pitches = pitches.add(pitch);
-                restFlags = restFlags.add(isSkip);
-                amps = amps.add(nextAmp.value);
-            };
-        };
+        }.value;
 
         ~trackPatterns[name] = Pbind(*[
             \instrument, instrument,
@@ -586,19 +678,29 @@
 // MT1: the first melody track, from the by-column scan (mirrors HT1's
 // by-row structure exactly, one slot per \columnStart instead of per
 // \rowStart - each of the 3 columns per digit panel can have 1-3 lit
-// segments ("entries"), but rather than one note per entry, this plays 4
-// notes per column-slot, re-rolled live every time (not precomputed once
-// per rebuild like HT1's old chordGroups - the melody varies bar to bar
-// even when the column layout itself doesn't change this minute). Used to
-// pick from a fixed white-keys scale; now picks all 4 from ~currentChord
-// (the one shared "current chord" - CT8harmonySelect.scd, read fresh
-// every call rather than snapshotted into a local var, so a chord change
-// is heard on the very next note), constrained to MIDI 60-96 inclusive
-// via ~chordNoteInRange. Doesn't advance ~currentChord itself -
+// segments ("entries")). Used to play a 4-note chord stab per column-slot,
+// identical in shape to HT1's own \midinote - per feedback, a MELODY track
+// should only ever play one note at a time, never a chord, so this is now
+// a single ~chordNoteInRange pick instead of Array.fill(4, {...}) (still
+// read fresh every time this key is called, live, not precomputed once per
+// rebuild - the melody still varies bar to bar even when the column layout
+// itself doesn't change this minute). Picks from ~currentChord (the one
+// shared "current chord" - CT8harmonySelect.scd, read fresh every call
+// rather than snapshotted into a local var, so a chord change is heard on
+// the very next note), constrained to ~currentRange[\MT1] via
+// ~chordNoteInRange. Doesn't advance ~currentChord itself -
 // ~checkForNewChordBar (CT8harmonySelect.scd, scheduled from CT8main.scd)
 // does that independently of any one track's Pbind, since nearly every
 // track ends up reading ~currentChord and tying the advance to one
 // particular track's own beat-counter was an awkward, arbitrary coupling.
+// \amp now matches bass's own structure too, per feedback - a melody track
+// should be built the same way a bass track is, not just single-note:
+// ~hmVolumeMode[\MT1]/~hmVolumeLevels[\MT1] (the Harmony + Melody
+// Generator window's own Volume row, CT8guiHarmonyMelodyGenerator.scd -
+// built earlier but not actually wired to this track until now) are the
+// amp source, resolved once per column-slot via the same Fixed/Alternate
+// nextAmp convention ~buildBassTrackPattern uses, replacing the old
+// hardcoded flat 0.15.
 ~buildMelodyPattern = {
     var events = ~colPattern ? [];
     if(events.isEmpty) {
@@ -608,7 +710,7 @@
 // Index of every \columnStart event in this cycle - mirrors HT1's
 // rowStartIdx; always at least one, for the same reason (the empty-events
 // case above already handled the only way there could be zero).
-        var colStartIdx, colDurs;
+        var colStartIdx, colDurs, amps, ampIndex = 0, nextAmp;
 
         colStartIdx = [];
         events.do { |ev, i| if(ev[\role] == \columnStart) { colStartIdx = colStartIdx.add(i) } };
@@ -621,17 +723,32 @@
             nextIdx - idx
         };
 
+// ~hmVolumeLevels[\MT1] is [lo, hi] (one dual-handle RangeSlider in the
+// Harmony + Melody Generator window) - \fixed always reads hi; \alternate
+// alternates hi, lo every hit, high end first - identical convention to
+// ~buildBassTrackPattern's own nextAmp, including resolving the whole
+// column-slot's worth once per rebuild rather than live via Pfunc.
+        nextAmp = {
+            var lo = ~hmVolumeLevels[\MT1][0];
+            var hi = ~hmVolumeLevels[\MT1][1];
+            var v = if(~hmVolumeMode[\MT1] == \alternate) {
+                if(ampIndex % 2 == 0) { hi } { lo }
+            } {
+                hi
+            };
+            ampIndex = ampIndex + 1;
+            v;
+        };
+        amps = colDurs.collect { nextAmp.value };
+
         ~trackPatterns[\MT1] = Pbind(
             \instrument, \fm,
             \dur, Pseq(colDurs, inf),
-// Array-valued \midinote (like HT1's \midinote) plays all its notes as one
-// simultaneous chord - 4 independent ~chordNoteInRange picks, each its own
-// tone-and-octave roll, fresh every time this key is read, rather than a
-// fixed precomputed sequence. ~currentRange[\MT1] (CT8harmonySelect.scd),
-// not hardcoded here any more.
-            \midinote, Pfunc { Array.fill(4, {
+// Single scalar \midinote - one ~chordNoteInRange pick, fresh every time
+// this key is read. ~currentRange[\MT1] (CT8harmonySelect.scd).
+            \midinote, Pfunc {
                 ~chordNoteInRange.(~currentChord, ~currentRange[\MT1][0], ~currentRange[\MT1][1])
-            }) },
+            },
             \mRatio, 2,
             \cRatio, 1,
             \index, 2,
@@ -644,7 +761,7 @@
             },
             \cAtk, 2,
             \cRel, -2,
-            \amp, 0.15,
+            \amp, Pseq(amps, inf),
             \pan, 0,
             \out, 0,
             \fx, Pfunc { ~revBus },
@@ -686,6 +803,7 @@
         var instrument = ~bassInstrument[name];
         var pattern = ~bassPattern[name];
         var splitCount, splitVariant, lastOfGroupIdx;
+        var isMergePattern, mergeVariant, mergeStart;
 
 // By construction (same as ~buildPercPattern) there is always at least one
 // start event, since the empty-events case above already handled the only
@@ -727,9 +845,39 @@
         );
         lastOfGroupIdx = startIdx.drop(1).collect(_ - 1) ++ [events.size - 1];
 
-        baseSlotIdx.do { |idx, i|
-            var nextIdx = if((i + 1) < baseSlotIdx.size) { baseSlotIdx[i + 1] } { events.size };
-            var span = nextIdx - idx;
+// The three \random4to3* patterns merge a run of 4 consecutive baseline
+// slots into 3 equal-length hits instead of expanding one slot into 2/3 -
+// see ~buildPercPattern's own comment (identical mechanism, mirrored here)
+// for the full explanation of each variant and why a bar/span shorter than
+// 4 slots is simply left unmerged.
+        isMergePattern = #[\random4to3Percent, \random4to3LastBar, \random4to3LastRowCol].includes(pattern);
+        mergeVariant = switch(pattern,
+            \random4to3LastBar, { \lastOfBar },
+            \random4to3LastRowCol, { \lastOfRowCol },
+            { \random }
+        );
+        mergeStart = Array.fill(baseSlotIdx.size, { false });
+        if(isMergePattern) {
+            switch(mergeVariant,
+                \random, {
+                    var groupStart = 0;
+                    while ({ (groupStart + 3) < baseSlotIdx.size }) {
+                        if(100.0.rand < ~bassSplitPercent[name]) { mergeStart[groupStart] = true };
+                        groupStart = groupStart + 4;
+                    };
+                },
+                \lastOfBar, {
+                    if(baseSlotIdx.size >= 4) { mergeStart[baseSlotIdx.size - 4] = true };
+                },
+                \lastOfRowCol, {
+                    startIdx.do { |spanStart, k|
+                        var spanEnd = lastOfGroupIdx[k];
+                        if((spanEnd - spanStart + 1) >= 4) { mergeStart[spanEnd - 3] = true };
+                    };
+                }
+            );
+        };
+
 // Pitch: both modes read ~currentRange[name] (CT8harmonySelect.scd, one
 // dual-handle RangeSlider in the GUI, keyed by this track's own name so
 // BT1/BT2 can end up with different ranges) rather than a separate
@@ -742,32 +890,62 @@
 // same way - re-rolled fresh each rebuild, not per-hit), so a mid-bar
 // chord change (~checkForNewChordBar) isn't heard here until this track's
 // next rebuild. No \rising mode, so there's no pitchOffset bookkeeping to
-// do here the way ~buildPercPattern needs.
-            var pitch = if(~bassPitchMode[name] == \random) {
-                ~chordNoteInRange.(~currentChord, ~currentRange[name][0], ~currentRange[name][1])
-            } {
-                ~currentRange[name][1]
+// do here the way ~buildPercPattern needs. Pulled out into its own
+// function, pitchFor, since a merged group needs this computed just once
+// at the group's start slot and reused for all 3 merged hits, same "same
+// pitch throughout the group" rule the splits/merges above already use.
+        {
+            var pitchFor, slotI = 0;
+            pitchFor = { |idx|
+                if(~bassPitchMode[name] == \random) {
+                    ~chordNoteInRange.(~currentChord, ~currentRange[name][0], ~currentRange[name][1])
+                } {
+                    ~currentRange[name][1]
+                }
             };
-            var shouldSplit = (splitCount > 1) and: {
-                switch(splitVariant,
-                    \random, { 100.0.rand < ~bassSplitPercent[name] },
-                    \lastOfBar, { idx == (events.size - 1) },
-                    \lastOfRowCol, { lastOfGroupIdx.includes(idx) }
-                )
+            while ({ slotI < baseSlotIdx.size }) {
+                if(mergeStart[slotI]) {
+                    var groupSpan = 0;
+                    var pitch = pitchFor.(baseSlotIdx[slotI]);
+                    4.do { |k|
+                        var kk = slotI + k;
+                        var kIdx = baseSlotIdx[kk];
+                        var kNextIdx = if((kk + 1) < baseSlotIdx.size) { baseSlotIdx[kk + 1] } { events.size };
+                        groupSpan = groupSpan + (kNextIdx - kIdx);
+                    };
+                    durs = durs.addAll(Array.fill(3, { groupSpan / 3 }));
+                    pitches = pitches.addAll(Array.fill(3, { pitch }));
+                    restFlags = restFlags.addAll(Array.fill(3, { false }));
+                    amps = amps.addAll(Array.fill(3, { nextAmp.value }));
+                    slotI = slotI + 4;
+                } {
+                    var idx = baseSlotIdx[slotI];
+                    var nextIdx = if((slotI + 1) < baseSlotIdx.size) { baseSlotIdx[slotI + 1] } { events.size };
+                    var span = nextIdx - idx;
+                    var pitch = pitchFor.(idx);
+                    var shouldSplit = (splitCount > 1) and: {
+                        switch(splitVariant,
+                            \random, { 100.0.rand < ~bassSplitPercent[name] },
+                            \lastOfBar, { idx == (events.size - 1) },
+                            \lastOfRowCol, { lastOfGroupIdx.includes(idx) }
+                        )
+                    };
+                    if(shouldSplit) {
+                        durs = durs.addAll(Array.fill(splitCount, { span / splitCount }));
+                        pitches = pitches.addAll(Array.fill(splitCount, { pitch }));
+                        restFlags = restFlags.addAll(Array.fill(splitCount, { false }));
+                        amps = amps.addAll(Array.fill(splitCount, { nextAmp.value }));
+                    } {
+                        var isSkip = (pattern == \randomSkip) and: { 100.0.rand < ~bassSplitPercent[name] };
+                        durs = durs.add(span);
+                        pitches = pitches.add(pitch);
+                        restFlags = restFlags.add(isSkip);
+                        amps = amps.add(nextAmp.value);
+                    };
+                    slotI = slotI + 1;
+                };
             };
-            if(shouldSplit) {
-                durs = durs.addAll(Array.fill(splitCount, { span / splitCount }));
-                pitches = pitches.addAll(Array.fill(splitCount, { pitch }));
-                restFlags = restFlags.addAll(Array.fill(splitCount, { false }));
-                amps = amps.addAll(Array.fill(splitCount, { nextAmp.value }));
-            } {
-                var isSkip = (pattern == \randomSkip) and: { 1.0.rand < (1/4) };
-                durs = durs.add(span);
-                pitches = pitches.add(pitch);
-                restFlags = restFlags.add(isSkip);
-                amps = amps.add(nextAmp.value);
-            };
-        };
+        }.value;
 
         ~trackPatterns[name] = Pbind(*[
             \instrument, instrument,

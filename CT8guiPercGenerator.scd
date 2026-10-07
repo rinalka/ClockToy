@@ -51,17 +51,20 @@
 //          across three separate rows, each with its own sub-controls
 //          directly beside it - the sub-controls moved below, into their
 //          own row, so all three menus can sit together here). Pattern is
-//          the same flat list it always was (First beat only - percussion
-//          only/Every beat/Start of Row-or-Col/the six random-split
-//          variants/Random skip!); Pitch is Fixed/Rising at start/Random
-//          for percussion, Fixed/Random for bass; Volume is Fixed/
-//          Alternate for both.
+//          the same flat list it always was, just with "Random" dropped
+//          from every label and a 4/3 "merge 4 beats into 3" family added
+//          (First beat only - percussion only/Every beat/Start of Row-or-
+//          Col/the six 1/8th-1/3rd split variants/the three 4/3 merge
+//          variants/Skip %); Pitch is Fixed/Rising at start/Random for
+//          percussion, Fixed/Random for bass; Volume is Fixed/Alternate for
+//          both.
 //   Row 3: one sub-control per menu above, in three same-width columns so
 //          each lines up under its own menu:
-//            - Under Pattern: a Percent Slider (only visible for the two
-//              "%" split patterns - what fraction of beats split, same
-//              value/meaning as before, just a Slider now instead of a
-//              NumberBox).
+//            - Under Pattern: a Percent Slider (visible for every "%"-
+//              labeled entry - the two 1/8th-1/3rd split percents, the 4/3
+//              merge percent, and Skip % - what fraction of beats split/
+//              merge/skip, same value/meaning as before, just a Slider now
+//              instead of a NumberBox).
 //            - Under Pitch: a single dual-handle RangeSlider, replacing
 //              Pitch's old per-mode widget set (one box/two boxes/four
 //              boxes for Fixed/Rising/Random) - ~percBasePitch[name]/
@@ -166,15 +169,21 @@
             \firstBeat, \everyBeat, \startOnly,
             \random8thPercent, \random8thLastBar, \random8thLastRowCol,
             \random3rdPercent, \random3rdLastBar, \random3rdLastRowCol,
+            \random4to3Percent, \random4to3LastBar, \random4to3LastRowCol,
             \randomSkip
         ];
+// "Random" dropped from every label (per feedback) - every percent-driven
+// entry's label ends in "%" instead (isPercentPattern, below, shows the
+// Percent sub-control for exactly those); the deterministic "(last of
+// bar)"/"(last of row/col)" entries don't, since there's no percent to set.
         var patternLabelsFor = { |source|
             [
                 "First beat only", "Every beat",
                 "Start of " ++ (if(source == \row) { "Row" } { "Col" }),
-                "Random 1/8th %", "Random 1/8th (last of bar)", "Random 1/8th (last of row/col)",
-                "Random 1/3 %", "Random 1/3 (last of bar)", "Random 1/3 (last of row/col)",
-                "Random skip!"
+                "1/8th %", "1/8th (last of bar)", "1/8th (last of row/col)",
+                "1/3 %", "1/3 (last of bar)", "1/3 (last of row/col)",
+                "4/3 %", "4/3 (last of bar)", "4/3 (last of row/col)",
+                "Skip %"
             ]
         };
 
@@ -346,12 +355,13 @@
         pitchSubView = CompositeView(rightPane, 120@40).background_(trackColor);
         volumeSubView = CompositeView(rightPane, 120@40).background_(trackColor);
 
-// Under Pattern: a Percent Slider - only matters for the two "%" patterns
-// (\random8thPercent/\random3rdPercent), same value/meaning as the old
-// Percent NumberBox, just a Slider now (0-1 native, linlin'd to 0-100).
-// The "%" sign is folded into the readout text rather than its own
-// separate label, since there's no longer room for both beside a
-// full-width slider.
+// Under Pattern: a Percent Slider - matters for every "%"-labeled pattern
+// (\random8thPercent/\random3rdPercent/\random4to3Percent/\randomSkip - see
+// isPercentPattern below), same value/meaning as the old Percent NumberBox,
+// just a Slider now (0-1 native, linlin'd to 0-100). The "%" sign is folded
+// into the readout text rather than its own separate label, since there's
+// no longer room for both beside a full-width slider. \randomSkip now
+// shares this same slider/global rather than a fixed, non-adjustable ~1/4.
         percentSlider = Slider(patternSubView, Rect(2, 2, 116, 18))
             .value_(~percSplitPercent[name] / 100)
             .action_({ |sl|
@@ -364,7 +374,9 @@
             .string_(~percSplitPercent[name].round(1).asString ++ "%").stringColor_(labelColor);
         updatePatternPercentVisibility = {
             var pattern = ~percPattern[name];
-            var isPercentPattern = (pattern == \random8thPercent) or: { pattern == \random3rdPercent };
+            var isPercentPattern = #[
+                \random8thPercent, \random3rdPercent, \random4to3Percent, \randomSkip
+            ].includes(pattern);
             percentSlider.visible_(isPercentPattern);
             percentReadout.visible_(isPercentPattern);
         };
@@ -445,15 +457,19 @@
             \everyBeat, \startOnly,
             \random8thPercent, \random8thLastBar, \random8thLastRowCol,
             \random3rdPercent, \random3rdLastBar, \random3rdLastRowCol,
+            \random4to3Percent, \random4to3LastBar, \random4to3LastRowCol,
             \randomSkip
         ];
+// "Random" dropped from every label - see makeTrackSection's own comment,
+// above, for why.
         var patternLabelsFor = { |source|
             [
                 "Every beat",
                 "Start of " ++ (if(source == \row) { "Row" } { "Col" }),
-                "Random 1/8th %", "Random 1/8th (last of bar)", "Random 1/8th (last of row/col)",
-                "Random 1/3 %", "Random 1/3 (last of bar)", "Random 1/3 (last of row/col)",
-                "Random skip!"
+                "1/8th %", "1/8th (last of bar)", "1/8th (last of row/col)",
+                "1/3 %", "1/3 (last of bar)", "1/3 (last of row/col)",
+                "4/3 %", "4/3 (last of bar)", "4/3 (last of row/col)",
+                "Skip %"
             ]
         };
 
@@ -588,7 +604,9 @@
             .string_(~bassSplitPercent[name].round(1).asString ++ "%").stringColor_(labelColor);
         updatePatternPercentVisibility = {
             var pattern = ~bassPattern[name];
-            var isPercentPattern = (pattern == \random8thPercent) or: { pattern == \random3rdPercent };
+            var isPercentPattern = #[
+                \random8thPercent, \random3rdPercent, \random4to3Percent, \randomSkip
+            ].includes(pattern);
             percentSlider.visible_(isPercentPattern);
             percentReadout.visible_(isPercentPattern);
         };
@@ -610,7 +628,14 @@
             );
         };
         pitchRangeSlider.action_({ |rs|
-            ~currentRange[name] = [rs.lo.linlin(0, 1, 0, 127), rs.hi.linlin(0, 1, 0, 127)];
+// .round here, not left as the raw linlin float - ~chordNoteInRange's own
+// mod-12 matching (CT8harmonySelect.scd) needs whole-number bounds or it
+// silently returns nil for every Random-mode pick (candidates always comes
+// back empty), which then kills this track's Pbind entirely. MIDI notes
+// are whole numbers anyway, so this is also just more correct.
+            ~currentRange[name] = [
+                rs.lo.linlin(0, 1, 0, 127).round, rs.hi.linlin(0, 1, 0, 127).round
+            ];
             updatePitchRangeReadout.value;
             statusText.string_("Changed - not yet applied.");
         });
@@ -635,9 +660,6 @@
         updateVolumeRangeReadout.value;
     };
 
-    StaticText(~percGeneratorWindow, 600@26).string_("BASS GENERATOR (BT1-BT2)")
-        .font_(Font("Arial", 14, true)).stringColor_(Color.white);
-    ~percGeneratorWindow.view.decorator.nextLine;
     ~bassTrackNames.do(makeBassTrackSection);
 
     Button(~percGeneratorWindow, 120@26).states_([["Apply now", Color.black, Color(0.65, 0.85, 0.65)]])

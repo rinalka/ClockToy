@@ -139,25 +139,41 @@ their own bullets below for exactly where the line falls:
   Row 2 is the Pattern/Pitch/Volume menus, all together on one row - each menu's own
   sub-control (below) used to sit directly beside it on its own row; moving those down
   into row 3 freed up room for all three menus to share row 2. Pattern is the same flat
-  list it always was: First beat only (percussion only - not a useful choice for a bass
+  list it always was, now thirteen entries (twelve for bass) rather than ten/nine -
+  "Random" was dropped from every label (per feedback), so a pattern's label now ends in
+  "%" exactly when it has a Percent sub-control to show, and doesn't when it's
+  deterministic: First beat only (percussion only - not a useful choice for a bass
   part, per feedback, so `makeBassTrackSection`'s own `patternSymbols` list drops it);
   Every beat; Start of Row/Col (label tracks whichever Source is selected, `\startOnly`);
-  Random 1/8th % / Random 1/3 % (`\random8thPercent`/`\random3rdPercent` -
+  1/8th % / 1/3 % (`\random8thPercent`/`\random3rdPercent` -
   `~percSplitPercent[name]`% of beats become a double hit/triplet, re-rolled fresh every
-  rebuild); Random 1/8th (last of bar) / Random 1/3 (last of bar)
+  rebuild); 1/8th (last of bar) / 1/3 (last of bar)
   (`\random8thLastBar`/`\random3rdLastBar` - only the bar's very last beat, deterministic,
-  every bar); Random 1/8th (last of row/col) / Random 1/3 (last of row/col)
+  every bar); 1/8th (last of row/col) / 1/3 (last of row/col)
   (`\random8thLastRowCol`/`\random3rdLastRowCol` - only the last beat of every row/column
-  span, deterministic); Random skip! (`\randomSkip` - ~1/4 of beats go silent, span
-  unchanged, re-rolled fresh every rebuild, not affected by `~percSplitPercent[name]`,
-  which only applies to the six split patterns). Pitch is Fixed/Rising at
+  span, deterministic); 4/3 % / 4/3 (last of bar) / 4/3 (last of row/col)
+  (`\random4to3Percent`/`\random4to3LastBar`/`\random4to3LastRowCol` - the inverse of the
+  1/8th/1/3 families: instead of expanding one beat into 2/3 sub-hits, these MERGE a run
+  of 4 consecutive baseline beats into 3 equal-length hits spanning that same total time,
+  same pitch throughout the merged group. `\random4to3Percent` rolls
+  `~percSplitPercent[name]`% per non-overlapping group of 4, scanning from the bar's
+  start; `\random4to3LastBar` merges only the bar's final 4 beats, every bar;
+  `\random4to3LastRowCol` merges the final 4 beats of every row/column span. A bar or
+  span shorter than 4 beats simply can't merge and is left as individual beats,
+  unchanged - expect this with `\random4to3LastRowCol` especially, since most columns and
+  many rows won't have 4 beats to begin with); Skip % (`\randomSkip` -
+  `~percSplitPercent[name]`% of beats go silent, span unchanged, re-rolled fresh every
+  rebuild - it used to be a fixed, non-adjustable ~1/4, now it shares the same Percent
+  slider/global as the "%" split/merge patterns above, so switching between any of them
+  keeps whichever percent was already set). Pitch is Fixed/Rising at
   start/Random for percussion, Fixed/Random for bass (no Rising there). Volume is
   Fixed/Alternate for both.
   Row 3 has one fixed-width `CompositeView` per menu above (`patternSubView`/
   `pitchSubView`/`volumeSubView`, each exactly as wide as its own row-2 menu so the two
   rows visually line up), holding that menu's own sub-control:
-  Under Pattern, a Percent `Slider` (+ readout) - only visible for the two "%" split
-  patterns (`updatePatternPercentVisibility`, called whenever the Pattern menu changes) -
+  Under Pattern, a Percent `Slider` (+ readout) - visible for every "%"-labeled pattern
+  (the two 1/8th-1/3rd split percents, the 4/3 merge percent, and Skip %;
+  `updatePatternPercentVisibility`, called whenever the Pattern menu changes) -
   same value/meaning as the old Percent `NumberBox`, just a `Slider` now (0-1 native,
   linlin'd to 0-100). Toggling it with `.visible_` is safe here (unlike Volume's old
   two-widget-set problem, below) since it's the *only* content in its own dedicated
@@ -422,9 +438,11 @@ their own bullets below for exactly where the line falls:
   each in the GUI), not single scalars, so every Pitch/Volume mode just reads the pair
   differently rather than needing its own separate globals (the old `~percPitchStep`/
   `~percRandomPitches`/`~percVolume` are gone, superseded); `~percSplitPercent[name]`
-  only matters when `~percPattern[name]` is one of the two "percent" split patterns
-  (shared between `\random8thPercent`/`\random3rdPercent`, so switching a track between
-  them keeps whichever percent was already set; there's no separate "variant" global any
+  only matters when `~percPattern[name]` is one of the four "%"-labeled patterns
+  (shared between `\random8thPercent`/`\random3rdPercent`/`\random4to3Percent`/
+  `\randomSkip`, so switching a track between any of them keeps whichever percent was
+  already set - `\randomSkip` used to be a fixed, non-adjustable ~1/4 before it joined
+  this group; there's no separate "variant" global any
   more - the split-type/variant combination is just which flat `~percPattern[name]`
   symbol is chosen), and `~percWet[name]`/`~percLevel[name]` are the odd ones out of the
   whole group, read via plain `Pfunc`s rather than baked into a pre-resolved array like
@@ -478,7 +496,7 @@ Only three tracks are currently enabled by default — `PT1`, `PT2`, `PT3` (all 
 Percussion Generator-driven, see below) — out of 13 planned tracks (4 percussion
 `PT1-4`, 2 bass `BT1-2`, 4 rhythm/harmony `HT1-4`, 4 melody `MT1-4`) for a planned
 generative "Daily Piece" mode. `PT4`, `BT1`, `BT2`, `HT1` (a chord-per-row harmony pad),
-and `MT1` (a note-or-two-per-column melody) all have real builders too (`PT4`/`BT1`/`BT2`
+and `MT1` (a single-note-per-column melody) all have real builders too (`PT4`/`BT1`/`BT2`
 share the two generic builders, `~buildPercPattern`/`~buildBassTrackPattern`; `HT1`/`MT1`
 their own bespoke ones) and are fully playable - just disabled by default until toggled
 on in the Percussion + Bass Generator window (`PT4`/`BT1`/`BT2`, beside each one's name)
@@ -511,9 +529,9 @@ role `\rowStart`), `\col` reads `~colPattern`/`~columnEvents` (start role `\colu
 `PT4` default `\col`). It then pre-resolves the whole bar into flat `dur`/pitch/rest
 arrays (the same technique `CT8guiTracksLab.scd`'s prototype validated), per
 `~percPattern[name]`: `\firstBeat`/`\everyBeat`/`\startOnly` just pick which beats of a
-plain every-beat grid get a slot (one, all, or row/column-starts only); the other seven
+plain every-beat grid get a slot (one, all, or row/column-starts only); the other ten
 choices all start from that same full every-beat grid and then replace some slots with
-something else. Six of those seven are a (split-type, variant) combination flattened
+something else. Six of those ten are a (split-type, variant) combination flattened
 into one symbol each - `splitCount`/`splitVariant`, derived from `pattern` via two
 `switch`es, un-flatten it back inside `~buildPercPattern` - rather than a Pattern menu
 plus a nested Variant sub-menu (an earlier version had exactly that, but it was both
@@ -522,15 +540,36 @@ each combination is its own top-level `~percPattern[name]` value, so there's not
 to nest or to go stale). Split-type: `\random8th*` double the hit (each half the
 original span), `\random3rd*` triple it (each a third). Variant: `*Percent`
 (`~percSplitPercent[name]`% of beats, re-rolled fresh every rebuild, same as
-`~percPitchMode[name]`'s own `\random` option - this was the only behavior that existed
-before this list was flattened, hardcoded to 1/3 for the 1/8th case and 1/4 for the 1/3
-case), `*LastBar` (only the bar's very last beat, deterministic, every bar), or
+`~percPitchMode[name]`'s own `\random` option), `*LastBar` (only the bar's very last
+beat, deterministic, every bar), or
 `*LastRowCol` (only the last beat of every row/column span, deterministic - computed as
 `startIdx.drop(1).collect(_ - 1) ++ [events.size - 1]`, i.e. one beat before each start
-after the first, plus the bar's final beat for the last span). The seventh, `\randomSkip`
-(silence, ~1/4 of beats, span unchanged, always the plain-random rule, re-rolled fresh
-every rebuild, never affected by `~percSplitPercent[name]`), stands alone - it has no
-split-type/variant combination, just the one behavior. Which beats
+after the first, plus the bar's final beat for the last span). Three more,
+`\random4to3Percent`/`\random4to3LastBar`/`\random4to3LastRowCol`, are a second,
+separate mechanism using the same three variant names (`mergeVariant`, not
+`splitVariant`) but the opposite operation: instead of EXPANDING one baseline beat into
+2 or 3 sub-hits, they MERGE a run of 4 consecutive baseline beats into 3 equal-length
+hits spanning that same total time (`mergeStart`, a boolean array over baseline-slot
+positions, marks which 4-beat groups actually merge - computed by its own
+`\random`/`\lastOfBar`/`\lastOfRowCol` switch, paralleling `splitVariant`'s but
+operating on groups of 4 rather than single beats). `\random4to3Percent` rolls
+`~percSplitPercent[name]`% independently per non-overlapping group of 4, scanning from
+the bar's start; `\random4to3LastBar` merges only the bar's final 4 beats, every bar;
+`\random4to3LastRowCol` merges the final 4 beats of every row/column span (via the same
+`startIdx`/`lastOfGroupIdx` span boundaries the split variant's own `*LastRowCol` uses).
+A bar or span shorter than 4 beats simply isn't offered a merge and is left as
+individual beats - unavoidable for `\random4to3LastRowCol` especially, since most
+columns and many rows don't have 4 beats to begin with. Merging 4 slots into 3 replaces
+the main per-slot loop's `.do` with a manual `while`, since a merge advances the
+baseline-slot index by 4 instead of 1; the merged group's 3 hits all share the first of
+the 4 slots' own pitch (same "one pitch per origin" rule the splits above already use).
+The last of these thirteen choices, `\randomSkip` (label "Skip %" - silence,
+`~percSplitPercent[name]`% of beats, span unchanged, always the plain-random rule,
+re-rolled fresh every rebuild), stands alone - it has no
+split-type/variant or merge combination, just the one behavior - but, per feedback, it
+NOW shares `~percSplitPercent[name]` with every other "%"-labeled pattern above (it used
+to be a fixed, non-adjustable ~1/4), so switching a track between any of these "%"
+patterns and Skip % keeps whichever percent was already set. Which beats
 actually rest - from either `\randomSkip` or `~trackEnabled[name]` being off - is tracked
 via a parallel `restFlags` array and a `beatIndex` counter inside `\type`'s `Pfunc`, since
 a `Pfunc` has no direct access to another key's own `Pseq` position. Which single instrument
@@ -571,15 +610,23 @@ be a fixed 3-chord `Pseq`; now it's a `Pfunc` - `Array.fill(4, { ~chordNoteInRan
 tone-and-octave picks within `~currentRange[\HT1]` (60-96 by default, three octaves
 above middle C) - but still fires exactly once per row event either way, so the
 "one new chord per row-start" cadence is unchanged, only where the notes come from
-differs. `MT1` mirrors `HT1`'s structure exactly but from `~colPattern`/`\columnStart`
-instead of `~rowPattern`/`\rowStart` (one slot per column instead of per row): its
-`\midinote` is the same `Array.fill(4, { ~chordNoteInRange.(~currentChord,
-~currentRange[\MT1][0], ~currentRange[\MT1][1]) })` call, but as a live-re-rolling
-`Pfunc` rather than firing once per event, so the melody varies bar to bar even when
-that minute's column layout doesn't change (used to pick 1-or-2 notes from a fixed
-white-keys scale instead). Neither `HT1` nor `MT1` advances the chord progression
-itself - see `~checkForNewChordBar`, `CT8harmonySelect.scd`'s own bullet, for where
-that lives instead.
+differs. `MT1` mirrors `HT1`'s structure but from `~colPattern`/`\columnStart`
+instead of `~rowPattern`/`\rowStart` (one slot per column instead of per row), with two
+deliberate differences from `HT1`, per feedback that a MELODY track should be built the
+same way a BASS track is rather than just being `HT1` on a different scan: its
+`\midinote` is a single `~chordNoteInRange.(~currentChord, ~currentRange[\MT1][0],
+~currentRange[\MT1][1])` pick, not an `Array.fill(4, {...})` chord stab - a melody plays
+one note at a time, never a chord, unlike `HT1` (still a live-re-rolling `Pfunc`, so the
+melody varies bar to bar even when that minute's column layout doesn't change - used to
+pick 1-or-2 notes from a fixed white-keys scale, before the `Array.fill(4, ...)` chord
+version, before this single-note version); and its `\amp` is no longer a hardcoded flat
+value but reads `~hmVolumeMode[\MT1]`/`~hmVolumeLevels[\MT1]` (the Harmony + Melody
+Generator window's own Volume row, `CT8guiHarmonyMelodyGenerator.scd` - built earlier as
+a placeholder, now actually wired up for this one track), resolved once per column-slot
+via the exact same Fixed-reads-hi/Alternate-flips-hi-lo `nextAmp` convention
+`~buildBassTrackPattern` uses for `BT1`/`BT2`, rather than live per-hit. Neither `HT1`
+nor `MT1` advances the chord progression itself - see `~checkForNewChordBar`,
+`CT8harmonySelect.scd`'s own bullet, for where that lives instead.
 
 `BT1`/`BT2` are driven by the Bass Generator config exactly the way `PT1`-`PT4` are
 driven by the Percussion Generator config - same single-source-scan/pre-resolve-the-bar

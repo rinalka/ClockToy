@@ -177,8 +177,9 @@ s.waitForBoot({
     {
      ~makeWindow.value;// Construct the  four-digit clock GUI.
      ~makeAdjustWindow.value;// Construct the separate control window.
-     ~makePercGeneratorWindow.value;// Construct the PT1-PT4/BT1-BT2 instrument/pattern/pitch/volume control window.
+   
      ~makeHarmonyMelodyGeneratorWindow.value;// Construct the HT1-4/MT1-2 skeleton control window (not yet wired to playback).
+     ~makePercGeneratorWindow.value;// Construct the PT1-PT4/BT1-BT2 instrument/pattern/pitch/volume control window.
 // Temporarily not displayed while the Percussion + Bass Generator's own
 // per-track layout is being reworked - ~makeSynthLabWindow itself is
 // untouched, just not auto-opened here; evaluate it by hand
@@ -234,23 +235,3 @@ s.waitForBoot({
 
 )
 
-
-(
-"--- PT1 config ---".postln;
-[\percSource, \percInstrument, \percPattern, \percPitchMode, \percBasePitch,
- \percPitchStep, \percRandomPitches, \percVolumeMode, \percVolume,
- \percVolumeLevels, \percMix].do { |g|
-    ("  " ++ g ++ ": " ++ currentEnvironment[g][\PT1]).postln;
-};
-"--- PT1 live Pbind pairs ---".postln;
-~trackPatterns[\PT1].patternpairs.postln;
-)
-
-~percBasePitch = nil; ~percVolumeLevels = nil; ~bassVolumeLevels = nil; ~currentRange = nil;
-RangeSlider.new.front;
-RangeSlider(w, Rect(20, 30, 360, 30)).lo_(0.2).hi_(0.8);
-(
-w = Window("Horizontal Only", Rect(200, 200, 400, 100)).front;
-r = RangeSlider(w, Rect(20, 30, 360, 30)).lo_(0.2).hi_(0.8);
-)
-RangeSlider.new.orientation_(\horizontal).front;

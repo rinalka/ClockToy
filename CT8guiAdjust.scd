@@ -17,6 +17,7 @@
     var hourBox, minuteBox, refreshTime;
     var format12Button, format24Button, updateFormatColors;
     var minuteSecondsBox, updateSimSecondTime;
+    var chordNameReadout;
     var adjustWidth = 420;
     var adjustHeight = 320;
     var gap = 10;
@@ -281,6 +282,69 @@
     StaticText(~adjustWindow, 40@24).string_("Colour");
     makeFlashButton.(\row, "Row Clr");
     makeFlashButton.(\col, "Col Clr");
+    ~adjustWindow.view.decorator.nextLine;
+
+// ROW 10: hold the chord progression on one hand-picked chord, for pattern
+// testing (~chordHeld/~checkForNewChordBar, CT8harmonySelect.scd) - while
+// held, the bar-boundary check still resets its own beat counter every
+// bar, it just skips advancing ~currentChord/~nextChord, so releasing it
+// lands cleanly on the next natural boundary rather than firing an overdue
+// advance immediately. Set/Chord write ~currentChord directly any time
+// (not gated on Hold being on), the same way the Hour/Minute boxes above
+// write the displayed time directly - so dialing in a chord before
+// pressing Hold, or nudging it while already held, both just work.
+    StaticText(~adjustWindow, 70@24).string_("Hold Chord");
+    Button(~adjustWindow, 70@24)
+        .states_([
+            ["Running", Color.black, Color.green],
+            ["Held", Color.black, Color.red]
+        ])
+        .value_(if(~chordHeld == true) { 1 } { 0 })
+        .action_({ |b| ~chordHeld = (b.value == 1); });
+    StaticText(~adjustWindow, 30@24).string_("Set");
+    NumberBox(~adjustWindow, 40@24)
+        .value_(~chordSet ? 0)
+        .clipLo_(0).clipHi_(~chords.size - 1).step_(1)
+        .action_({ |box|
+            var set = box.value.clip(0, ~chords.size - 1).asInteger;
+            var idx = (~currentChordNumber ? 1).clip(1, ~chords[set].size);
+            ~chordSet = set;
+            ~lastChord = idx;
+            ~currentChordNumber = idx;
+            ~currentChord = ~chords[set][idx - 1];
+            ~nextChord = ~computeNextChord.value;
+            ~onChordChanged.value;
+        });
+    StaticText(~adjustWindow, 40@24).string_("Chord");
+    NumberBox(~adjustWindow, 40@24)
+        .value_(~currentChordNumber ? 1)
+        .clipLo_(1).clipHi_(7).step_(1)
+        .action_({ |box|
+            var set = ~chordSet ? 0;
+            var idx = box.value.clip(1, ~chords[set].size).asInteger;
+            ~lastChord = idx;
+            ~currentChordNumber = idx;
+            ~currentChord = ~chords[set][idx - 1];
+            ~nextChord = ~computeNextChord.value;
+            ~onChordChanged.value;
+        });
+// Chord NAME readout (e.g. "Cmaj7"), not just the raw Set/Chord numbers -
+// ~onChordChanged (called here, by the two boxes above, and by
+// ~checkForNewChordBar itself, CT8harmonySelect.scd, whenever the chord
+// changes for ANY reason - Markov-advanced or hand-overridden) is the one
+// place that knows how to read it back out of ~chordNames[~chordSet]
+// [~currentChordNumber - 1], so this stays in sync regardless of which of
+// those changed it. Black text - this window has no explicit dark
+// background, same as every other label here.
+    chordNameReadout = StaticText(~adjustWindow, 90@24)
+        .stringColor_(Color.black);
+    ~onChordChanged = {
+// Called from the TempoClock thread too (~checkForNewChordBar), and Qt
+// widgets must only be touched from the GUI thread - so defer the update.
+        var name = ~chordNames[~chordSet][~currentChordNumber - 1];
+        { chordNameReadout.string_(name) }.defer;
+    };
+    ~onChordChanged.value;
     ~adjustWindow.view.decorator.nextLine;
 };
 
