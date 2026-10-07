@@ -91,7 +91,10 @@
 ~makeHarmonyMelodyGeneratorWindow = {
     var statusText, applyNow, makeHmTrackSection;
     var hmGenWidth = 640;
-    var hmGenHeight = 1360;
+// 1360 -> 1060: each block shrank by 50px (190 -> 140, from the
+// Mix/Vol/Dry/Rev sliders going 130 -> 90) - 50 * 6 blocks = 300px saved
+// overall. Mirrors CT8guiPercGenerator.scd's own identical change.
+    var hmGenHeight = 1060;
     var hmGenBounds = Rect(700, 40, hmGenWidth, hmGenHeight);
 
     if(~hmGeneratorWindow.notNil) { ~hmGeneratorWindow.close };
@@ -158,7 +161,10 @@
         };
 
         trackColor = Color.rand(0.7);
-        trackContainer = CompositeView(~hmGeneratorWindow, 600@190).background_(trackColor);
+// Shrunk from 190 along with leftPane/rightPane and the Mix/Vol/Dry/Rev
+// sliders below (130 -> 90, ~30% shorter, per feedback) - mirrors
+// CT8guiPercGenerator.scd's own identical change.
+        trackContainer = CompositeView(~hmGeneratorWindow, 600@140).background_(trackColor);
         ~hmGeneratorWindow.view.decorator.nextLine;
 
 // LEFT PANE: 4 vertical Sliders. Mix/Vol are a tiny built-in reverb tail,
@@ -171,7 +177,7 @@
 // than the rest of the block, built component-wise rather than
 // `trackColor * 0.8` - Color has no `*` operator for a plain number, and
 // that crashed the whole window build instantly, on the very first track.
-        leftPane = CompositeView(trackContainer, Rect(484, 6, 110, 178)).background_(
+        leftPane = CompositeView(trackContainer, Rect(484, 6, 110, 128)).background_(
             Color.new(trackColor.red * 0.8, trackColor.green * 0.8, trackColor.blue * 0.8, trackColor.alpha)
         );
         leftPane.decorator = FlowLayout(leftPane.bounds, 4@4, 4@4);
@@ -182,24 +188,24 @@
         StaticText(leftPane, 20@14).string_("Rev").stringColor_(labelColor);
         leftPane.decorator.nextLine;
 
-        mixSlider = Slider(leftPane, 20@130)
+        mixSlider = Slider(leftPane, 20@90)
             .value_(~hmWet[name])
             .action_({ |sl|
                 ~hmWet[name] = sl.value;
                 statusText.string_("Changed (not yet wired to playback).");
             });
-        volSlider = Slider(leftPane, 20@130)
+        volSlider = Slider(leftPane, 20@90)
             .value_(~hmLevel[name])
             .action_({ |sl|
                 ~hmLevel[name] = sl.value;
                 statusText.string_("Changed (not yet wired to playback).");
             });
-        sendASlider = Slider(leftPane, 20@130);
-        sendBSlider = Slider(leftPane, 20@130);
+        sendASlider = Slider(leftPane, 20@90);
+        sendBSlider = Slider(leftPane, 20@90);
 
 // RIGHT PANE.
 // x=6, not 124 - mirror image of leftPane's own x, same reason.
-        rightPane = CompositeView(trackContainer, Rect(6, 6, 470, 178)).background_(trackColor);
+        rightPane = CompositeView(trackContainer, Rect(6, 6, 470, 128)).background_(trackColor);
         rightPane.decorator = FlowLayout(rightPane.bounds, 6@6, 4@4);
 
 // ROW 1: on/off IS real - same ~trackEnabled[name]/~syncTrackPlayer every

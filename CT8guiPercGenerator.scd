@@ -97,8 +97,10 @@
     var percGenWidth = 640;
 // Tall enough for all six blocks (PT1-4 + BT1-2) plus header/buttons -
 // resizable:true (unlike the old fixed-size window) in case a shorter
-// screen still can't show all of it at once.
-    var percGenHeight = 1360;
+// screen still can't show all of it at once. 1360 -> 1060: each block
+// shrank by 50px (190 -> 140, from the Mix/Vol/Dry/Rev sliders going 130
+// -> 90) - 50 * 6 blocks = 300px saved overall.
+    var percGenHeight = 1060;
 // Fixed top-left position rather than derived from ~adjustWindow's bounds
 // (as this used to be) - at this height, inheriting ~adjustWindow's
 // vertical position (itself already offset above the main clock window,
@@ -194,7 +196,11 @@
 // than the window's own dark background, so they blend into the block
 // instead of showing up as contrasting holes.
         trackColor = Color.rand(0.7);
-        trackContainer = CompositeView(~percGeneratorWindow, 600@190).background_(trackColor);
+// Shrunk from 190 along with leftPane/rightPane and the Mix/Vol/Dry/Rev
+// sliders below (130 -> 90, ~30% shorter, per feedback) - the freed-up
+// height let every one of the six track blocks (and so the window itself)
+// get considerably shorter too.
+        trackContainer = CompositeView(~percGeneratorWindow, 600@140).background_(trackColor);
 // No decorator on trackContainer itself any more - leftPane/rightPane,
 // below, get explicit Rects instead of a bare width@height Point, same
 // fix RangeSlider needed: letting trackContainer's own FlowLayout
@@ -227,7 +233,7 @@
 // component-wise rather than `trackColor * 0.8`, which crashes (Color has
 // no `*` operator for a plain number) and was taking down the whole
 // window build the instant it ran, on literally the first track.
-        leftPane = CompositeView(trackContainer, Rect(484, 6, 110, 178)).background_(
+        leftPane = CompositeView(trackContainer, Rect(484, 6, 110, 128)).background_(
             Color.new(trackColor.red * 0.8, trackColor.green * 0.8, trackColor.blue * 0.8, trackColor.alpha)
         );
         leftPane.decorator = FlowLayout(leftPane.bounds, 4@4, 4@4);
@@ -238,27 +244,27 @@
         StaticText(leftPane, 20@14).string_("Rev").stringColor_(labelColor);
         leftPane.decorator.nextLine;
 
-        mixSlider = Slider(leftPane, 20@130)
+        mixSlider = Slider(leftPane, 20@90)
             .value_(~percWet[name])
             .action_({ |sl|
                 ~percWet[name] = sl.value;
                 statusText.string_("Mix updated (live, no rebuild needed).");
             });
-        volSlider = Slider(leftPane, 20@130)
+        volSlider = Slider(leftPane, 20@90)
             .value_(~percLevel[name])
             .action_({ |sl|
                 ~percLevel[name] = sl.value;
                 statusText.string_("Vol updated (live, no rebuild needed).");
             });
-        sendASlider = Slider(leftPane, 20@130);
-        sendBSlider = Slider(leftPane, 20@130);
+        sendASlider = Slider(leftPane, 20@90);
+        sendBSlider = Slider(leftPane, 20@90);
 
 // RIGHT PANE (~470 of the block's 600 width): title/on-off/Source/Instrument on
 // row 1, Pattern/Pitch/Volume menus together on row 2, and each menu's own
 // sub-control in a matching-width column on row 3.
 // x=6, not 124 - the mirror image of leftPane's own x, for the same
 // reason - see leftPane's comment, just above.
-        rightPane = CompositeView(trackContainer, Rect(6, 6, 470, 178)).background_(trackColor);
+        rightPane = CompositeView(trackContainer, Rect(6, 6, 470, 128)).background_(trackColor);
         rightPane.decorator = FlowLayout(rightPane.bounds, 6@6, 4@4);
 
 // ROW 1: on/off is a plain red/green square now - no label inside it any
@@ -474,7 +480,11 @@
         };
 
         trackColor = Color.rand(0.7);
-        trackContainer = CompositeView(~percGeneratorWindow, 600@190).background_(trackColor);
+// Shrunk from 190 along with leftPane/rightPane and the Mix/Vol/Dry/Rev
+// sliders below (130 -> 90, ~30% shorter, per feedback) - the freed-up
+// height let every one of the six track blocks (and so the window itself)
+// get considerably shorter too.
+        trackContainer = CompositeView(~percGeneratorWindow, 600@140).background_(trackColor);
 // No decorator on trackContainer itself - see makeTrackSection's own
 // comment for why leftPane/rightPane get explicit Rects instead.
         ~percGeneratorWindow.view.decorator.nextLine;
@@ -493,7 +503,7 @@
 // component-wise rather than `trackColor * 0.8`, which crashes (Color has
 // no `*` operator for a plain number) and was taking down the whole
 // window build the instant it ran, on literally the first track.
-        leftPane = CompositeView(trackContainer, Rect(484, 6, 110, 178)).background_(
+        leftPane = CompositeView(trackContainer, Rect(484, 6, 110, 128)).background_(
             Color.new(trackColor.red * 0.8, trackColor.green * 0.8, trackColor.blue * 0.8, trackColor.alpha)
         );
         leftPane.decorator = FlowLayout(leftPane.bounds, 4@4, 4@4);
@@ -504,25 +514,25 @@
         StaticText(leftPane, 20@14).string_("Rev").stringColor_(labelColor);
         leftPane.decorator.nextLine;
 
-        mixSlider = Slider(leftPane, 20@130)
+        mixSlider = Slider(leftPane, 20@90)
             .value_(~bassWet[name])
             .action_({ |sl|
                 ~bassWet[name] = sl.value;
                 statusText.string_("Mix updated (live, no rebuild needed).");
             });
-        volSlider = Slider(leftPane, 20@130)
+        volSlider = Slider(leftPane, 20@90)
             .value_(~bassLevel[name])
             .action_({ |sl|
                 ~bassLevel[name] = sl.value;
                 statusText.string_("Vol updated (live, no rebuild needed).");
             });
-        sendASlider = Slider(leftPane, 20@130);
-        sendBSlider = Slider(leftPane, 20@130);
+        sendASlider = Slider(leftPane, 20@90);
+        sendBSlider = Slider(leftPane, 20@90);
 
 // RIGHT PANE - same three-row shape as makeTrackSection's own right pane.
 // x=6, not 124 - the mirror image of leftPane's own x, for the same
 // reason - see leftPane's comment, just above.
-        rightPane = CompositeView(trackContainer, Rect(6, 6, 470, 178)).background_(trackColor);
+        rightPane = CompositeView(trackContainer, Rect(6, 6, 470, 128)).background_(trackColor);
         rightPane.decorator = FlowLayout(rightPane.bounds, 6@6, 4@4);
 
         StaticText(rightPane, 48@22).string_(name.asString)
