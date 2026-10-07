@@ -936,6 +936,14 @@
                 ("Copy: finished recording % notes from %.".format(~copyBuffer.size, name)).postln;
             };
         };
+// Never return nil - a Pattern/Stream returning nil means "exhausted," and
+// a Pbind stops producing events the moment ANY ONE of its key-patterns
+// goes nil. The if above has no else branch, so without this it returns
+// nil whenever not actively recording - the normal case - silently ending
+// the WHOLE Pbind's stream right after it starts (no error, since a
+// stream ending isn't one - this is exactly what broke BT1/BT2/MT1-4 the
+// first time this shipped).
+        0;
     };
 };
 
