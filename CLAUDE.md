@@ -659,6 +659,36 @@ their on/off buttons in the Percussion + Bass Generator window
 (`CT8guiPercGenerator.scd`), beside each track's name; every other track has its own
 on/off button in the Clock Toy Adjust window (`CT8guiAdjust.scd`) instead.
 
+**Track Copy ("Copy T")** — `CT8tracks.scd`'s TRACK COPY section, restricted to
+`BT1`/`BT2`/`MT1`-`4` only (not `HT1`-`4`/`PT1`-`4` - both bass and melody are single-
+note-per-event, so a `(dur, midinote)` pair means the same thing on either side of a
+copy; harmony plays chords and percussion's pitch is Hz, neither fits). No GUI yet -
+tried by hand from the post window: `~copyTStartRecord.(sourceName, beats)` tapes that
+track's actual sounding `(dur, midinote)` pairs for the next `beats` TempoClock beats
+into `~copyBuffer` (only real `\note` hits, never rests - this feature doesn't try to
+preserve a recording's silence, per feedback); `~copyTStartPlayback.(destName)` then has
+`destName` splice that buffer in, verbatim, in place of its own normal pitch/duration
+(same instrument/amp/wet/pan/everything else about it untouched) until the buffer runs
+out, then falls straight back to its own normal pattern. `~makeCopyAwarePair` is the
+shared mechanism both `~buildBassTrackPattern` and `~buildMelodyPattern`'s `\dur`/
+`\midinote` keys go through instead of a plain `Pseq`/`Pfunc` - each wraps a retained,
+manually-advanced stream of that track's own normal pattern, so pausing it to serve a
+copy and resuming afterward picks up exactly where it left off, with no separate
+"resume position" bookkeeping needed. `~copyTapFor.(name)`, a trailing `\copyTap` key on
+every eligible track's Pbind, is the recorder side, reading back the FINAL resolved
+`\dur`/`\midinote`/`\type` for that event (after any override above has already had its
+say) the same way `HT1`'s own `\rel` key already reads back `ev[\dur]`. Each playback
+snapshots `~copyBuffer` into its own `~copyPlayBuffer[name]` the moment it starts, so a
+later recording finishing can't disturb a playback already under way elsewhere; its own
+`~copyPlayIdx[name]` is a global, not a Pbind-local var, so a rebuild mid-playback
+(minute change, Apply now) resumes from where it was rather than restarting the buffer.
+Note-cutoffs were the one thing asked to be handled carefully: recording only checks its
+beat countdown AFTER subtracting a captured hit's own duration, so the last note always
+finishes naturally rather than being truncated to land exactly on the requested beat
+count; playback only ever swaps in a COMPLETE `(dur, midinote)` pair at an event boundary
+(a Pbind asks for these once per event, never mid-event), so falling back to the normal
+pattern once the buffer is exhausted always happens cleanly between notes.
+
 Row/col clock-face flashing is a separate, independent process from any of the above now
 — see `CT8guiClock.scd`'s "ROW/COL FLASH PLAYERS" section: `~buildRowFlashPattern`/
 `~buildColFlashPattern` build visual-only Pbinds (always `\type, \rest`, so they never

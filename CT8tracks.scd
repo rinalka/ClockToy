@@ -711,6 +711,7 @@
 // rowStartIdx; always at least one, for the same reason (the empty-events
 // case above already handled the only way there could be zero).
         var colStartIdx, colDurs, amps, ampIndex = 0, nextAmp;
+        var normalDurStream, copyPair;
 
         colStartIdx = [];
         events.do { |ev, i| if(ev[\role] == \columnStart) { colStartIdx = colStartIdx.add(i) } };
@@ -741,14 +742,22 @@
         };
         amps = colDurs.collect { nextAmp.value };
 
+// \dur/\midinote go through ~makeCopyAwarePair (TRACK COPY section, below)
+// rather than a plain Pseq/Pfunc, so a Copy T playback in progress on MT1
+// can transparently splice in - normalDurStream is a retained manual
+// stream (not re-derived each call) so pausing it mid-cycle to serve a
+// copy and resuming afterward picks up exactly where it left off; the
+// normal \midinote pick stays exactly as live/chord-aware as before.
+        normalDurStream = Pseq(colDurs, inf).asStream;
+        copyPair = ~makeCopyAwarePair.(\MT1,
+            { normalDurStream.next },
+            { ~chordNoteInRange.(~currentChord, ~currentRange[\MT1][0], ~currentRange[\MT1][1]) }
+        );
+
         ~trackPatterns[\MT1] = Pbind(
             \instrument, \fm,
-            \dur, Pseq(colDurs, inf),
-// Single scalar \midinote - one ~chordNoteInRange pick, fresh every time
-// this key is read. ~currentRange[\MT1] (CT8harmonySelect.scd).
-            \midinote, Pfunc {
-                ~chordNoteInRange.(~currentChord, ~currentRange[\MT1][0], ~currentRange[\MT1][1])
-            },
+            \dur, copyPair[0],
+            \midinote, copyPair[1],
             \mRatio, 2,
             \cRatio, 1,
             \index, 2,
@@ -765,8 +774,168 @@
             \pan, 0,
             \out, 0,
             \fx, Pfunc { ~revBus },
-            \fxsend, -15
+            \fxsend, -15,
+// See the TRACK COPY section, just below, for ~copyTapFor.
+            \copyTap, ~copyTapFor.(\MT1)
         );
+    };
+};
+
+
+// ---------------------------------------------------------------------------
+// TRACK COPY ("Copy T") - BT1/BT2/MT1-4 ONLY
+// ---------------------------------------------------------------------------
+// Lets one bass/melody track quote another (or itself)'s recent output
+// verbatim: ~copyTStartRecord.(sourceName, beats) tapes that track's actual
+// sounding (dur, midinote) pairs for the next `beats` TempoClock beats;
+// ~copyTStartPlayback.(destName) then has `destName` play that taped buffer
+// back in place of its own normal pattern - same instrument/amp/wet/pan/
+// everything else about it, just borrowed timing+pitch - until the buffer
+// runs out, then it falls straight back into whatever it would normally be
+// doing. Restricted to BT1/BT2/MT1-4 (per feedback), not HT1-4/PT1-4 -
+// bass and melody tracks are both single-note-per-event now (see MT1's own
+// header comment, above), so a (dur, midinote) pair means the same thing
+// on either side of a copy; HT1-4 plays chords (an Array, not a scalar,
+// \midinote) and PT1-4's pitch is Hz, not MIDI - neither fits this scheme
+// without a redesign this feature doesn't attempt.
+//
+// Deliberately simple for this first pass: one active recorder at a time
+// (starting a new recording while one is already running just restarts
+// it), but any number of simultaneous playback consumers - each one snapshots
+// ~copyBuffer (the last COMPLETED recording) into its own
+// ~copyPlayBuffer[name] the moment ITS playback starts, then drains that
+// private copy at its own pace via its own ~copyPlayIdx[name], so a LATER
+// recording finishing and replacing the shared ~copyBuffer can never
+// disturb a playback already under way elsewhere.
+//
+// Rests are deliberately NOT captured (per feedback) - the tap only fires
+// for an actual sounding hit (ev[\type] != \rest), so a recording's own
+// internal timing is denser than the real elapsed time it was captured
+// over; `beats` only bounds how long the RECORDER listens, not how many
+// beats the resulting buffer takes to play back.
+//
+// Note-cutoffs are the one thing explicitly asked to be handled carefully
+// here: recording never truncates a note mid-flight to land exactly on
+// the `beats` boundary - the countdown is only checked AFTER a hit's own
+// duration has already been subtracted, so the last note captured always
+// finishes naturally. Playback never interrupts a note mid-flight either -
+// each override swaps in a COMPLETE (dur, midinote) pair at an event
+// boundary (a Pbind only ever asks for \dur/\midinote once per event, not
+// mid-event), so handing control back to the normal pattern once the
+// buffer is exhausted always happens cleanly between notes, never inside
+// one.
+~copyEligibleTracks = [\BT1, \BT2, \MT1, \MT2, \MT3, \MT4];
+
+~copyRecording = false;        // true while ~copyRecordSource is being taped
+~copyRecordSource = nil;       // track name currently being recorded
+~copyRecordBeatsLeft = 0;      // counts down by each captured hit's own \dur
+~copyRecordingBuffer = [];     // being built live, while ~copyRecording
+~copyBuffer = [];              // last COMPLETED recording - what playback reads
+
+~copyPlaying = ~copyPlaying ? ();   // name -> true while draining its ~copyPlayBuffer
+// name -> the buffer THIS track is currently draining - snapshotted from
+// ~copyBuffer at the moment its playback starts (~copyTStartPlayback,
+// below), not read live from ~copyBuffer - so a LATER recording finishing
+// and replacing ~copyBuffer can never corrupt a playback already in
+// progress elsewhere.
+~copyPlayBuffer = ~copyPlayBuffer ? ();
+// name -> this track's own position in ~copyPlayBuffer[name] - a GLOBAL,
+// not a Pbind-local var, so a rebuild mid-playback (minute change, Apply
+// now) resumes where it left off rather than restarting from scratch.
+~copyPlayIdx = ~copyPlayIdx ? ();
+~copyEligibleTracks.do { |name|
+    ~copyPlaying[name] = ~copyPlaying[name] ? false;
+    ~copyPlayBuffer[name] = ~copyPlayBuffer[name] ? [];
+    ~copyPlayIdx[name] = ~copyPlayIdx[name] ? 0;
+};
+
+~copyTStartRecord = { |sourceName, beats|
+    if(~copyEligibleTracks.includes(sourceName).not) {
+        ("Copy: % is not a bass/melody track - ignoring record request.".format(sourceName)).warn;
+    } {
+        ~copyRecording = true;
+        ~copyRecordSource = sourceName;
+        ~copyRecordBeatsLeft = beats;
+        ~copyRecordingBuffer = [];
+        ("Copy: recording % for % beats.".format(sourceName, beats)).postln;
+    };
+};
+
+~copyTStartPlayback = { |destName|
+    if(~copyEligibleTracks.includes(destName).not) {
+        ("Copy: % is not a bass/melody track - ignoring playback request.".format(destName)).warn;
+    } {
+        if(~copyBuffer.isEmpty) {
+            ("Copy: no completed recording yet - ignoring playback request for %.".format(destName)).warn;
+        } {
+            ~copyPlayBuffer[destName] = ~copyBuffer;
+            ~copyPlayIdx[destName] = 0;
+            ~copyPlaying[destName] = true;
+            ("Copy: % now playing back the % recorded notes.".format(destName, ~copyBuffer.size)).postln;
+        };
+    };
+};
+
+// Shared by every eligible track's builder - returns [durPfunc, midinotePfunc]
+// that transparently splice that track's own ~copyPlayBuffer in whenever
+// ~copyPlaying[name] is true, falling back to that track's own normal
+// generation (normalDurFunc/normalMidinoteFunc, each a zero-arg function
+// returning the next value) otherwise. \dur decides, per event, whether
+// this event is an override or not (remembered in usingOverride,
+// closure-local since it's recomputed fresh every single event anyway,
+// never carried across rebuilds); \midinote reads that same decision a
+// moment later, so the two keys never disagree about which source a given
+// event came from.
+~makeCopyAwarePair = { |name, normalDurFunc, normalMidinoteFunc|
+    var usingOverride = false;
+    var durFn = {
+        if(~copyPlaying[name] and: { ~copyPlayIdx[name] < ~copyPlayBuffer[name].size }) {
+            usingOverride = true;
+            ~copyPlayBuffer[name][~copyPlayIdx[name]][0];
+        } {
+            usingOverride = false;
+            normalDurFunc.value;
+        }
+    };
+    var midinoteFn = {
+        var v;
+        if(usingOverride) {
+            v = ~copyPlayBuffer[name][~copyPlayIdx[name]][1];
+            ~copyPlayIdx[name] = ~copyPlayIdx[name] + 1;
+            if(~copyPlayIdx[name] >= ~copyPlayBuffer[name].size) {
+                ~copyPlaying[name] = false;
+                ~copyPlayIdx[name] = 0;
+                ("Copy: % finished playing back the buffer - back to its own pattern.".format(name)).postln;
+            };
+        } {
+            v = normalMidinoteFunc.value;
+        };
+        v;
+    };
+    [Pfunc(durFn), Pfunc(midinoteFn)];
+};
+
+// The tap every eligible track's Pbind ends with - records the FINAL
+// resolved \dur/\midinote for this event (after ~makeCopyAwarePair's own
+// override, above, has already had its say - this key is always last), but
+// only while THIS track is the one ~copyTStartRecord named, and only for
+// an actual sounding hit (rests aren't captured - see this section's own
+// header comment). MT1 has no \type key of its own at all (it has no
+// per-event rest concept - CT8guiAdjust.scd's on/off button just
+// stops/starts its player directly), so ev[\type] there is always Event's
+// own default of \note - every MT1 event is "sounding" by construction,
+// which is exactly right here too.
+~copyTapFor = { |name|
+    Pfunc { |ev|
+        if(~copyRecording and: { ~copyRecordSource == name } and: { ev[\type] != \rest }) {
+            ~copyRecordingBuffer = ~copyRecordingBuffer.add([ev[\dur], ev[\midinote]]);
+            ~copyRecordBeatsLeft = ~copyRecordBeatsLeft - ev[\dur];
+            if(~copyRecordBeatsLeft <= 0) {
+                ~copyRecording = false;
+                ~copyBuffer = ~copyRecordingBuffer;
+                ("Copy: finished recording % notes from %.".format(~copyBuffer.size, name)).postln;
+            };
+        };
     };
 };
 
@@ -804,6 +973,7 @@
         var pattern = ~bassPattern[name];
         var splitCount, splitVariant, lastOfGroupIdx;
         var isMergePattern, mergeVariant, mergeStart;
+        var normalDurStream, normalMidinoteStream, copyPair;
 
 // By construction (same as ~buildPercPattern) there is always at least one
 // start event, since the empty-events case above already handled the only
@@ -947,10 +1117,22 @@
             };
         }.value;
 
+// \dur/\midinote go through ~makeCopyAwarePair (TRACK COPY section, above)
+// rather than a plain Pseq, so a Copy T playback in progress on this track
+// can transparently splice in - the two retained manual streams (not
+// re-derived each call) mean pausing them mid-cycle to serve a copy and
+// resuming afterward picks up exactly where they left off, same as this
+// bar's own normal looping already did before Copy T existed.
+        normalDurStream = Pseq(durs, inf).asStream;
+        normalMidinoteStream = Pseq(pitches, inf).asStream;
+        copyPair = ~makeCopyAwarePair.(name,
+            { normalDurStream.next }, { normalMidinoteStream.next }
+        );
+
         ~trackPatterns[name] = Pbind(*[
             \instrument, instrument,
-            \dur, Pseq(durs, inf),
-            \midinote, Pseq(pitches, inf),
+            \dur, copyPair[0],
+            \midinote, copyPair[1],
             \amp, Pseq(amps, inf),
 // \fx reaches ~clockRev through \fm's real fx/fxsend send (ignored by
 // \plucking, which has no \fx arg - its own hardcoded ~revBus send is
@@ -965,7 +1147,9 @@
                 var isRest = (~trackEnabled[name].not) or: { restFlags[beatIndex] };
                 beatIndex = (beatIndex + 1) % restFlags.size;
                 if(isRest) { \rest } { \note }
-            }
+            },
+// See the TRACK COPY section, above, for ~copyTapFor.
+            \copyTap, ~copyTapFor.(name)
         ]);
     };
 };
