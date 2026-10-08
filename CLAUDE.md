@@ -174,12 +174,16 @@ their own bullets below for exactly where the line falls:
   Looping starts at the midpoint of `[lo, hi]`, picks a random direction - up or down -
   once per start, then REVERSES direction at whichever bound it reaches instead of
   wrapping or clamping, bouncing back and forth);
-  Fixed/Random/Rising/Falling/Looping for bass, in that menu order (chord/scale-based -
+  Fixed/Random/Rising/Falling/Looping/Arp Rising/Arp Falling/Arp Looping for bass, in
+  that menu order (chord/scale-based -
   see
   `~buildMonoTrackPattern`'s own bullet, `CT8tracks.scd`, and `~chordRootInRange`/
-  `~chordTopInRange`/`~makeRisingPitchGen`/`~makeFallingPitchGen`/`~makeLoopingPitchGen`,
+  `~chordTopInRange`/`~makeRisingPitchGen`/`~makeFallingPitchGen`/`~makeLoopingPitchGen`/
+  `~chordArpIntervals`,
   `CT8harmonySelect.scd`'s
-  own bullet). Volume is
+  own bullet - the three Arp modes reuse the exact same Rising/Falling/Looping
+  generator functions, just stepping through the current chord's own tones instead of
+  its parent scale's degrees). Volume is
   Fixed/Alternate for both.
   Row 3 has one fixed-width `CompositeView` per menu above (`patternSubView`/
   `pitchSubView`/`volumeSubView`, each exactly as wide as its own row-2 menu so the two
@@ -356,27 +360,39 @@ their own bullets below for exactly where the line falls:
   and Looping (all three start from the same root) -
   same transpose-then-match-every-octave approach, but always `chord[0]` (the chord's own
   root, as written) and always the LOWEST matching octave inside `[lo, hi]`, not a random
-  pick. `~makeRisingPitchGen.(chord, scaleSet, lo, hi)` returns a stateful zero-arg
+  pick. `~makeRisingPitchGen.(chord, intervals, lo, hi)` returns a stateful zero-arg
   generator for the Rising pitch mode: starts at `~chordRootInRange`'s own note, then each
-  later call climbs one further degree up `~scales[scaleSet]`, extending into higher
-  octaves once the scale's 7 degrees are exhausted; once the next degree would land above
+  later call climbs one further degree up `intervals`, extending into higher
+  octaves once they're exhausted; once the next degree would land above
   `hi`, it wraps back to the start note and climbs again ("the whole thing starts over,"
   per feedback, not clamping and staying there the way percussion's own, unrelated Rising
-  pitch mode does). `~chordTopInRange.(chord, lo, hi)` is `~chordRootInRange`'s own
+  pitch mode does). `intervals` isn't resolved inside the generator - the CALLER decides
+  what list of semitone offsets to pass: `~scales[~chordSet]` (the current chord's
+  parent scale) for plain Rising, or `~chordArpIntervals.(chord)` (below) for Arp
+  Rising, so this one function and its two siblings below serve both pairs of modes.
+  `~chordTopInRange.(chord, lo, hi)` is `~chordRootInRange`'s own
   mirror, for Falling - same approach but the HIGHEST matching octave inside `[lo, hi]`,
   since Falling starts at the top of the range and descends.
-  `~makeFallingPitchGen.(chord, scaleSet, lo, hi)` is `~makeRisingPitchGen`'s mirror:
-  starts at `~chordTopInRange`'s own note, descends `~scales[scaleSet]` one degree per
+  `~makeFallingPitchGen.(chord, intervals, lo, hi)` is `~makeRisingPitchGen`'s mirror:
+  starts at `~chordTopInRange`'s own note, descends `intervals` one degree per
   call (extending into LOWER octaves), and wraps back to the top once the next degree
-  would land below `lo`. `~makeLoopingPitchGen.(chord, scaleSet, lo, hi)` is a third
+  would land below `lo`. `~makeLoopingPitchGen.(chord, intervals, lo, hi)` is a third
   variant, per feedback: starts at `~chordRootInRange`'s own note (same starting point
   Rising uses), picks a random direction (up or down) once, then steps through
-  `~scales[scaleSet]` in that direction like Rising/Falling do - but instead of
+  `intervals` in that direction like Rising/Falling do - but instead of
   wrapping back to the start once it would cross a bound, it REVERSES direction at
   whichever bound it reaches and continues stepping from there, bouncing between `lo`
   and `hi` indefinitely; the reversing call recomputes its own step in the new
   direction immediately, rather than re-emitting the turning-point note (which would
-  otherwise repeat it twice in a row). A fresh generator (any of the three) is made
+  otherwise repeat it twice in a row). `~chordArpIntervals.(chord)`, per feedback, is
+  the intervals list behind the three Arp modes (Arp Rising/Arp Falling/Arp Looping) -
+  each chord tone's offset from the chord's own root (`chord[0]`), e.g. `[60, 64, 67]`
+  gives `[0, 4, 7]`, deliberately not re-transposed by `~currentKey` here since
+  `~chordRootInRange`/`~chordTopInRange` already transpose the root itself, and a fixed
+  interval structure doesn't change under transposition. For exactly a 3-note chord,
+  the root an octave up is appended, turning the 3-note shape into a 4-note arpeggio
+  (`[0, 4, 7]` -> `[0, 4, 7, 12]`) - 4- and 5-note chords are left as-is. A fresh
+  generator (any of the three, plain or Arp) is made
   once per rebuild (same
   as the plain
   `durs`/pitch arrays every chord-aware track already pre-resolves once per bar), so the
@@ -721,11 +737,17 @@ wrapping back to the root once the climb would exceed the range's high end, and
 resetting fully only at the next bar - see that function's own bullet,
 `CT8harmonySelect.scd`, for the exact rule), Falling (`~makeFallingPitchGen`/
 `~chordTopInRange` - the mirror of Rising: starts at the TOP of the range instead and
-descends, same reset/wrap rules otherwise), or Looping (`~makeLoopingPitchGen` - starts
+descends, same reset/wrap rules otherwise), Looping (`~makeLoopingPitchGen` - starts
 at the same root `~chordRootInRange` gives, picks a random direction once, then steps
 like Rising/Falling do but REVERSES direction at whichever bound it reaches instead of
-wrapping, bouncing between `lo` and `hi`) - no separate `~bassBasePitch` any more, all
-five modes share `~currentRange[name]` (`~monoRangeDefaults`, `CT8tracks.scd`: `BT1`/
+wrapping, bouncing between `lo` and `hi`), or one of Arp Rising/Arp Falling/Arp Looping
+- the exact same three generator functions as their plain counterparts, just fed
+`~chordArpIntervals.(~currentChord)` (each chord tone's offset from its own root, with
+a 3-note chord's root appended an octave up so it arpeggiates as 4 tones - see
+`~chordArpIntervals`'s own bullet, `CT8harmonySelect.scd`) in place of
+`~scales[~chordSet]`, so an Arp mode climbs/descends/bounces through the current
+chord's own tones rather than its parent scale's degrees - no separate `~bassBasePitch` any more, all
+eight modes share `~currentRange[name]` (`~monoRangeDefaults`, `CT8tracks.scd`: `BT1`/
 `BT2` default to 12-59, "below middle C"; `MT1`/`MT2` keep their own higher historical
 default, 60-96, even though all four are otherwise identical in structure now - nothing
 about "Note track" forces every one of them into the same register), the same
@@ -733,7 +755,7 @@ global `HT1` reads live, just resolved once per rebuild here instead - so a mid-
 chord change isn't heard on any of the four until their next rebuild, unlike `HT1`'s
 live per-hit read. Per feedback, which split/merge group a hit falls under (the six
 1/8th-1/3rd/4/3
-families) doesn't yet change how Rising/Falling/Looping advances - every hit in one such
+families) doesn't yet change how Rising/Falling/Looping (plain or Arp) advances - every hit in one such
 group still shares its one pitch/one step, same "same pitch throughout the
 group" rule Fixed/Random already followed - pending a separate, later pass specifically
 on that. `\fx`

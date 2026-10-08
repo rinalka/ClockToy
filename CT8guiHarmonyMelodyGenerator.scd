@@ -473,10 +473,19 @@
                 statusText.string_("Changed - not yet applied.");
             });
         pitchMenu = PopUpMenu(rightPane, 120@22)
-            .items_(["Fixed", "Random", "Rising", "Falling", "Looping"])
-            .value_([\fixed, \random, \rising, \falling, \looping].indexOf(~monoPitchMode[name]) ? 0)
+            .items_([
+                "Fixed", "Random", "Rising", "Falling", "Looping",
+                "Arp Rising", "Arp Falling", "Arp Looping"
+            ])
+            .value_(
+                [\fixed, \random, \rising, \falling, \looping,
+                 \arpRising, \arpFalling, \arpLooping].indexOf(~monoPitchMode[name]) ? 0
+            )
             .action_({ |m|
-                ~monoPitchMode[name] = [\fixed, \random, \rising, \falling, \looping][m.value];
+                ~monoPitchMode[name] = [
+                    \fixed, \random, \rising, \falling, \looping,
+                    \arpRising, \arpFalling, \arpLooping
+                ][m.value];
                 statusText.string_("Changed - not yet applied.");
             });
         volumeMenu = PopUpMenu(rightPane, 120@22)

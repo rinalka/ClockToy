@@ -246,7 +246,7 @@
 //     standard pitch-key handling converts it to \freq for us), so there's
 //     no per-instrument pitch-ARG-name dispatch the way baseD/cym/hat/kick
 //     need (~buildPercPattern's pitchArgName switch). Pitch doesn't even
-//     need its own ~bassBasePitch any more - all five pitch modes read
+//     need its own ~bassBasePitch any more - all eight pitch modes read
 //     ~currentRange[name] directly (CT8harmonySelect.scd), the exact same
 //     global HT1/MT1 use for their own chord-note picks: Fixed is
 //     ~chordRootInRange (the chord's own root note, deterministic, not a
@@ -263,7 +263,12 @@
 //     same root ~chordRootInRange gives, picks a random direction once,
 //     then steps through ~scales[~chordSet] in that direction like
 //     Rising/Falling do, but REVERSES direction at whichever bound it
-//     reaches instead of wrapping, bouncing between lo and hi. Both
+//     reaches instead of wrapping, bouncing between lo and hi. Arp
+//     Rising/Arp Falling/Arp Looping, per feedback, are the exact same
+//     three generator functions again, just fed ~chordArpIntervals.(chord)
+//     (CT8harmonySelect.scd - the current chord's own tones, not its
+//     parent scale's degrees) instead of ~scales[~chordSet] - "same basic
+//     idea," just a different list of offsets to step through. Both
 //     instruments also just take a plain
 //     \amp key for their output level, so there's no per-instrument
 //     amp-arg-name dispatch needed either (unlike pitch/amp-arg dispatch
@@ -1107,26 +1112,53 @@
             };
             if(~monoPitchMode[name] == \rising) {
                 risingGen = ~makeRisingPitchGen.(
-                    ~currentChord, ~chordSet, ~currentRange[name][0], ~currentRange[name][1]
+                    ~currentChord, ~scales[~chordSet], ~currentRange[name][0], ~currentRange[name][1]
+                );
+            };
+            if(~monoPitchMode[name] == \arpRising) {
+                risingGen = ~makeRisingPitchGen.(
+                    ~currentChord, ~chordArpIntervals.(~currentChord),
+                    ~currentRange[name][0], ~currentRange[name][1]
                 );
             };
             if(~monoPitchMode[name] == \falling) {
                 fallingGen = ~makeFallingPitchGen.(
-                    ~currentChord, ~chordSet, ~currentRange[name][0], ~currentRange[name][1]
+                    ~currentChord, ~scales[~chordSet], ~currentRange[name][0], ~currentRange[name][1]
+                );
+            };
+            if(~monoPitchMode[name] == \arpFalling) {
+                fallingGen = ~makeFallingPitchGen.(
+                    ~currentChord, ~chordArpIntervals.(~currentChord),
+                    ~currentRange[name][0], ~currentRange[name][1]
                 );
             };
             if(~monoPitchMode[name] == \looping) {
                 loopingGen = ~makeLoopingPitchGen.(
-                    ~currentChord, ~chordSet, ~currentRange[name][0], ~currentRange[name][1]
+                    ~currentChord, ~scales[~chordSet], ~currentRange[name][0], ~currentRange[name][1]
                 );
             };
+            if(~monoPitchMode[name] == \arpLooping) {
+                loopingGen = ~makeLoopingPitchGen.(
+                    ~currentChord, ~chordArpIntervals.(~currentChord),
+                    ~currentRange[name][0], ~currentRange[name][1]
+                );
+            };
+// \arpRising/\arpFalling/\arpLooping share risingGen/fallingGen/loopingGen
+// with their plain counterparts - same generator function either way (see
+// ~makeRisingPitchGen's own comment, CT8harmonySelect.scd), just built
+// above with ~chordArpIntervals.(~currentChord) (the current chord's own
+// tones) instead of ~scales[~chordSet] (the current chord's parent
+// scale) as the list of offsets to step through.
             pitchFor = { |idx|
                 switch(~monoPitchMode[name],
                     \fixed, { fixedNote },
                     \random, { ~chordNoteInRange.(~currentChord, ~currentRange[name][0], ~currentRange[name][1]) },
                     \rising, { risingGen.value },
+                    \arpRising, { risingGen.value },
                     \falling, { fallingGen.value },
-                    \looping, { loopingGen.value }
+                    \arpFalling, { fallingGen.value },
+                    \looping, { loopingGen.value },
+                    \arpLooping, { loopingGen.value }
                 )
             };
             while ({ slotI < baseSlotIdx.size }) {

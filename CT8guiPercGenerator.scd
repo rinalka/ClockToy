@@ -63,12 +63,17 @@
 //          there the way Rising does; Looping starts at the midpoint of
 //          [lo, hi], picks a random direction once per start, and
 //          REVERSES direction at whichever bound it reaches instead of
-//          wrapping); Fixed/Random/Rising/Falling/Looping for bass, in
+//          wrapping); Fixed/Random/Rising/Falling/Looping/Arp Rising/Arp
+//          Falling/Arp Looping for bass, in
 //          that menu order
 //          (chord/scale-based - see ~buildMonoTrackPattern's
 //          own comment, CT8tracks.scd, and ~chordTopInRange/
-//          ~makeFallingPitchGen/~makeLoopingPitchGen, CT8harmonySelect.scd's
-//          own comment);
+//          ~makeFallingPitchGen/~makeLoopingPitchGen/~chordArpIntervals,
+//          CT8harmonySelect.scd's
+//          own comment - the three Arp modes reuse the exact same Rising/
+//          Falling/Looping generator functions, just stepping through the
+//          current chord's own tones instead of its parent scale's
+//          degrees);
 //          Volume is Fixed/Alternate for both.
 //   Row 3: one sub-control per menu above, in three same-width columns so
 //          each lines up under its own menu:
@@ -595,10 +600,19 @@
                 statusText.string_("Changed - not yet applied.");
             });
         pitchMenu = PopUpMenu(rightPane, 120@22)
-            .items_(["Fixed", "Random", "Rising", "Falling", "Looping"])
-            .value_([\fixed, \random, \rising, \falling, \looping].indexOf(~monoPitchMode[name]) ? 0)
+            .items_([
+                "Fixed", "Random", "Rising", "Falling", "Looping",
+                "Arp Rising", "Arp Falling", "Arp Looping"
+            ])
+            .value_(
+                [\fixed, \random, \rising, \falling, \looping,
+                 \arpRising, \arpFalling, \arpLooping].indexOf(~monoPitchMode[name]) ? 0
+            )
             .action_({ |m|
-                ~monoPitchMode[name] = [\fixed, \random, \rising, \falling, \looping][m.value];
+                ~monoPitchMode[name] = [
+                    \fixed, \random, \rising, \falling, \looping,
+                    \arpRising, \arpFalling, \arpLooping
+                ][m.value];
                 statusText.string_("Changed - not yet applied.");
             });
         volumeMenu = PopUpMenu(rightPane, 120@22)

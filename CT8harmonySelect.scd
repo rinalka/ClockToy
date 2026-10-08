@@ -269,10 +269,14 @@
 // once per hit, in order, across one whole bar - a fresh generator is made
 // each rebuild, same as the plain dur/pitch arrays every chord-aware track
 // already pre-resolves once per bar. Starts at ~chordRootInRange's own
-// note, then each later call climbs one degree further up
-// ~scales[scaleSet] (the parent scale for the current chord's own set -
-// see ~scales' own header comment, below), extending into higher octaves
-// once the scale's 7 degrees are exhausted. Once the next degree would
+// note, then each later call climbs one degree further up `intervals` -
+// the semitone offsets to step through, extending into higher octaves
+// once they're exhausted. The CALLER decides what `intervals` actually is
+// - ~scales[~chordSet] (the parent scale for the current chord's own set
+// - see ~scales' own header comment, below) for the plain Rising mode;
+// ~chordArpIntervals.(chord) (below) for Arp Rising, so this one function
+// serves both - the climb mechanics themselves don't care which list of
+// offsets they're walking. Once the next degree would
 // land above `hi`, the climb wraps back to the start note and begins
 // again - "the whole thing starts over," per feedback - rather than
 // clamping and staying there the way the OLD (percussion-only) Rising
@@ -280,8 +284,8 @@
 // function from that track's next rebuild), per feedback - NOT at every
 // row/column-start within the bar the way percussion's own Rising does; a
 // row/column-boundary-aware version is a planned, separate, future step.
-~makeRisingPitchGen = { |chord, scaleSet, lo, hi|
-    var scale = ~scales[scaleSet];
+~makeRisingPitchGen = { |chord, intervals, lo, hi|
+    var scale = intervals;
     var startNote = ~chordRootInRange.(chord, lo, hi);
     var stepIdx = 0;
     {
@@ -316,14 +320,16 @@
 // The mirror of ~makeRisingPitchGen, for the Falling pitch mode (Note
 // tracks - BT1/BT2/MT1/MT2): starts at ~chordTopInRange's own note (the
 // TOP of the range, not the bottom), then each later call descends one
-// degree further down ~scales[scaleSet], extending into lower octaves
-// once the scale's 7 degrees are exhausted. Once the next degree would
+// degree further down `intervals` (~scales[~chordSet] for plain Falling,
+// ~chordArpIntervals.(chord) for Arp Falling - same caller-decides
+// convention ~makeRisingPitchGen uses), extending into lower octaves
+// once they're exhausted. Once the next degree would
 // land below `lo`, the descent wraps back to the start note and begins
 // again - same "starts over" rule ~makeRisingPitchGen uses, just upside
 // down. Same reset rule too: only at the next full bar, never at a
 // row/column-start within it.
-~makeFallingPitchGen = { |chord, scaleSet, lo, hi|
-    var scale = ~scales[scaleSet];
+~makeFallingPitchGen = { |chord, intervals, lo, hi|
+    var scale = intervals;
     var startNote = ~chordTopInRange.(chord, lo, hi);
     var stepIdx = 0;
     {
@@ -343,8 +349,11 @@
 // Returns a stateful zero-arg generator for the Looping pitch mode (Note
 // tracks - BT1/BT2/MT1/MT2), per feedback: starts at ~chordRootInRange's
 // own note (same starting point Rising uses), picks a random direction
-// (up or down) once, then steps through ~scales[scaleSet] in that
-// direction like Rising/Falling do - but instead of wrapping back to the
+// (up or down) once, then steps through `intervals` in that direction
+// like Rising/Falling do (~scales[~chordSet] for plain Looping,
+// ~chordArpIntervals.(chord) for Arp Looping - same caller-decides
+// convention the other two generators use) - but instead of wrapping back
+// to the
 // start once it would go past a bound, it REVERSES direction at whichever
 // bound it reaches and continues stepping from there, bouncing back and
 // forth between `lo` and `hi` indefinitely. The reversing hit itself
@@ -355,8 +364,8 @@
 // ~makeRisingPitchGen/~makeFallingPitchGen use when THEY reset, just
 // reversing instead of restarting from the top/bottom. Same reset rule as
 // both: only at the next full bar, never at a row/column-start within it.
-~makeLoopingPitchGen = { |chord, scaleSet, lo, hi|
-    var scale = ~scales[scaleSet];
+~makeLoopingPitchGen = { |chord, intervals, lo, hi|
+    var scale = intervals;
     var phaseStart = ~chordRootInRange.(chord, lo, hi);
     var dir = [1, -1].choose;
     var stepIdx = 0;
@@ -378,6 +387,29 @@
         lastValue = candidate;
         candidate;
     };
+};
+
+// The intervals list for the Arp Rising/Arp Falling/Arp Looping pitch
+// modes, per feedback - fed into ~makeRisingPitchGen/~makeFallingPitchGen/
+// ~makeLoopingPitchGen in place of ~scales[~chordSet], so those three
+// generators step through the CURRENT CHORD'S OWN TONES instead of a
+// scale's degrees - "same basic idea" as Rising/Falling/Looping, just a
+// different list of offsets to walk. Each tone's offset from the chord's
+// own root (chord[0]) - e.g. [60, 64, 67] (a major triad) gives
+// [0, 4, 7] - deliberately NOT re-transposed by ~currentKey here, since
+// ~chordRootInRange/~chordTopInRange (the generators' own starting-point
+// functions) already transpose the ROOT itself; adding these untransposed
+// relative offsets on top of that already-transposed root still lands on
+// the correctly-transposed chord tones, because a fixed interval
+// structure (e.g. "major triad = root/major third/fifth") doesn't change
+// under transposition. For exactly a 3-note chord, per feedback, the
+// root an octave up is appended to the end, turning the 3-note shape into
+// a 4-note arpeggio (e.g. [0, 4, 7] -> [0, 4, 7, 12]) - 4- and 5-note
+// chords are left as-is, already enough notes on their own.
+~chordArpIntervals = { |chord|
+    var intervals = chord.collect { |note| note - chord[0] };
+    if(chord.size == 3) { intervals = intervals ++ [12] };
+    intervals;
 };
 
 // ~currentChord is the one shared "current chord". Read LIVE (not
