@@ -95,6 +95,13 @@
 //       start, then steps DOWN toward lo in the same 8 fixed steps, but
 //       WRAPS back to hi (not clamping) once it would go below lo - see
 //       this function's own basePitches comment for the exact rule.
+//     \looping - a third variant, per feedback: no chord root to start
+//       from here (percussion has no chord concept), so it starts at the
+//       midpoint of [lo, hi], picks a random direction (up or down) fresh
+//       at every start, then steps in that direction in the same 8 fixed
+//       steps - but REVERSES direction at whichever bound it reaches
+//       instead of wrapping or clamping, bouncing back and forth - see
+//       this function's own basePitches comment for the exact rule.
 //     \random - anywhere in [lo, hi], chosen independently each hit - no
 //       chord-aware selection yet, that's a planned future step (unlike
 //       BT1/BT2's own Random pitch mode, which already is).
@@ -239,7 +246,7 @@
 //     standard pitch-key handling converts it to \freq for us), so there's
 //     no per-instrument pitch-ARG-name dispatch the way baseD/cym/hat/kick
 //     need (~buildPercPattern's pitchArgName switch). Pitch doesn't even
-//     need its own ~bassBasePitch any more - all four pitch modes read
+//     need its own ~bassBasePitch any more - all five pitch modes read
 //     ~currentRange[name] directly (CT8harmonySelect.scd), the exact same
 //     global HT1/MT1 use for their own chord-note picks: Fixed is
 //     ~chordRootInRange (the chord's own root note, deterministic, not a
@@ -252,7 +259,12 @@
 //     only at the next bar); Falling is ~makeFallingPitchGen, its mirror -
 //     starts at the TOP of the range (~chordTopInRange) and descends
 //     instead, wrapping back to the top once it would go below the
-//     range's low end. Both instruments also just take a plain
+//     range's low end; Looping is ~makeLoopingPitchGen - starts at the
+//     same root ~chordRootInRange gives, picks a random direction once,
+//     then steps through ~scales[~chordSet] in that direction like
+//     Rising/Falling do, but REVERSES direction at whichever bound it
+//     reaches instead of wrapping, bouncing between lo and hi. Both
+//     instruments also just take a plain
 //     \amp key for their output level, so there's no per-instrument
 //     amp-arg-name dispatch needed either (unlike pitch/amp-arg dispatch
 //     being two separate concerns for baseD/cym/hat/kick).
@@ -408,6 +420,7 @@
     } {
         var startIdx = [];
         var baseSlotIdx, basePitches, pitchOffset = 0, fallSteps = 0;
+        var loopDir = 1, loopPitch = 0;
         var durs = [], pitches = [], restFlags = [], amps = [];
         var beatIndex = 0, ampIndex = 0, nextAmp;
         var instrument = ~percInstrument[name];
@@ -461,7 +474,17 @@
 // taken since the last reset/wrap - reset to 0 at every genuine start,
 // same as pitchOffset, and reset to 1 (not 0) on a wrap, so the following
 // hit continues from the SECOND step rather than repeating hi twice in a
-// row. Computed once per baseline slot, before any random splitting below
+// row. \looping is a third variant, per feedback - no "chord root" to
+// start from here (percussion has no chord concept), so it starts at the
+// midpoint of [lo, hi] instead, picks a random direction (up or down)
+// fresh at every genuine start (same reset cadence as \rising/\falling),
+// then steps by the same (hi-lo)/8 size in that direction - but instead of
+// wrapping back to the start once it would cross a bound, it REVERSES
+// direction right there and immediately recomputes this same hit's pitch
+// one step in the new direction (rather than re-emitting the turning-point
+// note, which would otherwise repeat it twice in a row), so it bounces
+// back and forth between lo and hi instead of restarting or wrapping.
+// Computed once per baseline slot, before any random splitting below
 // - a slot split into a double hit or triplet gives every one of those
 // hits the same pitch, rather than advancing mid-split.
         basePitches = baseSlotIdx.collect { |idx|
@@ -471,6 +494,8 @@
             if(isStart) {
                 pitchOffset = 0;
                 fallSteps = 0;
+                loopDir = [1, -1].choose;
+                loopPitch = (lo + hi) / 2;
             } {
                 if(~percPitchMode[name] == \rising) {
                     pitchOffset = pitchOffset + ((hi - lo) / 8);
@@ -486,6 +511,21 @@
                         hi;
                     } {
                         fallSteps = fallSteps + 1;
+                        candidate;
+                    }
+                },
+                \looping, {
+                    if(isStart) {
+                        loopPitch;
+                    } {
+                        var step = (hi - lo) / 8;
+                        var candidate = loopPitch + (loopDir * step);
+                        var outOfBounds = if(loopDir > 0) { candidate > hi } { candidate < lo };
+                        if(outOfBounds) {
+                            loopDir = loopDir * -1;
+                            candidate = loopPitch + (loopDir * step);
+                        };
+                        loopPitch = candidate;
                         candidate;
                     }
                 },
@@ -1061,7 +1101,7 @@
 // groups.
         {
             var pitchFor, slotI = 0;
-            var fixedNote, risingGen, fallingGen;
+            var fixedNote, risingGen, fallingGen, loopingGen;
             if(~monoPitchMode[name] == \fixed) {
                 fixedNote = ~chordRootInRange.(~currentChord, ~currentRange[name][0], ~currentRange[name][1]);
             };
@@ -1075,12 +1115,18 @@
                     ~currentChord, ~chordSet, ~currentRange[name][0], ~currentRange[name][1]
                 );
             };
+            if(~monoPitchMode[name] == \looping) {
+                loopingGen = ~makeLoopingPitchGen.(
+                    ~currentChord, ~chordSet, ~currentRange[name][0], ~currentRange[name][1]
+                );
+            };
             pitchFor = { |idx|
                 switch(~monoPitchMode[name],
                     \fixed, { fixedNote },
                     \random, { ~chordNoteInRange.(~currentChord, ~currentRange[name][0], ~currentRange[name][1]) },
                     \rising, { risingGen.value },
-                    \falling, { fallingGen.value }
+                    \falling, { fallingGen.value },
+                    \looping, { loopingGen.value }
                 )
             };
             while ({ slotI < baseSlotIdx.size }) {

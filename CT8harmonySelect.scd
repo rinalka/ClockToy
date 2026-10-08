@@ -340,6 +340,46 @@
     };
 };
 
+// Returns a stateful zero-arg generator for the Looping pitch mode (Note
+// tracks - BT1/BT2/MT1/MT2), per feedback: starts at ~chordRootInRange's
+// own note (same starting point Rising uses), picks a random direction
+// (up or down) once, then steps through ~scales[scaleSet] in that
+// direction like Rising/Falling do - but instead of wrapping back to the
+// start once it would go past a bound, it REVERSES direction at whichever
+// bound it reaches and continues stepping from there, bouncing back and
+// forth between `lo` and `hi` indefinitely. The reversing hit itself
+// immediately computes its OWN step in the new direction (rather than
+// re-emitting the turning-point note, which would otherwise repeat it
+// twice in a row) - `phaseStart`/`stepIdx` get reset to that turning
+// point/1 respectively, same "resume from the SECOND step" convention
+// ~makeRisingPitchGen/~makeFallingPitchGen use when THEY reset, just
+// reversing instead of restarting from the top/bottom. Same reset rule as
+// both: only at the next full bar, never at a row/column-start within it.
+~makeLoopingPitchGen = { |chord, scaleSet, lo, hi|
+    var scale = ~scales[scaleSet];
+    var phaseStart = ~chordRootInRange.(chord, lo, hi);
+    var dir = [1, -1].choose;
+    var stepIdx = 0;
+    var lastValue = phaseStart;
+    {
+        var degree = stepIdx mod: scale.size;
+        var octave = stepIdx div: scale.size;
+        var candidate = phaseStart + (dir * (scale[degree] + (octave * 12)));
+        var outOfBounds = if(dir > 0) { candidate > hi } { candidate < lo };
+        if(outOfBounds) {
+            dir = dir * -1;
+            phaseStart = lastValue;
+            stepIdx = 1;
+            degree = stepIdx mod: scale.size;
+            octave = stepIdx div: scale.size;
+            candidate = phaseStart + (dir * (scale[degree] + (octave * 12)));
+        };
+        stepIdx = stepIdx + 1;
+        lastValue = candidate;
+        candidate;
+    };
+};
+
 // ~currentChord is the one shared "current chord". Read LIVE (not
 // snapshotted into a local var, so a change is heard on the very next
 // note) by ~buildPolyPattern (HT1), CT8tracks.scd; ~buildMonoTrackPattern

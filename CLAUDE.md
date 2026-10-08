@@ -166,13 +166,19 @@ their own bullets below for exactly where the line falls:
   rebuild - it used to be a fixed, non-adjustable ~1/4, now it shares the same Percent
   slider/global as the "%" split/merge patterns above, so switching between any of them
   keeps whichever percent was already set). Pitch is Fixed/Rising at
-  start/Random/Falling at start for percussion (its own separate Hz-based scheme -
-  unrelated to the below; Falling is Rising's mirror, per feedback - starts at `hi`
+  start/Random/Falling at start/Looping at start for percussion (its own separate
+  Hz-based scheme - unrelated to the below; Falling is Rising's mirror, per feedback -
+  starts at `hi`
   and steps down toward `lo` in the same 8 fixed steps, but WRAPS back to `hi` once
-  it would go below `lo`, rather than clamping and staying there the way Rising does);
-  Fixed/Random/Rising/Falling for bass, in that menu order (chord/scale-based - see
+  it would go below `lo`, rather than clamping and staying there the way Rising does;
+  Looping starts at the midpoint of `[lo, hi]`, picks a random direction - up or down -
+  once per start, then REVERSES direction at whichever bound it reaches instead of
+  wrapping or clamping, bouncing back and forth);
+  Fixed/Random/Rising/Falling/Looping for bass, in that menu order (chord/scale-based -
+  see
   `~buildMonoTrackPattern`'s own bullet, `CT8tracks.scd`, and `~chordRootInRange`/
-  `~chordTopInRange`/`~makeRisingPitchGen`/`~makeFallingPitchGen`, `CT8harmonySelect.scd`'s
+  `~chordTopInRange`/`~makeRisingPitchGen`/`~makeFallingPitchGen`/`~makeLoopingPitchGen`,
+  `CT8harmonySelect.scd`'s
   own bullet). Volume is
   Fixed/Alternate for both.
   Row 3 has one fixed-width `CompositeView` per menu above (`patternSubView`/
@@ -198,7 +204,11 @@ their own bullets below for exactly where the line falls:
   steps per hit, resetting at every row/column start; Falling (percussion only) is its
   mirror, resetting to `hi` at every row/column start and stepping down toward `lo` in
   the same 8 fixed steps, but wrapping back to `hi` (not clamping, the way Rising does)
-  once it would go below `lo`. Because the same slider means
+  once it would go below `lo`; Looping (percussion only) starts at the midpoint of
+  `[lo, hi]`, picks a random direction (up or down) fresh at every row/column start, then
+  steps in that direction in the same 8 fixed steps - but REVERSES direction at
+  whichever bound it reaches, bouncing back and forth, rather than wrapping or clamping.
+  Because the same slider means
   something sensible in every mode, it stays visible across all of them - nothing to
   show or hide here any more, unlike the old mode-specific widget-swapping.
   Under Volume, the same idea: one dual-handle `RangeSlider` (+ readout) for
@@ -342,7 +352,8 @@ their own bullets below for exactly where the line falls:
   requested `[lo, hi]`), then picks again at random among every octave of that
   (transposed) pitch class inside `[lo, hi]` inclusive, so "which note" and "which octave"
   are two independent random choices - the Random pitch mode's own function.
-  `~chordRootInRange.(chord, lo, hi)` is its deterministic sibling, for Fixed and Rising -
+  `~chordRootInRange.(chord, lo, hi)` is its deterministic sibling, for Fixed, Rising,
+  and Looping (all three start from the same root) -
   same transpose-then-match-every-octave approach, but always `chord[0]` (the chord's own
   root, as written) and always the LOWEST matching octave inside `[lo, hi]`, not a random
   pick. `~makeRisingPitchGen.(chord, scaleSet, lo, hi)` returns a stateful zero-arg
@@ -357,10 +368,20 @@ their own bullets below for exactly where the line falls:
   `~makeFallingPitchGen.(chord, scaleSet, lo, hi)` is `~makeRisingPitchGen`'s mirror:
   starts at `~chordTopInRange`'s own note, descends `~scales[scaleSet]` one degree per
   call (extending into LOWER octaves), and wraps back to the top once the next degree
-  would land below `lo`. A fresh generator (either one) is made once per rebuild (same
+  would land below `lo`. `~makeLoopingPitchGen.(chord, scaleSet, lo, hi)` is a third
+  variant, per feedback: starts at `~chordRootInRange`'s own note (same starting point
+  Rising uses), picks a random direction (up or down) once, then steps through
+  `~scales[scaleSet]` in that direction like Rising/Falling do - but instead of
+  wrapping back to the start once it would cross a bound, it REVERSES direction at
+  whichever bound it reaches and continues stepping from there, bouncing between `lo`
+  and `hi` indefinitely; the reversing call recomputes its own step in the new
+  direction immediately, rather than re-emitting the turning-point note (which would
+  otherwise repeat it twice in a row). A fresh generator (any of the three) is made
+  once per rebuild (same
   as the plain
   `durs`/pitch arrays every chord-aware track already pre-resolves once per bar), so the
-  climb/descent resets only at the next full bar, never at a row/column-start within it -
+  climb/descent/bounce resets only at the next full bar, never at a row/column-start
+  within it -
   a row/column-boundary-aware version is a planned, separate, future step, per feedback.
   `~currentChord` is the one shared "current chord" global. Read LIVE, not
   snapshotted into a local var, by `~buildPolyPattern`
@@ -698,10 +719,13 @@ the chord's own root note, deterministic, not a random pick), Random (`~chordNot
 climbs `~scales[~chordSet]` one degree per baseline slot, not per row/column-start,
 wrapping back to the root once the climb would exceed the range's high end, and
 resetting fully only at the next bar - see that function's own bullet,
-`CT8harmonySelect.scd`, for the exact rule), or Falling (`~makeFallingPitchGen`/
+`CT8harmonySelect.scd`, for the exact rule), Falling (`~makeFallingPitchGen`/
 `~chordTopInRange` - the mirror of Rising: starts at the TOP of the range instead and
-descends, same reset/wrap rules otherwise) - no separate `~bassBasePitch` any more, all
-four modes share `~currentRange[name]` (`~monoRangeDefaults`, `CT8tracks.scd`: `BT1`/
+descends, same reset/wrap rules otherwise), or Looping (`~makeLoopingPitchGen` - starts
+at the same root `~chordRootInRange` gives, picks a random direction once, then steps
+like Rising/Falling do but REVERSES direction at whichever bound it reaches instead of
+wrapping, bouncing between `lo` and `hi`) - no separate `~bassBasePitch` any more, all
+five modes share `~currentRange[name]` (`~monoRangeDefaults`, `CT8tracks.scd`: `BT1`/
 `BT2` default to 12-59, "below middle C"; `MT1`/`MT2` keep their own higher historical
 default, 60-96, even though all four are otherwise identical in structure now - nothing
 about "Note track" forces every one of them into the same register), the same
@@ -709,8 +733,8 @@ global `HT1` reads live, just resolved once per rebuild here instead - so a mid-
 chord change isn't heard on any of the four until their next rebuild, unlike `HT1`'s
 live per-hit read. Per feedback, which split/merge group a hit falls under (the six
 1/8th-1/3rd/4/3
-families) doesn't yet change how Rising/Falling advances - every hit in one such group
-still shares its one pitch/one climb-or-descent-step, same "same pitch throughout the
+families) doesn't yet change how Rising/Falling/Looping advances - every hit in one such
+group still shares its one pitch/one step, same "same pitch throughout the
 group" rule Fixed/Random already followed - pending a separate, later pass specifically
 on that. `\fx`
 reaches `~clockRev` through `\fm`'s real `fx`/`fxsend` send (ignored by `\plucking`, which
