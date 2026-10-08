@@ -94,6 +94,7 @@ if(
 ~trackEnabled[\PT3] = true;
 ~trackEnabled[\HT1] = true;
 ~trackEnabled[\MT1] = true;
+~trackEnabled[\MT2] = true;
 ~trackEnabled[\BT1] = true;
 
 // ---------------------------------------------------------------------------
@@ -124,6 +125,7 @@ CmdPeriod.add(~closeWindowsOnCmdPeriod);
 ~trackEnabled[\PT3] = true;
 ~trackEnabled[\HT1] = true;
 ~trackEnabled[\MT1] = true;
+~trackEnabled[\MT2] = true;
 ~trackEnabled[\BT1] = true;
 
 ~twelveHourClock = true;  // false makes it a 24-hour clock
@@ -235,3 +237,6 @@ s.waitForBoot({
 
 )
 
+
+~copyTStartRecord.(\BT1, 8); 
+~copyTStartPlayback.(\MT1); 

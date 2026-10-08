@@ -349,8 +349,8 @@ their own bullets below for exactly where the line falls:
   climb resets only at the next full bar, never at a row/column-start within it - a
   row/column-boundary-aware version is a planned, separate, future step, per feedback.
   `~currentChord` is the one shared "current chord" global. Read LIVE, not
-  snapshotted into a local var, by `~buildHarmonyPattern`/`~buildMelodyPattern`
-  (`HT1`/`MT1`, `CT8tracks.scd`); `~buildBassTrackPattern` (`BT1`/`BT2`) also reads it, for
+  snapshotted into a local var, by `~buildHarmonyPattern`
+  (`HT1`, `CT8tracks.scd`); `~buildBassTrackPattern` (`BT1`/`BT2`/`MT1`/`MT2`) also reads it, for
   their Random pitch mode specifically, but only once per rebuild. `~chordMarkov` (a
   second-order Markov table keyed by `[secondLastChord, lastChord]`, chords numbered 1-7)
   and `~computeNextChord` (walks that table, falling back to a flat weighted choice for
@@ -392,7 +392,7 @@ their own bullets below for exactly where the line falls:
   `CT8main.scd`'s boot sequence via a second `t.sched(0, {...; 1})` call, the same
   repeating-check idiom `~checkForNewMinute` already uses, once per beat. Loads right
   after `CT8guiClock.scd` and before `CT8tracks.scd`, since `~buildHarmonyPattern`/
-  `~buildMelodyPattern` need `~chords`/`~currentChord`/`~chordNoteInRange` to already
+  `~buildBassTrackPattern` need `~chords`/`~currentChord`/`~chordNoteInRange` to already
   exist (though only at the point their builder is actually *called*, not at file-load
   time, so the ordering constraint is looser than it looks).
 
@@ -514,16 +514,25 @@ their own bullets below for exactly where the line falls:
   can take effect, since the server is already running by the time any `~makeXWindow`
   (including the Sound Lab's) gets called.
 
-Only three tracks are currently enabled by default — `PT1`, `PT2`, `PT3` (all three
-Percussion Generator-driven, see below) — out of 13 planned tracks (4 percussion
-`PT1-4`, 2 bass `BT1-2`, 4 rhythm/harmony `HT1-4`, 4 melody `MT1-4`) for a planned
-generative "Daily Piece" mode. `PT4`, `BT1`, `BT2`, `HT1` (a chord-per-row harmony pad),
-and `MT1` (a single-note-per-column melody) all have real builders too (`PT4`/`BT1`/`BT2`
-share the two generic builders, `~buildPercPattern`/`~buildBassTrackPattern`; `HT1`/`MT1`
-their own bespoke ones) and are fully playable - just disabled by default until toggled
-on in the Percussion + Bass Generator window (`PT4`/`BT1`/`BT2`, beside each one's name)
-or the Clock Toy Adjust window (`HT1`/`MT1`); `HT2-4`/`MT2-4` are still registered but
-inert (no builder exists for them yet). See the TRACK REGISTRY block in `CT8tracks.scd`:
+Only four tracks are currently enabled by default — `PT1`, `PT2`, `PT3` (all three
+Percussion Generator-driven, see below) and `MT1` — out of 13 planned tracks (4
+percussion `PT1-4`, 2 bass `BT1-2`, 4 rhythm/harmony `HT1-4`, 4 melody `MT1-4`) for a
+planned generative "Daily Piece" mode. Per feedback ("I am reconsidering how I think of
+these tracks... BT1/BT2/MT1/MT2 will be structured the same way"), `BT1`/`BT2`/`MT1`/
+`MT2` are no longer thought of as separate "bass" and "melody" track families - they're
+four interchangeable SINGLE LINE tracks, sharing one structure, one builder
+(`~buildBassTrackPattern.(name)` - still named for "bass," per feedback not to rename
+anything visible), and one set of config globals (`~bassX[name]`, `CT8tracks.scd`'s BASS
+GENERATOR CONFIG section), differing only in which options each one is currently set to
+- `MT1`/`MT2` used to have their own bespoke builder (`~buildMelodyPattern`, with
+hand-tuned FM voicing, now gone entirely) before this change. `PT4`, `BT2`, and `HT1` (a
+chord-per-row harmony pad) also have real builders (`PT4` shares `~buildPercPattern`;
+`BT2` shares `~buildBassTrackPattern`; `HT1` keeps its own bespoke one) and are fully
+playable - just disabled by default until toggled on in the Percussion + Bass Generator
+window (`PT4`/`BT2`, beside each one's name) or the Harmony + Melody Generator/Clock Toy
+Adjust windows (`HT1`); `MT2` defaults ON, unlike `BT2` (per feedback, "go ahead and turn
+MT2 on"); `HT2-4`/`MT3-4` are still registered but inert (no builder exists for them
+yet). See the TRACK REGISTRY block in `CT8tracks.scd`:
 - **`~trackNames`** — all 13 track name symbols.
 - **`~trackPatterns[name]`** / **`~trackPlayers[name]`** / **`~trackEnabled[name]`** — that
   track's built Pbind, its playing `EventStreamPlayer`, and whether the user wants its
@@ -531,11 +540,12 @@ inert (no builder exists for them yet). See the TRACK REGISTRY block in `CT8trac
 - **`~syncTrackPlayer.(name)`** — stops a track's current player, then restarts it if
   `~trackEnabled[name]` and a pattern exist; used for any future per-track on/off UI.
 - **`~trackBuilders[name]`** — the function that (re)builds `~trackPatterns[name]`;
-  currently `PT1`/`PT2`/`PT3`/`PT4`/`BT1`/`BT2`/`HT1`/`MT1` have one registered. `PT1`-`PT4`
-  each get a small wrapper closure (`{ ~buildPercPattern.(\PT1) }`, etc.) around the one
-  shared `~buildPercPattern` function; `BT1`/`BT2` mirror that with their own shared
-  `~buildBassTrackPattern`; `HT1`/`MT1` keep their own bespoke builders
-  (`~buildHarmonyPattern`/`~buildMelodyPattern`). Registering a builder
+  currently `PT1`/`PT2`/`PT3`/`PT4`/`BT1`/`BT2`/`MT1`/`MT2`/`HT1` have one registered.
+  `PT1`-`PT4` each get a small wrapper closure (`{ ~buildPercPattern.(\PT1) }`, etc.)
+  around the one shared `~buildPercPattern` function; `BT1`/`BT2`/`MT1`/`MT2` all mirror
+  that with their own shared `~buildBassTrackPattern` (the four single line tracks -
+  see the paragraph above); `HT1` keeps its own bespoke builder
+  (`~buildHarmonyPattern`). Registering a builder
   for a new track name is the only step needed to bring it under the existing
   `~setStartPbinds`/`~stopPbinds`/`~updatePbinds`/`~restartPbinds` machinery, which all
   loop generically over `~trackNames` rather than hardcoding specific tracks.
@@ -632,44 +642,39 @@ be a fixed 3-chord `Pseq`; now it's a `Pfunc` - `Array.fill(4, { ~chordNoteInRan
 tone-and-octave picks within `~currentRange[\HT1]` (60-96 by default, three octaves
 above middle C) - but still fires exactly once per row event either way, so the
 "one new chord per row-start" cadence is unchanged, only where the notes come from
-differs. `MT1` mirrors `HT1`'s structure but from `~colPattern`/`\columnStart`
-instead of `~rowPattern`/`\rowStart` (one slot per column instead of per row), with
-several deliberate differences from `HT1`, per feedback that a MELODY track should be
-built the same way a BASS track is rather than just being `HT1` on a different scan: it
-plays a single note per column-slot, never a chord (used to pick 1-or-2 notes from a
-fixed white-keys scale, then an `Array.fill(4, {...})` chord stab, before this
-single-note version); its `\midinote` is now pre-resolved into a flat array once per
-rebuild, same as its own `\dur`, rather than a live `Pfunc` re-rolling fresh every hit -
-needed for its Rising pitch mode (below) to be able to climb across a whole bar at all,
-and the reason a mid-bar chord change is no longer heard until MT1's own next rebuild,
-matching `BT1`/`BT2` exactly (it used to be heard on the very next note, back when pitch
-was live); its `\amp` is no longer a hardcoded flat value but reads
-`~hmVolumeMode[\MT1]`/`~hmVolumeLevels[\MT1]` (the Harmony + Melody Generator window's
-own Volume row, `CT8guiHarmonyMelodyGenerator.scd` - built earlier as a placeholder, now
-actually wired up for this one track), resolved once per column-slot via the exact same
-Fixed-reads-hi/Alternate-flips-hi-lo `nextAmp` convention `~buildBassTrackPattern` uses
-for `BT1`/`BT2`; and its Pitch mode is the same three-way Fixed/Random/Rising scheme
-`~buildBassTrackPattern` now has (see that bullet, below, and `~chordRootInRange`/
-`~makeRisingPitchGen`, `CT8harmonySelect.scd`'s own bullet, for the three modes'
-exact rules) via `~hmPitchMode[\MT1]`, reading/writing the same `~currentRange[\MT1]`
-Pitch `RangeSlider` bass's own analogous control uses - not a separate, now-retired
-`~hmBasePitch`, which that slider used to be a pure, unwired placeholder for. Neither
-`HT1` nor `MT1` advances the chord progression itself - see `~checkForNewChordBar`,
+differs. `MT1` used to mirror `HT1`'s structure from `~colPattern`/`\columnStart`
+through its own bespoke builder, `~buildMelodyPattern` - that builder is gone now,
+along with the whole idea of "melody tracks" as their own family; `MT1`/`MT2` are driven
+by `~buildBassTrackPattern` instead, exactly like `BT1`/`BT2` - see that paragraph,
+below, for the shared single line track structure all four now have. Neither `HT1` nor
+`MT1`/`MT2` advances the chord progression itself - see `~checkForNewChordBar`,
 `CT8harmonySelect.scd`'s own bullet, for where that lives instead.
 
-`BT1`/`BT2` are driven by the Bass Generator config exactly the way `PT1`-`PT4` are
-driven by the Percussion Generator config - same single-source-scan/pre-resolve-the-bar
-technique, through their own shared, parameterized builder,
-`~buildBassTrackPattern.(name)` (`CT8tracks.scd`), replacing `BT1`'s old bespoke builder
-(a fixed `Ppar` of a row-start AND a column-start sub-pattern running simultaneously,
-always both at once) and giving `BT2` a real builder for the first time. Each of
-`BT1`/`BT2` instead picks ONE scan via `~bassSource[name]` (`\row`/`\col`, same as
-`PT1`-`4`) - running `BT1` on `\row` and `BT2` on `\col` (their defaults) approximates the
-old single `BT1`'s "both at once" behavior, just as two independent tracks instead of
-one `Ppar`. `~bassInstrument[name]` picks `\fm` or `\plucking` (`BT1`/`BT2` default to one
-each) - both take a plain `\midinote` key (no per-instrument pitch-arg-name dispatch
-needed, unlike `~buildPercPattern`'s `pitchArgName` switch) and a plain `\amp` key (no
-amp-arg-name dispatch either). `~bassPitchMode[name]` is Fixed (`~chordRootInRange` -
+`BT1`/`BT2`/`MT1`/`MT2` are four interchangeable "single line tracks" now, per feedback
+("I am reconsidering how I think of these tracks... BT1/BT2/MT1/MT2 will be structured
+the same way... they differ only in the options they are currently set to") - sharing one
+structure, driven by the Bass Generator config exactly the way `PT1`-`PT4` are driven by
+the Percussion Generator config (same single-source-scan/pre-resolve-the-bar technique),
+through their own shared, parameterized builder, `~buildBassTrackPattern.(name)`
+(`CT8tracks.scd`) - replacing `BT1`'s old bespoke builder (a fixed `Ppar` of a row-start
+AND a column-start sub-pattern running simultaneously, always both at once) and `MT1`'s
+old bespoke one (`~buildMelodyPattern`, with hand-tuned FM voicing - gone entirely now),
+and giving `BT2`/`MT2` real builders for the first time. `~bassX[name]` (BASS GENERATOR
+CONFIG, `CT8tracks.scd`) still carries that name - not renamed, per feedback - even
+though it's no longer "bass-specific," now covering `MT1`/`MT2` too; `MT1`/`MT2`'s own
+GUI blocks stay physically in the Harmony + Melody Generator window
+(`CT8guiHarmonyMelodyGenerator.scd`, not `CT8guiPercGenerator.scd`), per feedback not to
+change any layout, even though they read/write these same `~bassX[name]` globals, via
+that window's own `makeSlTrackSection` - a near-exact copy of
+`CT8guiPercGenerator.scd`'s own `makeBassTrackSection`. Each of the four instead picks
+ONE scan via `~bassSource[name]` (`\row`/`\col`, same as `PT1`-`4`) - `BT1`/`MT1` default
+to `\row`, `BT2`/`MT2` to `\col` (`MT1`/`MT2` used to default to a fixed `\col`-only scan,
+back when they were "melody" tracks - per feedback, `MT1`/`MT2` now split `\row`/`\col`
+the same way `BT1`/`BT2` do). `~bassInstrument[name]` picks `\fm` or `\plucking` (`BT1`
+defaults `\fm`, `BT2`/`MT1`/`MT2` default differently) - both take a plain `\midinote`
+key (no per-instrument pitch-arg-name dispatch needed, unlike `~buildPercPattern`'s
+`pitchArgName` switch) and a plain `\amp` key (no amp-arg-name dispatch either).
+`~bassPitchMode[name]` is Fixed (`~chordRootInRange` -
 the chord's own root note, deterministic, not a random pick), Random (`~chordNoteInRange`
 - any chord tone, any octave, re-picked per baseline slot), or Rising
 (`~makeRisingPitchGen` - starts at the same root `~chordRootInRange` would give, then
@@ -677,11 +682,14 @@ climbs `~scales[~chordSet]` one degree per baseline slot, not per row/column-sta
 wrapping back to the root once the climb would exceed the range's high end, and
 resetting fully only at the next bar - see that function's own bullet,
 `CT8harmonySelect.scd`, for the exact rule) - no separate `~bassBasePitch` any more, all
-three modes share `~currentRange[name]` (12-59, "below middle C", by default, and
-live-adjustable from this window's own Pitch `RangeSlider` too), the same global
-`HT1`/`MT1` read live, just resolved once per rebuild here instead - so a mid-bar chord
-change isn't heard on `BT1`/`BT2` until their next rebuild, unlike `HT1`'s live per-hit
-read. Per feedback, which split/merge group a hit falls under (the six 1/8th-1/3rd/4/3
+three modes share `~currentRange[name]` (`~bassRangeDefaults`, `CT8tracks.scd`: `BT1`/
+`BT2` default to 12-59, "below middle C"; `MT1`/`MT2` keep their own higher historical
+default, 60-96, even though all four are otherwise identical in structure now - nothing
+about "single line track" forces every one of them into the same register), the same
+global `HT1` reads live, just resolved once per rebuild here instead - so a mid-bar
+chord change isn't heard on any of the four until their next rebuild, unlike `HT1`'s
+live per-hit read. Per feedback, which split/merge group a hit falls under (the six
+1/8th-1/3rd/4/3
 families) doesn't yet change how Rising advances - every hit in one such group still
 shares its one pitch/one climb-step, same "same pitch throughout the group" rule Fixed/
 Random already followed - pending a separate, later pass specifically on that. `\fx`
@@ -707,8 +715,9 @@ preserve a recording's silence, per feedback); `~copyTStartPlayback.(destName)` 
 `destName` splice that buffer in, verbatim, in place of its own normal pitch/duration
 (same instrument/amp/wet/pan/everything else about it untouched) until the buffer runs
 out, then falls straight back to its own normal pattern. `~makeCopyAwarePair` is the
-shared mechanism both `~buildBassTrackPattern` and `~buildMelodyPattern`'s `\dur`/
-`\midinote` keys go through instead of a plain `Pseq`/`Pfunc` - each wraps a retained,
+shared mechanism every eligible track's `\dur`/`\midinote` keys go through (all four of
+`BT1`/`BT2`/`MT1`/`MT2` via their one shared `~buildBassTrackPattern` now) instead of a
+plain `Pseq`/`Pfunc` - each wraps a retained,
 manually-advanced stream of that track's own normal pattern, so pausing it to serve a
 copy and resuming afterward picks up exactly where it left off, with no separate
 "resume position" bookkeeping needed. `~copyTapFor.(name)`, a trailing `\copyTap` key on

@@ -3,17 +3,18 @@
 // CLOCKTOY - HARMONY/CHORD SELECTION (new, in progress)
 // ============================================================================
 //
-// Owns the shared harmonic concept the rhythm/harmony and melody tracks
-// (HT1-4, MT1-4) are meant to generate around: a "current chord" that those
-// tracks each pick notes from, rather than each inventing their own pitch
-// material independently. BT1/BT2 (the two bass tracks) moved onto the
-// generic Bass Generator config instead (~buildBassTrackPattern,
+// Owns the shared harmonic concept the rhythm/harmony tracks (HT1-4) are
+// meant to generate around: a "current chord" those tracks pick notes
+// from, rather than each inventing their own pitch material
+// independently. BT1/BT2/MT1/MT2 (the four "single line tracks" - per
+// feedback, no longer thought of as separate "bass"/"melody" families)
+// are on the generic Bass Generator config instead (~buildBassTrackPattern,
 // CT8tracks.scd), the same source/instrument/pattern/pitch/volume scheme
-// PT1-4 already use - but still read ~currentChord/~chordNoteInRange from
-// here for their own Random pitch mode specifically (Fixed stays a plain,
-// non-chord-aware note), just once per rebuild rather than live per-hit the
-// way HT1/MT1 do. Not yet wired into every one of HT1-4/MT1-4 - HT1/MT1 are
-// the only two live, per-hit consumers so far.
+// PT1-4 already use - but still read ~currentChord/~chordNoteInRange/
+// ~chordRootInRange/~makeRisingPitchGen from here for their own
+// pitch modes, just once per rebuild rather than live per-hit the
+// way HT1 does. Not yet wired into every one of HT1-4 - HT1 is the
+// only live, per-hit consumer so far.
 //
 // ~chords[set][chordIndex] is one 3- or 4-note chord, written as real MIDI
 // note numbers already in one specific octave (not abstract 0-11 pitch
@@ -248,7 +249,8 @@
 };
 
 // Deterministic sibling of ~chordNoteInRange, for the Fixed and Rising
-// pitch modes (~buildBassTrackPattern/~buildMelodyPattern, CT8tracks.scd) -
+// pitch modes (~buildBassTrackPattern, CT8tracks.scd - shared by all four
+// single line tracks, BT1/BT2/MT1/MT2) -
 // always the chord's own FIRST written note (chord[0], its root in every
 // ~chords entry here), transposed by ~currentKey, mapped to the LOWEST
 // octave of that pitch class inside [lo, hi] - not a random pick among
@@ -301,9 +303,9 @@
 
 // ~currentChord is the one shared "current chord". Read LIVE (not
 // snapshotted into a local var, so a change is heard on the very next
-// note) by ~buildHarmonyPattern (HT1) and ~buildMelodyPattern (MT1),
-// CT8tracks.scd; ~buildBassTrackPattern (BT1/BT2) also reads it, for their
-// Random pitch mode specifically, but only once per rebuild - see this
+// note) by ~buildHarmonyPattern (HT1), CT8tracks.scd; ~buildBassTrackPattern
+// (BT1/BT2/MT1/MT2 - the four single line tracks) also reads it, but only
+// once per rebuild - see this
 // file's header. Its actual initial value is set below, in INITIAL STATE/
 // PIECE START, alongside ~chordSet/~secondLastChord/~lastChord (all four
 // need to agree with each other, so they're set together in one place

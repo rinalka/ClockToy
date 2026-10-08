@@ -200,14 +200,30 @@
 
 
 // ---------------------------------------------------------------------------
-// BASS GENERATOR CONFIG (BT1-BT2)
+// BASS GENERATOR CONFIG (BT1/BT2/MT1/MT2 - "single line tracks")
 // ---------------------------------------------------------------------------
-// Set live by the same "Percussion Generator" window (CT8guiPercGenerator.scd
-// - it covers BT1/BT2 too now, at the bottom, below PT1-4). Same idea as the
-// Percussion Generator config above - per-track dictionaries keyed by track
-// name symbol, read fresh on every rebuild by ~buildBassTrackPattern, below
-// - but a few shapes differ, since bass's two instruments (\fm/\plucking)
-// aren't percussion's four:
+// Per feedback, BT1/BT2/MT1/MT2 are no longer thought of as "bass tracks"
+// and "melody tracks" with their own separate structures - they're four
+// interchangeable SINGLE LINE tracks, differing only in which options
+// they each happen to be set to (same Dur Pat/Pit Pat/Accents choices,
+// same two instruments). MT1/MT2 share every one of these globals with
+// BT1/BT2 (keyed by \MT1/\MT2 right alongside \BT1/\BT2) and are built by
+// the exact same ~buildBassTrackPattern, below - MT1/MT2 used to have
+// their own bespoke builder (~buildMelodyPattern, with hand-tuned FM
+// voicing); that's gone now, since a bespoke per-track voicing is exactly
+// the kind of difference this change removes. Still named ~bassX, not
+// renamed to something track-family-neutral - the track names BT1/BT2/
+// MT1/MT2, and which window each one's controls physically live in
+// (BT1/BT2 in the Percussion + Bass Generator window,
+// CT8guiPercGenerator.scd; MT1/MT2 still in the separate Harmony + Melody
+// Generator window, CT8guiHarmonyMelodyGenerator.scd), stay exactly as
+// they are, per feedback - only the structure underneath unifies, so
+// MT1/MT2's GUI blocks (unchanged in appearance) now read/write these
+// same ~bassX globals instead of their own former ~hmX ones. Set live by
+// whichever window a given track's block happens to be in - per-track
+// dictionaries keyed by track name symbol, read fresh on every rebuild by
+// ~buildBassTrackPattern, below - but a few shapes differ, since these
+// two instruments (\fm/\plucking) aren't percussion's four:
 //   - Both \fm/\plucking take a \midinote key directly (Pbind/Event's
 //     standard pitch-key handling converts it to \freq for us), so there's
 //     no per-instrument pitch-ARG-name dispatch the way baseD/cym/hat/kick
@@ -230,8 +246,17 @@
 //     RangeSlider in the GUI) - Fixed reads its high end; Alternate uses
 //     the whole span, same idea as percussion's ~percVolumeLevels.
 //   - Pattern has no \firstBeat option (per feedback, not a useful choice
-//     for a bass part) - otherwise the exact same twelve choices PT1-4 have.
+//     for a single line part) - otherwise the exact same twelve choices
+//     PT1-4 have.
+// ~bassTrackNames stays [\BT1, \BT2] - CT8guiPercGenerator.scd still uses
+// it to decide which blocks render in ITS window, and MT1/MT2's blocks
+// stay in the Harmony + Melody Generator window instead, per feedback
+// ("I do not want to change ... the layouts"). ~slTrackNames is the
+// broader list ("single line tracks") used below for filling in/
+// resetting all four tracks' shared config, regardless of which window
+// each one's own GUI block actually lives in.
 ~bassTrackNames = [\BT1, \BT2];
+~slTrackNames = [\BT1, \BT2, \MT1, \MT2];
 ~bassSource = ~bassSource ? ();
 ~bassInstrument = ~bassInstrument ? ();
 ~bassPattern = ~bassPattern ? ();
@@ -241,12 +266,22 @@
 ~bassWet = ~bassWet ? ();
 ~bassLevel = ~bassLevel ? ();
 ~bassSplitPercent = ~bassSplitPercent ? ();
-~bassSourceDefaults = (BT1: \row, BT2: \col);
-~bassInstrumentDefaults = (BT1: \fm, BT2: \plucking);
+// BT1/MT1 default to Row, BT2/MT2 to Col - per feedback, MT1/MT2 flip
+// their own default from the old bespoke ~buildMelodyPattern's hardcoded
+// Col-only behavior, so MT1/MT2 now mirror BT1/BT2's own Row/Col split
+// exactly rather than defaulting to the same scan.
+~bassSourceDefaults = (BT1: \row, BT2: \col, MT1: \row, MT2: \col);
+~bassInstrumentDefaults = (BT1: \fm, BT2: \plucking, MT1: \fm, MT2: \fm);
 // Each instrument's own default amp, straight off its SynthDef
 // (CT8synths.scd) - same idea as ~percInstrumentVolumeDefaults, above.
 ~bassInstrumentVolumeDefaults = (fm: 0.2, plucking: 0.2);
-~bassTrackNames.do { |name|
+// Each track's own default ~currentRange[name] (CT8harmonySelect.scd) -
+// BT1/BT2 keep their historical "below middle C" register; MT1/MT2 keep
+// their own historical higher one, even though both pairs are otherwise
+// identical in structure now - nothing about "single line track" forces
+// every one of them into the same register.
+~bassRangeDefaults = (BT1: [12, 59], BT2: [12, 59], MT1: [60, 96], MT2: [60, 96]);
+~slTrackNames.do { |name|
     ~bassSource[name] = ~bassSource[name] ? ~bassSourceDefaults[name];
     ~bassInstrument[name] = ~bassInstrument[name] ? ~bassInstrumentDefaults[name];
     ~bassPattern[name] = ~bassPattern[name] ? \everyBeat;
@@ -277,10 +312,10 @@
     ~bassLevel[name] = 1;
     ~bassSplitPercent[name] = 33;
 // Also resets ~currentRange[name] (CT8harmonySelect.scd) back to its own
-// original default - [12, 59] there, duplicated here since nothing shared
-// exposes it - previously missed here, which meant this button couldn't
-// recover a track whose Pitch RangeSlider had left it holding a bad value.
-    ~currentRange[name] = [12, 59];
+// per-track default (~bassRangeDefaults, above) - previously missed here,
+// which meant this button couldn't recover a track whose Pitch
+// RangeSlider had left it holding a bad value.
+    ~currentRange[name] = ~bassRangeDefaults[name];
 };
 
 
@@ -300,14 +335,17 @@
 // unbuilt/not-playing track should read as. Only ~trackEnabled (the user's
 // on/off choice) needs a real default, so it survives re-evaluation sanely.
 ~trackNames.do { |name|
-// Only PT1/PT2/PT3 default on. PT4/BT1/BT2/HT1/MT1 all have real builders
-// too (~buildPercPattern/~buildBassTrackPattern/~buildHarmonyPattern/
-// ~buildMelodyPattern) but default off regardless - kept as optional slots
-// rather than because they don't exist. Everything else not listed here
-// (HT2-4/MT2-4, which genuinely have no builder yet) defaults off for that
-// reason instead. All can still be switched on by hand, either in the
-// Percussion Generator window (PT1-4/BT1-2) or the Clock Toy Adjust window
-// (everything else).
+// Only PT1/PT2/PT3 default on here - PT4/BT1/BT2/HT1/MT1/MT2 all have real
+// builders too (~buildPercPattern/~buildBassTrackPattern/
+// ~buildHarmonyPattern) but default off regardless, by THIS guard - kept
+// as optional slots rather than because they don't exist. CT8main.scd
+// then unconditionally forces HT1/MT1/BT1/MT2 on anyway, every run (not
+// just the first) - see its own comment for why MT2 joined that list, per
+// feedback ("go ahead and turn MT2 on"). Everything else not listed
+// anywhere (HT2-4/MT3-4, which genuinely have no builder yet) defaults
+// off for that reason instead. All can still be switched on by hand,
+// either in the Percussion Generator window (PT1-4/BT1-2) or the Harmony
+// + Melody Generator/Clock Toy Adjust windows (everything else).
     ~trackEnabled[name] = ~trackEnabled[name] ? (
         (name == \PT1) or: { name == \PT2 } or: { name == \PT3 }
     );
@@ -680,143 +718,14 @@
 };
 
 
-// MT1: the first melody track, from the by-column scan (mirrors HT1's
-// by-row structure exactly, one slot per \columnStart instead of per
-// \rowStart - each of the 3 columns per digit panel can have 1-3 lit
-// segments ("entries")). Used to play a 4-note chord stab per column-slot,
-// identical in shape to HT1's own \midinote - per feedback, a MELODY track
-// should only ever play one note at a time, never a chord, so this is now
-// a single pitch per column-slot instead of Array.fill(4, {...}). Reads
-// ~currentChord (the one shared "current chord" - CT8harmonySelect.scd),
-// constrained to ~currentRange[\MT1], via the SAME ~chordPitchMode-style
-// Fixed/Random/Rising scheme ~buildBassTrackPattern now uses - see that
-// function's own comment for the three modes' exact rules. No longer a
-// live Pfunc re-rolling fresh every hit even when the bar hasn't changed -
-// pitch is now pre-resolved into a flat array once per rebuild, same as
-// colDurs/amps, per feedback that melody should be structured the same
-// way bass is (this is also what lets \rising climb across the whole bar
-// at all). A mid-bar chord change (~checkForNewChordBar) now isn't heard
-// here until this track's next rebuild, matching bass exactly - it used
-// to be heard on the very next note, back when pitch was live. Doesn't
-// advance ~currentChord itself - ~checkForNewChordBar (CT8harmonySelect.scd,
-// scheduled from CT8main.scd) does that independently of any one track's
-// Pbind, since nearly every track ends up reading ~currentChord and tying
-// the advance to one particular track's own beat-counter was an awkward,
-// arbitrary coupling.
-// \amp now matches bass's own structure too, per feedback - a melody track
-// should be built the same way a bass track is, not just single-note:
-// ~hmVolumeMode[\MT1]/~hmVolumeLevels[\MT1] (the Harmony + Melody
-// Generator window's own Volume row, CT8guiHarmonyMelodyGenerator.scd -
-// built earlier but not actually wired to this track until now) are the
-// amp source, resolved once per column-slot via the same Fixed/Alternate
-// nextAmp convention ~buildBassTrackPattern uses, replacing the old
-// hardcoded flat 0.15.
-~buildMelodyPattern = {
-    var events = ~colPattern ? [];
-    if(events.isEmpty) {
-        "No active clock cells to play.".warn;
-        ~trackPatterns[\MT1] = Pbind(\dur, 1, \type, \rest);
-    } {
-// Index of every \columnStart event in this cycle - mirrors HT1's
-// rowStartIdx; always at least one, for the same reason (the empty-events
-// case above already handled the only way there could be zero).
-        var colStartIdx, colDurs, amps, ampIndex = 0, nextAmp;
-        var pitches, fixedNote, risingGen, pitchFor;
-        var normalDurStream, normalMidinoteStream, copyPair;
-
-        colStartIdx = [];
-        events.do { |ev, i| if(ev[\role] == \columnStart) { colStartIdx = colStartIdx.add(i) } };
-
-// Each column's \dur is its span in ~colPattern beats - the gap to the next
-// column-start, or to the end of the array for the last column - mirrors
-// HT1's rowDurs.
-        colDurs = colStartIdx.collect { |idx, i|
-            var nextIdx = if((i + 1) < colStartIdx.size) { colStartIdx[i + 1] } { events.size };
-            nextIdx - idx
-        };
-
-// ~hmVolumeLevels[\MT1] is [lo, hi] (one dual-handle RangeSlider in the
-// Harmony + Melody Generator window) - \fixed always reads hi; \alternate
-// alternates hi, lo every hit, high end first - identical convention to
-// ~buildBassTrackPattern's own nextAmp, including resolving the whole
-// column-slot's worth once per rebuild rather than live via Pfunc.
-        nextAmp = {
-            var lo = ~hmVolumeLevels[\MT1][0];
-            var hi = ~hmVolumeLevels[\MT1][1];
-            var v = if(~hmVolumeMode[\MT1] == \alternate) {
-                if(ampIndex % 2 == 0) { hi } { lo }
-            } {
-                hi
-            };
-            ampIndex = ampIndex + 1;
-            v;
-        };
-        amps = colDurs.collect { nextAmp.value };
-
-// Pitch: same three modes, same ~chordRootInRange/~chordNoteInRange/
-// ~makeRisingPitchGen helpers (CT8harmonySelect.scd), as
-// ~buildBassTrackPattern now uses - see that function's own comment for
-// why \fixed/\rising are each resolved ONCE here rather than per
-// column-slot. Pre-resolved into a flat array now, like colDurs/amps,
-// rather than MT1's old live-per-hit Pfunc - needed for \rising to be able
-// to climb across the whole bar at all, and brings \fixed/\random in line
-// with how every other chord-aware track already resolves its own pitch
-// (once per rebuild, not live), per feedback that melody should be
-// structured the same way bass is.
-        if(~hmPitchMode[\MT1] == \fixed) {
-            fixedNote = ~chordRootInRange.(~currentChord, ~currentRange[\MT1][0], ~currentRange[\MT1][1]);
-        };
-        if(~hmPitchMode[\MT1] == \rising) {
-            risingGen = ~makeRisingPitchGen.(
-                ~currentChord, ~chordSet, ~currentRange[\MT1][0], ~currentRange[\MT1][1]
-            );
-        };
-        pitchFor = {
-            switch(~hmPitchMode[\MT1],
-                \fixed, { fixedNote },
-                \random, { ~chordNoteInRange.(~currentChord, ~currentRange[\MT1][0], ~currentRange[\MT1][1]) },
-                \rising, { risingGen.value }
-            )
-        };
-        pitches = colDurs.collect { pitchFor.value };
-
-// \dur/\midinote go through ~makeCopyAwarePair (TRACK COPY section, below)
-// rather than a plain Pseq, so a Copy T playback in progress on MT1 can
-// transparently splice in - both retained manual streams (not re-derived
-// each call) mean pausing them mid-cycle to serve a copy and resuming
-// afterward picks up exactly where they left off.
-        normalDurStream = Pseq(colDurs, inf).asStream;
-        normalMidinoteStream = Pseq(pitches, inf).asStream;
-        copyPair = ~makeCopyAwarePair.(\MT1,
-            { normalDurStream.next }, { normalMidinoteStream.next }
-        );
-
-        ~trackPatterns[\MT1] = Pbind(
-            \instrument, \fm,
-            \dur, copyPair[0],
-            \midinote, copyPair[1],
-            \mRatio, 2,
-            \cRatio, 1,
-            \index, 2,
-            \iScale, 3,
-// Real seconds, not beats - see HT1's identical \rel comment.
-            \atk, 0.005,
-            \rel, Pfunc { |ev|
-                var colSecs = ev[\dur] / t.tempo;
-                (colSecs - 0.005).max(0.05)
-            },
-            \cAtk, 2,
-            \cRel, -2,
-            \amp, Pseq(amps, inf),
-            \pan, 0,
-            \out, 0,
-            \fx, Pfunc { ~revBus },
-            \fxsend, -15,
-// See the TRACK COPY section, just below, for ~copyTapFor.
-            \copyTap, ~copyTapFor.(\MT1)
-        );
-    };
-};
+// MT1/MT2 used to have their own bespoke builder here (~buildMelodyPattern -
+// one slot per \columnStart, hand-tuned FM voicing, a 4-note chord stab
+// before that) - per feedback, BT1/BT2/MT1/MT2 are now four
+// interchangeable "single line tracks" differing only in which options
+// they're set to, so MT1/MT2 are registered below with the exact same
+// ~buildBassTrackPattern every one of the four now shares (see the BASS
+// GENERATOR CONFIG section's own comment, above, for the full
+// explanation) rather than a separate builder of their own.
 
 
 // ---------------------------------------------------------------------------
@@ -1218,18 +1127,20 @@
 
 // Register every track's builder. Adding track N's builder here is the only
 // step needed to bring it under the same start/stop/rebuild machinery below.
-// PT1-PT4 all share ~buildPercPattern, BT1-BT2 all share
-// ~buildBassTrackPattern, each parameterized per track name - each gets its
-// own small wrapper closure so ~trackBuilders keeps its existing "one
-// zero-arg function per track name" shape.
+// PT1-PT4 all share ~buildPercPattern; BT1/BT2/MT1/MT2 all share
+// ~buildBassTrackPattern - the four "single line tracks" (per feedback -
+// see that section's own comment, above) - each parameterized per track
+// name, each getting its own small wrapper closure so ~trackBuilders
+// keeps its existing "one zero-arg function per track name" shape.
 ~trackBuilders[\PT1] = { ~buildPercPattern.(\PT1) };
 ~trackBuilders[\PT2] = { ~buildPercPattern.(\PT2) };
 ~trackBuilders[\PT3] = { ~buildPercPattern.(\PT3) };
 ~trackBuilders[\PT4] = { ~buildPercPattern.(\PT4) };
 ~trackBuilders[\HT1] = ~buildHarmonyPattern;
-~trackBuilders[\MT1] = ~buildMelodyPattern;
 ~trackBuilders[\BT1] = { ~buildBassTrackPattern.(\BT1) };
 ~trackBuilders[\BT2] = { ~buildBassTrackPattern.(\BT2) };
+~trackBuilders[\MT1] = { ~buildBassTrackPattern.(\MT1) };
+~trackBuilders[\MT2] = { ~buildBassTrackPattern.(\MT2) };
 
 // ---------------------------------------------------------------------------
 // START PATTERN
