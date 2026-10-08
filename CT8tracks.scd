@@ -1237,15 +1237,19 @@
                         );
 // The three 1/3rd patterns (splitCount == 3) get their own four
 // sub-variants instead - Repeat/Up/Down/Lop, "very similar to 1/8 BUT"
-// (per feedback) Repeat is an explicit choice that always just repeats
-// the first note across all 3 (the plain behavior every Pit Pat had
-// before this whole feature), rather than only falling back to a repeat
-// when a step isn't available the way Up/Down/Lop do. Up walks UP the
-// triplet two steps in a row (note2 from note1, note3 from note2, each
-// via ~chordStepTone same as the 1/8th family); Down mirrors it walking
-// down; Lop arcs up then back down (note2 up from note1, note3 down from
-// note2) - a little loop/arch shape across the triplet, distinct from
-// a straight Up or Down run.
+// (per feedback, correcting an earlier misreading of this same feedback)
+// 1/8th moves by a TONE where possible (falling back to a semitone, then
+// a repeat - ~chordStepTone), while 1/3rd moves by a SEMITONE where
+// possible (falling straight back to a repeat - ~chordSemitoneStep, no
+// tone attempt at all; see that function's own bullet, CT8harmonySelect.scd).
+// Repeat is an explicit choice that always just repeats the first note
+// across all 3 (the plain behavior every Pit Pat had before this whole
+// feature), rather than only falling back to a repeat when a step isn't
+// available the way Up/Down/Lop do. Up walks UP the triplet two semitone
+// steps in a row (note2 from note1, note3 from note2); Down mirrors it
+// walking down; Lop arcs up then back down (note2 up from note1, note3
+// down from note2) - a little loop/arch shape across the triplet,
+// distinct from a straight Up or Down run.
                         var third = switch(~monoPitchMode[name],
                             \arpRising3rdRepeat, { \repeat }, \arpFalling3rdRepeat, { \repeat }, \arpLooping3rdRepeat, { \repeat },
                             \arpRising3rdUp, { \up }, \arpFalling3rdUp, { \up }, \arpLooping3rdUp, { \up },
@@ -1263,18 +1267,18 @@
                                 switch(third,
                                     \repeat, { [pitch, pitch, pitch] },
                                     \up, {
-                                        var n2 = ~chordStepTone.(~currentChord, ~currentKey, pitch, 1);
-                                        var n3 = ~chordStepTone.(~currentChord, ~currentKey, n2, 1);
+                                        var n2 = ~chordSemitoneStep.(~currentChord, ~currentKey, pitch, 1);
+                                        var n3 = ~chordSemitoneStep.(~currentChord, ~currentKey, n2, 1);
                                         [pitch, n2, n3];
                                     },
                                     \down, {
-                                        var n2 = ~chordStepTone.(~currentChord, ~currentKey, pitch, -1);
-                                        var n3 = ~chordStepTone.(~currentChord, ~currentKey, n2, -1);
+                                        var n2 = ~chordSemitoneStep.(~currentChord, ~currentKey, pitch, -1);
+                                        var n3 = ~chordSemitoneStep.(~currentChord, ~currentKey, n2, -1);
                                         [pitch, n2, n3];
                                     },
                                     \lop, {
-                                        var n2 = ~chordStepTone.(~currentChord, ~currentKey, pitch, 1);
-                                        var n3 = ~chordStepTone.(~currentChord, ~currentKey, n2, -1);
+                                        var n2 = ~chordSemitoneStep.(~currentChord, ~currentKey, pitch, 1);
+                                        var n3 = ~chordSemitoneStep.(~currentChord, ~currentKey, n2, -1);
                                         [pitch, n2, n3];
                                     }
                                 );

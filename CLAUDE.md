@@ -209,26 +209,31 @@ their own bullets below for exactly where the line falls:
   Both families only change anything inside their own kind of split - the FIRST note of
   a 1/8th split pair, or a 1/3rd triplet, still always comes from the normal Rising/
   Falling/Looping generator call, same as every other Pit Pat; it's only the REMAINING
-  note(s) that these sub-variants touch, via `~chordStepTone` (`CT8harmonySelect.scd`)
-  in `~buildMonoTrackPattern`'s own split-handling code (`CT8tracks.scd`). For 1/8th
-  (2 notes per split): Up/Down always step one fixed direction, Ran rerolls a fresh
-  random direction per split pair, and per feedback, if the current chord has no tone
-  exactly a whole tone (2 semitones) away in that direction, it falls back to a
-  semitone, and if even that isn't a chord tone, it just repeats the first note. For
-  1/3rd (3 notes per split), per feedback ("very similar to 1/8 BUT arp rising will
-  repeat the note[,] and instead of moving by tones/semitones where possible, repeat
-  when not possible"): Repeat is its own explicit choice that just repeats the first
+  note(s) that these sub-variants touch, in `~buildMonoTrackPattern`'s own
+  split-handling code (`CT8tracks.scd`), via two DIFFERENT helpers
+  (`CT8harmonySelect.scd`) depending on which family: 1/8th uses `~chordStepTone` -
+  Up/Down always step one fixed direction, Ran rerolls a fresh random direction per
+  split pair, and if the current chord has no tone exactly a whole TONE (2 semitones)
+  away in that direction, it falls back to a SEMITONE, and if even that isn't a chord
+  tone, it just repeats the first note. 1/3rd uses the separate `~chordSemitoneStep`
+  instead - per feedback, correcting an earlier misreading of the same instruction:
+  "very similar to 1/8 BUT arp rising will repeat the note[: an explicit Repeat
+  choice, see below,] and instead of moving by tones[, like 1/8 does,] [it moves by]
+  semi tones where possible, repeat when not possible [if even a semitone isn't a
+  chord tone]" - so 1/3rd's Up/Down/Lop never attempt a whole-tone step at all, only
+  ever a semitone, falling straight back to a repeat if that one semitone isn't
+  available either. Repeat is its own explicit choice that just repeats the first
   note across all 3 (the plain pre-this-feature behavior, now surfaced as a named
   option rather than only reachable as a fallback); Up walks UP the triplet two
-  `~chordStepTone` steps in a row (note 2 from note 1, note 3 from note 2 - a tiny
-  2-step climb, each step falling back tone-then-semitone-then-repeat exactly like
-  1/8th's own Up/Down); Down mirrors it walking down; Lop arcs up then back down (note
-  2 up from note 1, note 3 down from note 2) - a little loop/arch shape across the
-  triplet, distinct from Up or Down's straight run (this exact shape for "Lop" is this
-  session's own interpretation of a deliberately terse instruction, not something the
-  user spelled out note-by-note - worth a sanity-check by ear against intent). Every
-  other Pit Pat choice, including the bare, un-suffixed Arp modes if either extended
-  pattern happens to still show them (e.g. right after `~resetMonoConfig`, before
+  `~chordSemitoneStep` calls in a row (note 2 from note 1, note 3 from note 2 - "play
+  the first note, go up a semitone, then another semitone," per feedback); Down
+  mirrors it walking down; Lop arcs up then back down (note 2 up from note 1, note 3
+  down from note 2) - a little loop/arch shape across the triplet, distinct from Up or
+  Down's straight run (this exact shape for "Lop" is this session's own
+  interpretation of a deliberately terse instruction, not something the user spelled
+  out note-by-note - worth a sanity-check by ear against intent). Every other Pit Pat
+  choice, including the bare, un-suffixed Arp modes if either extended pattern happens
+  to still show them (e.g. right after `~resetMonoConfig`, before
   `updatePitchMenuItems` has had a chance to run against the live Dur Pat), falls
   through to the older "same pitch for every sub-hit in the split" behavior unchanged.
   Volume is
@@ -447,26 +452,32 @@ their own bullets below for exactly where the line falls:
   climb/descent/bounce resets only at the next full bar, never at a row/column-start
   within it -
   a row/column-boundary-aware version is a planned, separate, future step, per feedback.
-  `~chordStepTone.(chord, key, note, dir)` is the separate helper behind both the
-  1/8th and 1/3rd Arp sub-variant families (only offered, in the Pitch menu, when Dur
-  Pat is one of those six patterns - see that menu's own bullet,
-  `CT8guiPercGenerator.scd`, for the full picture): given one note (the first note of a
-  1/8th split pair, or any note within a 1/3rd triplet), it derives the NEXT one - tries
-  a whole tone (2 semitones) in `dir` (`1` up, `-1` down) first, checking whether the
-  CURRENT chord (`chord.collect { |n| (n + key) % 12 }`, every tone's pitch class, not
-  just the root) actually has a tone at that pitch class; if not, falls back to a
-  semitone in the same direction; if even that isn't a chord tone, gives up and returns
-  `note` unchanged (that note just repeats the one before it) - per feedback: "If the
-  structure of the current chord is such that a tone is not possible it will move a
-  semi tone. If a semi tone is not possible it will repeat the first note."
-  `~buildMonoTrackPattern` (`CT8tracks.scd`) picks `dir` itself and decides how many
-  times to call this per split: for 1/8th, a fixed `1`/`-1` for Up/Down or a fresh
-  `[1, -1].choose` per split pair for Ran, called once to get the pair's second note;
-  for 1/3rd, two calls chained (Up: `1` then `1` again from the result; Down: `-1` then
-  `-1` again; Lop: `1` then `-1`) to get the triplet's second and third notes, while
-  1/3rd's own Repeat skips this helper entirely and just reuses the first note for all
-  three. Every other Pit Pat/Dur Pat combination leaves every note of a split
-  identical, as before.
+  `~chordStepTone.(chord, key, note, dir)` and `~chordSemitoneStep.(chord, key, note,
+  dir)` are the pair of helpers behind the 1/8th and 1/3rd Arp sub-variant families
+  respectively (only offered, in the Pitch menu, when Dur Pat is one of those six
+  patterns - see that menu's own bullet, `CT8guiPercGenerator.scd`, for the full
+  picture): given one note (the first note of a 1/8th split pair, or any note within a
+  1/3rd triplet), each derives the NEXT one, checking the CURRENT chord
+  (`chord.collect { |n| (n + key) % 12 }`, every tone's pitch class, not just the root)
+  for a tone at the candidate pitch class. `~chordStepTone` (1/8th) tries a whole TONE
+  (2 semitones) in `dir` (`1` up, `-1` down) first; if the chord has no tone there,
+  falls back to a SEMITONE in the same direction; if the chord has no tone there
+  either, gives up and returns `note` unchanged - per feedback: "If the structure of
+  the current chord is such that a tone is not possible it will move a semi tone. If a
+  semi tone is not possible it will repeat the first note." `~chordSemitoneStep`
+  (1/3rd) is simpler and, per feedback correcting an earlier misreading of this same
+  instruction, deliberately does NOT try a tone first: it only ever attempts a
+  SEMITONE in `dir`, falling straight back to repeating `note` if even that isn't a
+  chord tone - "it should play the first note, go up a semitone, then another
+  semitone," not a tone followed by a semitone. `~buildMonoTrackPattern`
+  (`CT8tracks.scd`) picks `dir` itself and decides how many times to call the
+  appropriate helper per split: for 1/8th (`~chordStepTone`), a fixed `1`/`-1` for
+  Up/Down or a fresh `[1, -1].choose` per split pair for Ran, called once to get the
+  pair's second note; for 1/3rd (`~chordSemitoneStep`), two calls chained (Up: `1`
+  then `1` again from the result; Down: `-1` then `-1` again; Lop: `1` then `-1`) to
+  get the triplet's second and third notes, while 1/3rd's own Repeat skips both
+  helpers entirely and just reuses the first note for all three. Every other Pit
+  Pat/Dur Pat combination leaves every note of a split identical, as before.
   `~currentChord` is the one shared "current chord" global. Read LIVE, not
   snapshotted into a local var, by `~buildPolyPattern`
   (`HT1`, `CT8tracks.scd`); `~buildMonoTrackPattern` (`BT1`/`BT2`/`MT1`/`MT2`) also reads it, for
@@ -828,7 +839,8 @@ Up/Down/Ran (`\arpRisingUp`/`\arpRisingDown`/`\arpRisingRan`, etc. - 9 symbols t
 for the three 1/8th patterns, or Repeat/Up/Down/Lop (`\arpRising3rdRepeat`/
 `\arpRising3rdUp`/`\arpRising3rdDown`/`\arpRising3rdLop`, etc. - 12 symbols total) for
 the three 1/3rd patterns - see the Pitch menu's own bullet, `CT8guiPercGenerator.scd`,
-and `~chordStepTone`'s own bullet, `CT8harmonySelect.scd`, for how each family changes
+and `~chordStepTone`/`~chordSemitoneStep`'s own bullet, `CT8harmonySelect.scd`, for how
+each family changes
 the note(s) after the first in its own kind of split - no separate `~bassBasePitch` any
 more, every one of these base/Up/Down/Ran/Repeat/Lop modes (29 symbols in total across
 all three families) shares

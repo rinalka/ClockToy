@@ -437,6 +437,27 @@
     };
 };
 
+// ~chordSemitoneStep.(chord, key, note, dir) - the mono Arp pitch modes'
+// own 1/3rd Up/Down/Lop sub-variants (CT8tracks.scd's
+// ~buildMonoTrackPattern) use this instead of ~chordStepTone, per
+// feedback correcting an earlier misreading: 1/8th moves by a TONE where
+// possible, falling back to a semitone, then a repeat; 1/3rd moves by a
+// SEMITONE where possible (no tone attempt at all), falling straight back
+// to a repeat if even that isn't a chord tone - "it should play the first
+// note, go up a semitone, then another semitone," not a tone followed by
+// a semitone. Chaining two calls of this (Up: dir 1 then 1 again from the
+// result; Down: -1 then -1 again; Lop: 1 then -1) is what gives a 1/3rd
+// triplet its second and third notes.
+~chordSemitoneStep = { |chord, key, note, dir|
+    var chordPitchClasses = chord.collect { |n| (n + key) % 12 };
+    var semitoneCandidate = note + dir;
+    if(chordPitchClasses.includes(semitoneCandidate % 12)) {
+        semitoneCandidate;
+    } {
+        note;
+    };
+};
+
 // ~currentChord is the one shared "current chord". Read LIVE (not
 // snapshotted into a local var, so a change is heard on the very next
 // note) by ~buildPolyPattern (HT1), CT8tracks.scd; ~buildMonoTrackPattern
