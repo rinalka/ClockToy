@@ -3,14 +3,17 @@
 // CLOCKTOY - HARMONY + MELODY GENERATOR WINDOW (HT1-HT4, MT1-MT2) - SKELETON
 // ============================================================================
 //
-// Two different kinds of block live in this one window, per feedback ("I
-// am reconsidering how I think of these tracks... BT1/BT2/MT1/MT2 will be
-// structured the same way"):
+// Two different kinds of block live in this one window, per feedback - the
+// project now groups its tracks into three families by how many notes each
+// one ever sounds at once (see CT8tracks.scd's MONO TRACK CONFIG section
+// for the full naming rationale): Perc (PT1-4, unaffected), mono - one note
+// at a time - for the "Note" tracks (BT1/BT2/MT1/MT2), and poly - a chord
+// at a time - for the Harmony tracks (HT1-4):
 //
-// HT1-4 (makeHmTrackSection) are still the original skeleton - deliberately
-// NOT yet wired into ~buildHarmonyPattern (CT8tracks.scd; HT1 is still its
+// HT1-4 (makePolyTrackSection) are still the original skeleton - deliberately
+// NOT yet wired into ~buildPolyPattern (CT8tracks.scd; HT1 is still its
 // own bespoke, chord-based builder, untouched by this file). Every control
-// here besides on/off reads and writes a placeholder global (~hmX, below)
+// here besides on/off reads and writes a placeholder global (~polyX, below)
 // that doesn't affect playback yet - this part of the window's job for now
 // is just to exist with the right shape. The on/off button IS real,
 // though: same ~trackEnabled[name]/~syncTrackPlayer every other window's
@@ -18,21 +21,23 @@
 // convention CT8guiAdjust.scd's own buttons use) for all four of HT1-4,
 // which have no builder yet.
 //
-// MT1/MT2 (makeSlTrackSection) are real, full "single line tracks" now -
-// no longer a melody-specific builder of their own (~buildMelodyPattern is
-// gone) or a separate ~hmX config - BT1/BT2/MT1/MT2 are four
-// interchangeable single line tracks sharing one structure, one builder
-// (~buildBassTrackPattern), and one set of config globals (~bassX,
-// CT8tracks.scd's BASS GENERATOR CONFIG section - still named ~bassX, per
-// feedback not to rename anything visible), differing only in which
-// options each one happens to be set to. makeSlTrackSection is therefore a
-// near-exact copy of CT8guiPercGenerator.scd's own makeBassTrackSection -
-// same controls, same ~bassX[name] globals, just parented to THIS window
+// MT1/MT2 (makeMonoTrackSection) are real, full Note tracks now - no
+// longer a melody-specific builder of their own (~buildMelodyPattern is
+// gone) or a separate ~polyX config - BT1/BT2/MT1/MT2 are four
+// interchangeable Note tracks sharing one structure, one builder
+// (~buildMonoTrackPattern), and one set of config globals (~monoX,
+// CT8tracks.scd's MONO TRACK CONFIG section), differing only in which
+// options each one happens to be set to. makeMonoTrackSection is therefore a
+// near-exact copy of CT8guiPercGenerator.scd's own makeMonoTrackSection -
+// same controls, same ~monoX[name] globals, just parented to THIS window
 // instead, since MT1/MT2's blocks stay physically in the Harmony + Melody
 // Generator window (per feedback, "I do not want to change ... the
-// layouts") even though they're no longer conceptually "melody" tracks.
-// MT2 defaults to on (~trackEnabled[\MT2], CT8main.scd) and to Col scan
-// (MT1 defaults to Row) - per feedback.
+// layouts") even though they're no longer conceptually "melody" tracks -
+// the TRACK names (BT1/BT2/MT1/MT2) and this window's own layout stay put;
+// only the globals'/functions' own names changed, from ~bassX/
+// ~buildBassTrackPattern to ~monoX/~buildMonoTrackPattern. MT2 defaults to
+// on (~trackEnabled[\MT2], CT8main.scd) and to Col scan (MT1 defaults to
+// Row) - per feedback.
 //
 // Moved here from the Clock Toy Adjust window (CT8guiAdjust.scd), which
 // used to have HT1-4/MT1-2's on/off buttons in its own "Harm"/"Mel" rows -
@@ -42,51 +47,51 @@
 
 (
 
-// MT1/MT2 dropped from this list - they're real "single line tracks" now,
-// sharing ~bassX config (CT8tracks.scd) instead of this file's own
-// placeholder ~hmX - see this file's own header comment.
-~hmTrackNames = [\HT1, \HT2, \HT3, \HT4];
-~hmSource = ~hmSource ? ();
-~hmInstrument = ~hmInstrument ? ();
-~hmPattern = ~hmPattern ? ();
-~hmPitchMode = ~hmPitchMode ? ();
-~hmVolumeMode = ~hmVolumeMode ? ();
-~hmVolumeLevels = ~hmVolumeLevels ? ();
-~hmWet = ~hmWet ? ();
-~hmLevel = ~hmLevel ? ();
-~hmSplitPercent = ~hmSplitPercent ? ();
-// HT1-4 default to Row scan - the same identity ~buildHarmonyPattern (HT1)
+// MT1/MT2 dropped from this list - they're real Note tracks now, sharing
+// ~monoX config (CT8tracks.scd) instead of this file's own placeholder
+// ~polyX - see this file's own header comment.
+~polyTrackNames = [\HT1, \HT2, \HT3, \HT4];
+~polySource = ~polySource ? ();
+~polyInstrument = ~polyInstrument ? ();
+~polyPattern = ~polyPattern ? ();
+~polyPitchMode = ~polyPitchMode ? ();
+~polyVolumeMode = ~polyVolumeMode ? ();
+~polyVolumeLevels = ~polyVolumeLevels ? ();
+~polyWet = ~polyWet ? ();
+~polyLevel = ~polyLevel ? ();
+~polySplitPercent = ~polySplitPercent ? ();
+// HT1-4 default to Row scan - the same identity ~buildPolyPattern (HT1)
 // already has today, even though this Source menu doesn't drive it yet.
-~hmSourceDefaults = (HT1: \row, HT2: \row, HT3: \row, HT4: \row);
+~polySourceDefaults = (HT1: \row, HT2: \row, HT3: \row, HT4: \row);
 // \fm for every one of these four, matching HT1's real instrument today.
-~hmInstrumentDefaults = (HT1: \fm, HT2: \fm, HT3: \fm, HT4: \fm);
-~hmTrackNames.do { |name|
-    ~hmSource[name] = ~hmSource[name] ? ~hmSourceDefaults[name];
-    ~hmInstrument[name] = ~hmInstrument[name] ? ~hmInstrumentDefaults[name];
-    ~hmPattern[name] = ~hmPattern[name] ? \everyBeat;
-    ~hmPitchMode[name] = ~hmPitchMode[name] ? \fixed;
-    ~hmVolumeMode[name] = ~hmVolumeMode[name] ? \fixed;
-    ~hmVolumeLevels[name] = ~hmVolumeLevels[name] ? [0.2, 0.2];
-    ~hmWet[name] = ~hmWet[name] ? 0;
-    ~hmLevel[name] = ~hmLevel[name] ? 1;
-    ~hmSplitPercent[name] = ~hmSplitPercent[name] ? 33;
+~polyInstrumentDefaults = (HT1: \fm, HT2: \fm, HT3: \fm, HT4: \fm);
+~polyTrackNames.do { |name|
+    ~polySource[name] = ~polySource[name] ? ~polySourceDefaults[name];
+    ~polyInstrument[name] = ~polyInstrument[name] ? ~polyInstrumentDefaults[name];
+    ~polyPattern[name] = ~polyPattern[name] ? \everyBeat;
+    ~polyPitchMode[name] = ~polyPitchMode[name] ? \fixed;
+    ~polyVolumeMode[name] = ~polyVolumeMode[name] ? \fixed;
+    ~polyVolumeLevels[name] = ~polyVolumeLevels[name] ? [0.2, 0.2];
+    ~polyWet[name] = ~polyWet[name] ? 0;
+    ~polyLevel[name] = ~polyLevel[name] ? 1;
+    ~polySplitPercent[name] = ~polySplitPercent[name] ? 33;
 };
 
 // Forcibly resets one track's whole config back to these same original
-// defaults - mirrors ~resetPercConfig/~resetBassConfig (CT8tracks.scd),
+// defaults - mirrors ~resetPercConfig/~resetMonoConfig (CT8tracks.scd),
 // same reason (see either one's own comment).
-~resetHmConfig = { |name|
-    ~hmSource[name] = ~hmSourceDefaults[name];
-    ~hmInstrument[name] = ~hmInstrumentDefaults[name];
-    ~hmPattern[name] = \everyBeat;
-    ~hmPitchMode[name] = \fixed;
-    ~hmVolumeMode[name] = \fixed;
-    ~hmVolumeLevels[name] = [0.2, 0.2];
-    ~hmWet[name] = 0;
-    ~hmLevel[name] = 1;
-    ~hmSplitPercent[name] = 33;
+~resetPolyConfig = { |name|
+    ~polySource[name] = ~polySourceDefaults[name];
+    ~polyInstrument[name] = ~polyInstrumentDefaults[name];
+    ~polyPattern[name] = \everyBeat;
+    ~polyPitchMode[name] = \fixed;
+    ~polyVolumeMode[name] = \fixed;
+    ~polyVolumeLevels[name] = [0.2, 0.2];
+    ~polyWet[name] = 0;
+    ~polyLevel[name] = 1;
+    ~polySplitPercent[name] = 33;
 // Also resets ~currentRange[name] (CT8harmonySelect.scd) back to its own
-// original default - mirrors ~resetBassConfig's identical addition
+// original default - mirrors ~resetMonoConfig's identical addition
 // (CT8tracks.scd) for the same reason: this window's Pitch RangeSlider
 // writes straight into ~currentRange[name] now (not a separate
 // ~hmBasePitch any more), so this button needs to be able to recover it.
@@ -94,7 +99,7 @@
 };
 
 ~makeHarmonyMelodyGeneratorWindow = {
-    var statusText, applyNow, makeHmTrackSection, makeSlTrackSection;
+    var statusText, applyNow, makePolyTrackSection, makeMonoTrackSection;
     var hmGenWidth = 640;
 // 1360 -> 1060: each block shrank by 50px (190 -> 140, from the
 // Mix/Vol/Dry/Rev sliders going 130 -> 90) - 50 * 6 blocks = 300px saved
@@ -125,15 +130,15 @@
     StaticText(~hmGeneratorWindow, 600@26).string_("HARMONY + MELODY GENERATOR (HT1-HT4, MT1-MT2)")
         .font_(Font("Arial", 15, true)).stringColor_(Color.white);
     statusText = StaticText(~hmGeneratorWindow, 600@20)
-        .string_("HT1-4 on/off only; MT1/MT2 are real single line tracks, same as BT1/BT2.")
+        .string_("HT1-4 on/off only; MT1/MT2 are real Note tracks, same as BT1/BT2.")
         .stringColor_(Color(0.7, 0.85, 0.75));
     ~hmGeneratorWindow.view.decorator.nextLine;
 
 // Builds one track's full control block - identical shape to
 // CT8guiPercGenerator.scd's makeTrackSection (see that file for the
-// RangeSlider/explicit-Rect notes this copies verbatim), wired to ~hmX[name]
+// RangeSlider/explicit-Rect notes this copies verbatim), wired to ~polyX[name]
 // instead of ~percX[name].
-    makeHmTrackSection = { |name|
+    makePolyTrackSection = { |name|
         var trackContainer, trackColor, labelColor = Color.black;
         var leftPane, rightPane;
         var mixSlider, volSlider, sendASlider, sendBSlider;
@@ -194,15 +199,15 @@
         leftPane.decorator.nextLine;
 
         mixSlider = Slider(leftPane, 20@90)
-            .value_(~hmWet[name])
+            .value_(~polyWet[name])
             .action_({ |sl|
-                ~hmWet[name] = sl.value;
+                ~polyWet[name] = sl.value;
                 statusText.string_("Changed (not yet wired to playback).");
             });
         volSlider = Slider(leftPane, 20@90)
-            .value_(~hmLevel[name])
+            .value_(~polyLevel[name])
             .action_({ |sl|
-                ~hmLevel[name] = sl.value;
+                ~polyLevel[name] = sl.value;
                 statusText.string_("Changed (not yet wired to playback).");
             });
         sendASlider = Slider(leftPane, 20@90);
@@ -235,19 +240,19 @@
         StaticText(rightPane, 26@22).string_("Src").stringColor_(labelColor);
         sourceMenu = PopUpMenu(rightPane, 55@22)
             .items_(["Row", "Col"])
-            .value_([\row, \col].indexOf(~hmSource[name]) ? 0)
+            .value_([\row, \col].indexOf(~polySource[name]) ? 0)
             .action_({ |m|
-                ~hmSource[name] = [\row, \col][m.value];
-                patternMenu.items_(patternLabelsFor.(~hmSource[name]));
-                patternMenu.value_(patternSymbols.indexOf(~hmPattern[name]) ? 1);
+                ~polySource[name] = [\row, \col][m.value];
+                patternMenu.items_(patternLabelsFor.(~polySource[name]));
+                patternMenu.value_(patternSymbols.indexOf(~polyPattern[name]) ? 1);
                 statusText.string_("Changed (not yet wired to playback).");
             });
         StaticText(rightPane, 30@22).string_("Inst").stringColor_(labelColor);
         instrumentMenu = PopUpMenu(rightPane, 80@22)
             .items_(["fm", "plucking"])
-            .value_([\fm, \plucking].indexOf(~hmInstrument[name]) ? 0)
+            .value_([\fm, \plucking].indexOf(~polyInstrument[name]) ? 0)
             .action_({ |m|
-                ~hmInstrument[name] = [\fm, \plucking][m.value];
+                ~polyInstrument[name] = [\fm, \plucking][m.value];
                 statusText.string_("Changed (not yet wired to playback).");
             });
         rightPane.decorator.nextLine;
@@ -260,25 +265,25 @@
 
 // ROW 2: Pattern/Pitch/Volume, all the same width (120).
         patternMenu = PopUpMenu(rightPane, 120@22)
-            .items_(patternLabelsFor.(~hmSource[name]))
-            .value_(patternSymbols.indexOf(~hmPattern[name]) ? 1)
+            .items_(patternLabelsFor.(~polySource[name]))
+            .value_(patternSymbols.indexOf(~polyPattern[name]) ? 1)
             .action_({ |m|
-                ~hmPattern[name] = patternSymbols[m.value];
+                ~polyPattern[name] = patternSymbols[m.value];
                 updatePatternPercentVisibility.value;
                 statusText.string_("Changed (not yet wired to playback).");
             });
         pitchMenu = PopUpMenu(rightPane, 120@22)
             .items_(["Fixed", "Random", "Rising"])
-            .value_([\fixed, \random, \rising].indexOf(~hmPitchMode[name]) ? 0)
+            .value_([\fixed, \random, \rising].indexOf(~polyPitchMode[name]) ? 0)
             .action_({ |m|
-                ~hmPitchMode[name] = [\fixed, \random, \rising][m.value];
+                ~polyPitchMode[name] = [\fixed, \random, \rising][m.value];
                 statusText.string_("Changed (not yet wired to playback).");
             });
         volumeMenu = PopUpMenu(rightPane, 120@22)
             .items_(["Fixed", "Alternate"])
-            .value_([\fixed, \alternate].indexOf(~hmVolumeMode[name]) ? 0)
+            .value_([\fixed, \alternate].indexOf(~polyVolumeMode[name]) ? 0)
             .action_({ |m|
-                ~hmVolumeMode[name] = [\fixed, \alternate][m.value];
+                ~polyVolumeMode[name] = [\fixed, \alternate][m.value];
                 statusText.string_("Changed (not yet wired to playback).");
             });
         rightPane.decorator.nextLine;
@@ -292,17 +297,17 @@
         volumeSubView = CompositeView(rightPane, 120@40).background_(trackColor);
 
         percentSlider = Slider(patternSubView, Rect(2, 2, 116, 18))
-            .value_(~hmSplitPercent[name] / 100)
+            .value_(~polySplitPercent[name] / 100)
             .action_({ |sl|
                 var v = (sl.value * 100).round(1);
-                ~hmSplitPercent[name] = v;
+                ~polySplitPercent[name] = v;
                 percentReadout.string_(v.asString ++ "%");
                 statusText.string_("Changed (not yet wired to playback).");
             });
         percentReadout = StaticText(patternSubView, Rect(2, 21, 116, 16))
-            .string_(~hmSplitPercent[name].round(1).asString ++ "%").stringColor_(labelColor);
+            .string_(~polySplitPercent[name].round(1).asString ++ "%").stringColor_(labelColor);
         updatePatternPercentVisibility = {
-            var pattern = ~hmPattern[name];
+            var pattern = ~polyPattern[name];
             var isPercentPattern = #[
                 \random8thPercent, \random3rdPercent, \random4to3Percent, \randomSkip
             ].includes(pattern);
@@ -317,7 +322,7 @@
 // now-retired ~hmBasePitch this used to be a pure placeholder for. .round,
 // not left as the raw linlin float - ~chordRootInRange/~chordNoteInRange's
 // own mod-12 matching need whole-number bounds, same reason bass's own
-// slider was fixed to round (see CT8tracks.scd/~resetBassConfig's own
+// slider was fixed to round (see CT8tracks.scd/~resetMonoConfig's own
 // comment for what happens if it doesn't: Random/Rising silently go
 // permanently silent).
         pitchRangeSlider = RangeSlider(pitchSubView, Rect(2, 2, 116, 18))
@@ -339,30 +344,30 @@
         updatePitchRangeReadout.value;
 
         volumeRangeSlider = RangeSlider(volumeSubView, Rect(2, 2, 116, 18))
-            .lo_(~hmVolumeLevels[name][0].linlin(0, 4, 0, 1))
-            .hi_(~hmVolumeLevels[name][1].linlin(0, 4, 0, 1));
+            .lo_(~polyVolumeLevels[name][0].linlin(0, 4, 0, 1))
+            .hi_(~polyVolumeLevels[name][1].linlin(0, 4, 0, 1));
         volumeRangeReadout = StaticText(volumeSubView, Rect(2, 21, 116, 16)).stringColor_(labelColor);
         updateVolumeRangeReadout = {
             volumeRangeReadout.string_(
-                ~hmVolumeLevels[name][0].round(0.01).asString ++ " - " ++ ~hmVolumeLevels[name][1].round(0.01).asString
+                ~polyVolumeLevels[name][0].round(0.01).asString ++ " - " ++ ~polyVolumeLevels[name][1].round(0.01).asString
             );
         };
         volumeRangeSlider.action_({ |rs|
-            ~hmVolumeLevels[name] = [rs.lo.linlin(0, 1, 0, 4), rs.hi.linlin(0, 1, 0, 4)];
+            ~polyVolumeLevels[name] = [rs.lo.linlin(0, 1, 0, 4), rs.hi.linlin(0, 1, 0, 4)];
             updateVolumeRangeReadout.value;
             statusText.string_("Changed (not yet wired to playback).");
         });
         updateVolumeRangeReadout.value;
     };
 
-    ~hmTrackNames.do(makeHmTrackSection);
+    ~polyTrackNames.do(makePolyTrackSection);
 
 // MT1/MT2's own block - a near-exact copy of CT8guiPercGenerator.scd's
-// makeBassTrackSection (see this file's own header comment for why it's
+// makeMonoTrackSection (see this file's own header comment for why it's
 // duplicated here rather than shared some other way), parented to
 // ~hmGeneratorWindow instead of ~percGeneratorWindow, otherwise reading/
-// writing the exact same ~bassX[name] globals (CT8tracks.scd) BT1/BT2 do.
-    makeSlTrackSection = { |name|
+// writing the exact same ~monoX[name] globals (CT8tracks.scd) BT1/BT2 do.
+    makeMonoTrackSection = { |name|
         var trackContainer, trackColor, labelColor = Color.black;
         var leftPane, rightPane;
         var mixSlider, volSlider, sendASlider, sendBSlider;
@@ -405,15 +410,15 @@
         leftPane.decorator.nextLine;
 
         mixSlider = Slider(leftPane, 20@90)
-            .value_(~bassWet[name])
+            .value_(~monoWet[name])
             .action_({ |sl|
-                ~bassWet[name] = sl.value;
+                ~monoWet[name] = sl.value;
                 statusText.string_("Mix updated (live, no rebuild needed).");
             });
         volSlider = Slider(leftPane, 20@90)
-            .value_(~bassLevel[name])
+            .value_(~monoLevel[name])
             .action_({ |sl|
-                ~bassLevel[name] = sl.value;
+                ~monoLevel[name] = sl.value;
                 statusText.string_("Vol updated (live, no rebuild needed).");
             });
         sendASlider = Slider(leftPane, 20@90);
@@ -437,19 +442,19 @@
         StaticText(rightPane, 26@22).string_("Src").stringColor_(labelColor);
         sourceMenu = PopUpMenu(rightPane, 55@22)
             .items_(["Row", "Col"])
-            .value_([\row, \col].indexOf(~bassSource[name]) ? 0)
+            .value_([\row, \col].indexOf(~monoSource[name]) ? 0)
             .action_({ |m|
-                ~bassSource[name] = [\row, \col][m.value];
-                patternMenu.items_(patternLabelsFor.(~bassSource[name]));
-                patternMenu.value_(patternSymbols.indexOf(~bassPattern[name]) ? 0);
+                ~monoSource[name] = [\row, \col][m.value];
+                patternMenu.items_(patternLabelsFor.(~monoSource[name]));
+                patternMenu.value_(patternSymbols.indexOf(~monoPattern[name]) ? 0);
                 statusText.string_("Changed - not yet applied.");
             });
         StaticText(rightPane, 30@22).string_("Inst").stringColor_(labelColor);
         instrumentMenu = PopUpMenu(rightPane, 80@22)
             .items_(["fm", "plucking"])
-            .value_([\fm, \plucking].indexOf(~bassInstrument[name]) ? 0)
+            .value_([\fm, \plucking].indexOf(~monoInstrument[name]) ? 0)
             .action_({ |m|
-                ~bassInstrument[name] = [\fm, \plucking][m.value];
+                ~monoInstrument[name] = [\fm, \plucking][m.value];
                 statusText.string_("Changed - not yet applied.");
             });
         rightPane.decorator.nextLine;
@@ -460,25 +465,25 @@
         rightPane.decorator.nextLine;
 
         patternMenu = PopUpMenu(rightPane, 120@22)
-            .items_(patternLabelsFor.(~bassSource[name]))
-            .value_(patternSymbols.indexOf(~bassPattern[name]) ? 0)
+            .items_(patternLabelsFor.(~monoSource[name]))
+            .value_(patternSymbols.indexOf(~monoPattern[name]) ? 0)
             .action_({ |m|
-                ~bassPattern[name] = patternSymbols[m.value];
+                ~monoPattern[name] = patternSymbols[m.value];
                 updatePatternPercentVisibility.value;
                 statusText.string_("Changed - not yet applied.");
             });
         pitchMenu = PopUpMenu(rightPane, 120@22)
             .items_(["Fixed", "Random", "Rising"])
-            .value_([\fixed, \random, \rising].indexOf(~bassPitchMode[name]) ? 0)
+            .value_([\fixed, \random, \rising].indexOf(~monoPitchMode[name]) ? 0)
             .action_({ |m|
-                ~bassPitchMode[name] = [\fixed, \random, \rising][m.value];
+                ~monoPitchMode[name] = [\fixed, \random, \rising][m.value];
                 statusText.string_("Changed - not yet applied.");
             });
         volumeMenu = PopUpMenu(rightPane, 120@22)
             .items_(["Fixed", "Alternate"])
-            .value_([\fixed, \alternate].indexOf(~bassVolumeMode[name]) ? 0)
+            .value_([\fixed, \alternate].indexOf(~monoVolumeMode[name]) ? 0)
             .action_({ |m|
-                ~bassVolumeMode[name] = [\fixed, \alternate][m.value];
+                ~monoVolumeMode[name] = [\fixed, \alternate][m.value];
                 statusText.string_("Changed - not yet applied.");
             });
         rightPane.decorator.nextLine;
@@ -488,17 +493,17 @@
         volumeSubView = CompositeView(rightPane, 120@40).background_(trackColor);
 
         percentSlider = Slider(patternSubView, Rect(2, 2, 116, 18))
-            .value_(~bassSplitPercent[name] / 100)
+            .value_(~monoSplitPercent[name] / 100)
             .action_({ |sl|
                 var v = (sl.value * 100).round(1);
-                ~bassSplitPercent[name] = v;
+                ~monoSplitPercent[name] = v;
                 percentReadout.string_(v.asString ++ "%");
                 statusText.string_("Changed - not yet applied.");
             });
         percentReadout = StaticText(patternSubView, Rect(2, 21, 116, 16))
-            .string_(~bassSplitPercent[name].round(1).asString ++ "%").stringColor_(labelColor);
+            .string_(~monoSplitPercent[name].round(1).asString ++ "%").stringColor_(labelColor);
         updatePatternPercentVisibility = {
-            var pattern = ~bassPattern[name];
+            var pattern = ~monoPattern[name];
             var isPercentPattern = #[
                 \random8thPercent, \random3rdPercent, \random4to3Percent, \randomSkip
             ].includes(pattern);
@@ -526,31 +531,31 @@
         updatePitchRangeReadout.value;
 
         volumeRangeSlider = RangeSlider(volumeSubView, Rect(2, 2, 116, 18))
-            .lo_(~bassVolumeLevels[name][0].linlin(0, 4, 0, 1))
-            .hi_(~bassVolumeLevels[name][1].linlin(0, 4, 0, 1));
+            .lo_(~monoVolumeLevels[name][0].linlin(0, 4, 0, 1))
+            .hi_(~monoVolumeLevels[name][1].linlin(0, 4, 0, 1));
         volumeRangeReadout = StaticText(volumeSubView, Rect(2, 21, 116, 16)).stringColor_(labelColor);
         updateVolumeRangeReadout = {
             volumeRangeReadout.string_(
-                ~bassVolumeLevels[name][0].round(0.01).asString ++ " - " ++ ~bassVolumeLevels[name][1].round(0.01).asString
+                ~monoVolumeLevels[name][0].round(0.01).asString ++ " - " ++ ~monoVolumeLevels[name][1].round(0.01).asString
             );
         };
         volumeRangeSlider.action_({ |rs|
-            ~bassVolumeLevels[name] = [rs.lo.linlin(0, 1, 0, 4), rs.hi.linlin(0, 1, 0, 4)];
+            ~monoVolumeLevels[name] = [rs.lo.linlin(0, 1, 0, 4), rs.hi.linlin(0, 1, 0, 4)];
             updateVolumeRangeReadout.value;
             statusText.string_("Changed - not yet applied.");
         });
         updateVolumeRangeReadout.value;
     };
 
-    [\MT1, \MT2].do(makeSlTrackSection);
+    [\MT1, \MT2].do(makeMonoTrackSection);
 
     Button(~hmGeneratorWindow, 120@26).states_([["Apply now", Color.black, Color(0.65, 0.85, 0.65)]])
         .action_({ applyNow.value });
 
     Button(~hmGeneratorWindow, 150@26).states_([["Reset to defaults", Color.black, Color(0.85, 0.55, 0.55)]])
         .action_({
-            ~hmTrackNames.do(~resetHmConfig);
-            [\MT1, \MT2].do(~resetBassConfig);
+            ~polyTrackNames.do(~resetPolyConfig);
+            [\MT1, \MT2].do(~resetMonoConfig);
             ~makeHarmonyMelodyGeneratorWindow.value;
             ~stopPbinds.value;
             ~updatePbinds.value;

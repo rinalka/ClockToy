@@ -46,7 +46,7 @@ To make a live edit take effect:
   "Synth Controls" window having been removed entirely (it had gone fully vestigial -
   see `CT8tracks.scd`'s bullet), and also the only live control for their individual
   built-in reverb tail (Wet/Level, `~percWet[name]`/`~percLevel[name]` for PT1-4,
-  `~bassWet[name]`/`~bassLevel[name]` for BT1-2 - separate from `~clockRev`, which
+  `~monoWet[name]`/`~monoLevel[name]` for BT1-2 - separate from `~clockRev`, which
   PT1-4 never reach anyway; see `CT8synths.scd`'s `~allpassWash` bullet). There is no
   live GUI for `~clockRev`'s own reverb parameters either (the old Reverb Controls
   window was removed, not just disabled) — adjust `~reverbDec`/`~reverbLpf`/`~reverbMix`
@@ -104,7 +104,7 @@ their own bullets below for exactly where the line falls:
 - **`CT8guiPercGenerator.scd`** — the "Percussion + Bass Generator" window
   (`~makePercGeneratorWindow`, dark-themed to match `CT8guiSynthLab.scd`): live control
   over how each of `PT1`/`PT2`/`PT3`/`PT4` (via `makeTrackSection`) and `BT1`/`BT2` (via
-  `makeBassTrackSection`, a separate but near-identical closure - see its own paragraph
+  `makeMonoTrackSection`, a separate but near-identical closure - see its own paragraph
   below) gets generated, independently, via one repeated multi-row control block per
   track, each block its own `CompositeView` (`trackContainer`) sitting on a
   randomly-rolled muted background color (`Color.rand(0.7)`, re-rolled fresh every time
@@ -120,8 +120,8 @@ their own bullets below for exactly where the line falls:
   width) and `rightPane` (75%), rather than one flat stack of rows (an earlier version's
   layout - see git history if you need it).
   `leftPane` holds 4 vertical `Slider`s: Mix/Vol are that instrument's own tiny built-in
-  `~allpassWash` tail (`~percWet[name]`/`~percLevel[name]` or `~bassWet[name]`/
-  `~bassLevel[name]` - see `CT8synths.scd`'s bullet; separate from the `~clockRev` send
+  `~allpassWash` tail (`~percWet[name]`/`~percLevel[name]` or `~monoWet[name]`/
+  `~monoLevel[name]` - see `CT8synths.scd`'s bullet; separate from the `~clockRev` send
   every other track uses, read/written live via `Pfunc` so neither needs a rebuild) -
   renamed from the old Wet/Level labels, same globals, same behavior, just moved and
   relabeled. Send A/Send B are plain `Slider`s with no backing global and no `.action_`
@@ -134,7 +134,7 @@ their own bullets below for exactly where the line falls:
   same convention as the per-track buttons `CT8guiAdjust.scd` used to have for
   `PT1`-`PT4`/`BT1`-`BT2`, just un-labeled now. Every percussion and bass track always
   has a builder, so there's no orange/unbuilt case to handle. Source is Row scan vs.
-  Column scan (`~percSource[name]`/`~bassSource[name]`); Instrument is
+  Column scan (`~percSource[name]`/`~monoSource[name]`); Instrument is
   `\baseD`/`\cym`/`\hat`/`\kick` (percussion) or `\fm`/`\plucking` (bass).
   Row 2 is the Pattern/Pitch/Volume menus, all together on one row - each menu's own
   sub-control (below) used to sit directly beside it on its own row; moving those down
@@ -143,7 +143,7 @@ their own bullets below for exactly where the line falls:
   "Random" was dropped from every label (per feedback), so a pattern's label now ends in
   "%" exactly when it has a Percent sub-control to show, and doesn't when it's
   deterministic: First beat only (percussion only - not a useful choice for a bass
-  part, per feedback, so `makeBassTrackSection`'s own `patternSymbols` list drops it);
+  part, per feedback, so `makeMonoTrackSection`'s own `patternSymbols` list drops it);
   Every beat; Start of Row/Col (label tracks whichever Source is selected, `\startOnly`);
   1/8th % / 1/3 % (`\random8thPercent`/`\random3rdPercent` -
   `~percSplitPercent[name]`% of beats become a double hit/triplet, re-rolled fresh every
@@ -168,7 +168,7 @@ their own bullets below for exactly where the line falls:
   keeps whichever percent was already set). Pitch is Fixed/Rising at
   start/Random for percussion (its own separate Hz-based scheme - unrelated to the
   below); Fixed/Random/Rising for bass, in that menu order (chord/scale-based - see
-  `~buildBassTrackPattern`'s own bullet, `CT8tracks.scd`, and `~chordRootInRange`/
+  `~buildMonoTrackPattern`'s own bullet, `CT8tracks.scd`, and `~chordRootInRange`/
   `~makeRisingPitchGen`, `CT8harmonySelect.scd`'s own bullet). Volume is
   Fixed/Alternate for both.
   Row 3 has one fixed-width `CompositeView` per menu above (`patternSubView`/
@@ -195,7 +195,7 @@ their own bullets below for exactly where the line falls:
   something sensible in every mode, it stays visible across all of them - nothing to
   show or hide here any more, unlike the old mode-specific widget-swapping.
   Under Volume, the same idea: one dual-handle `RangeSlider` (+ readout) for
-  `~percVolumeLevels[name]`/`~bassVolumeLevels[name]`, now always `[lo, hi]` (0-4, same
+  `~percVolumeLevels[name]`/`~monoVolumeLevels[name]`, now always `[lo, hi]` (0-4, same
   `linlin` mapping the old Volume `Slider`s used) - replacing the old
   Fixed-`Slider`-or-two-Alternate-`Slider`s switch, and the fixed-size-placeholder-
   container fix that switch used to need (two full sibling widget sets built directly
@@ -214,23 +214,23 @@ their own bullets below for exactly where the line falls:
   track together) so nothing falls out of phase - and also `~rebuildFlashPatterns`/
   `~restartFlashPlayers` (`CT8guiClock.scd`), so the row/col flash restarts in lockstep
   with the Pbinds. A second "Reset to defaults" button calls `~resetPercConfig`
-  (`CT8tracks.scd`) for every percussion track AND `~resetBassConfig` for every bass
+  (`CT8tracks.scd`) for every percussion track AND `~resetMonoConfig` for every bass
   track - unlike their own `?`-based initialization (which only fills in a value the
   first time, so tuning survives a re-evaluation), these unconditionally overwrite every
-  `~percX[name]`/`~bassX[name]` back to its original default - then rebuilds this whole
+  `~percX[name]`/`~monoX[name]` back to its original default - then rebuilds this whole
   window from scratch (a plain re-call of `~makePercGeneratorWindow`, since the button's
   own closure belongs to the window instance about to be replaced) and applies
   immediately the same way Apply now does.
 
-  `makeBassTrackSection` (`BT1`/`BT2`'s block) mirrors `makeTrackSection` closely enough
+  `makeMonoTrackSection` (`BT1`/`BT2`'s block) mirrors `makeTrackSection` closely enough
   that it's kept as its own closure rather than parameterizing one function over both -
   the two tracks' choices differ enough (instrument list, pattern list, pitch units and
   mode count) that threading all of it through one shared function would need about as
   many parameters as just writing the block twice. Sets each track's
-  `~bassSource`/`~bassInstrument`/`~bassPattern`/`~bassPitchMode`/`~bassVolumeMode`/
-  `~bassVolumeLevels`/`~bassWet`/`~bassLevel`/`~bassSplitPercent` entry (`CT8tracks.scd`)
+  `~monoSource`/`~monoInstrument`/`~monoPattern`/`~monoPitchMode`/`~monoVolumeMode`/
+  `~monoVolumeLevels`/`~monoWet`/`~monoLevel`/`~monoSplitPercent` entry (`CT8tracks.scd`)
   plus the shared `~currentRange[name]` (`CT8harmonySelect.scd`) for pitch, which
-  `~buildBassTrackPattern` reads fresh on every rebuild - same "only updates the global,
+  `~buildMonoTrackPattern` reads fresh on every rebuild - same "only updates the global,
   never rebuilds immediately" discipline as PT1-4's controls, and the same Apply
   now/Reset to defaults buttons cover both track sets together.
 
@@ -297,8 +297,8 @@ their own bullets below for exactly where the line falls:
   rhythm/harmony and melody tracks (`HT1`-`4`, `MT1`-`4`) are meant to eventually generate
   around: a "current chord" those tracks pick notes from, rather than each inventing its
   own pitch material independently (`PT1`-`4` are unaffected, staying on the Percussion
-  Generator's own Pitch modes; `BT1`-`2` moved onto the generic Bass Generator config -
-  see `CT8tracks.scd`'s BASS GENERATOR CONFIG bullet - but still read `~currentChord`
+  Generator's own Pitch modes; `BT1`-`2` moved onto the generic Mono Track config -
+  see `CT8tracks.scd`'s MONO TRACK CONFIG bullet - but still read `~currentChord`
   from here for their own Random pitch mode, just once per rebuild rather than live).
   `~chords[set][chordIndex]` is one
   3-, 4-, or 5-note chord, written as real MIDI note numbers already in one specific
@@ -313,7 +313,7 @@ their own bullets below for exactly where the line falls:
   within one set shares the same parent scale, so the extra dimension would just repeat
   the same array seven times) holding that set's own 7-degree scale as semitone offsets
   from the tonic (e.g. `~scales[0]` is `[0, 2, 4, 5, 7, 9, 11]`, the major scale, for set
-  0's major triads) - what the Rising pitch mode (`~buildBassTrackPattern`/
+  0's major triads) - what the Rising pitch mode (`~buildMonoTrackPattern`/
   `~buildMelodyPattern`, `CT8tracks.scd`) climbs through. No chromatic scale is defined -
   no chord set needs one. `~keys`/`~currentKey` are the equivalent pair for transposition: `~keys` is a
   12-entry name table (`["C", "C#", ..., "B"]`), purely for logging, the same role
@@ -322,7 +322,7 @@ their own bullets below for exactly where the line falls:
   a chromatic step from C already *is* the semitone count. Picking `~currentKey` from the
   last two keys via its own Markov chain (mirroring `~chordMarkov`, below) is a planned
   future step; for now it just sits at `0` (C), a complete no-op. `~currentRange[name]` is
-  a `name -> [lo, hi]` dictionary (same convention as `~percX`/`~bassX`, `CT8tracks.scd`)
+  a `name -> [lo, hi]` dictionary (same convention as `~percX`/`~monoX`, `CT8tracks.scd`)
   holding the MIDI bounds `~chordNoteInRange` (below) picks within, per track - replacing
   what used to be a literal baked directly into each chord-aware track's own
   `~chordNoteInRange` call (`HT1`/`MT1`: 60-96; `BT1`/`BT2`: 12-59). Starts at those same
@@ -349,8 +349,8 @@ their own bullets below for exactly where the line falls:
   climb resets only at the next full bar, never at a row/column-start within it - a
   row/column-boundary-aware version is a planned, separate, future step, per feedback.
   `~currentChord` is the one shared "current chord" global. Read LIVE, not
-  snapshotted into a local var, by `~buildHarmonyPattern`
-  (`HT1`, `CT8tracks.scd`); `~buildBassTrackPattern` (`BT1`/`BT2`/`MT1`/`MT2`) also reads it, for
+  snapshotted into a local var, by `~buildPolyPattern`
+  (`HT1`, `CT8tracks.scd`); `~buildMonoTrackPattern` (`BT1`/`BT2`/`MT1`/`MT2`) also reads it, for
   their Random pitch mode specifically, but only once per rebuild. `~chordMarkov` (a
   second-order Markov table keyed by `[secondLastChord, lastChord]`, chords numbered 1-7)
   and `~computeNextChord` (walks that table, falling back to a flat weighted choice for
@@ -391,8 +391,8 @@ their own bullets below for exactly where the line falls:
   glance, by name, not just by number. Scheduled from
   `CT8main.scd`'s boot sequence via a second `t.sched(0, {...; 1})` call, the same
   repeating-check idiom `~checkForNewMinute` already uses, once per beat. Loads right
-  after `CT8guiClock.scd` and before `CT8tracks.scd`, since `~buildHarmonyPattern`/
-  `~buildBassTrackPattern` need `~chords`/`~currentChord`/`~chordNoteInRange` to already
+  after `CT8guiClock.scd` and before `CT8tracks.scd`, since `~buildPolyPattern`/
+  `~buildMonoTrackPattern` need `~chords`/`~currentChord`/`~chordNoteInRange` to already
   exist (though only at the point their builder is actually *called*, not at file-load
   time, so the ordering constraint is looser than it looks).
 
@@ -422,7 +422,7 @@ their own bullets below for exactly where the line falls:
   tail added later for a different reason - both already had a working path to
   `~clockRev` (`\fm`'s `fx`/`fxsend`, `\plucking`'s hardcoded `~revBus` send), but neither
   had a *per-track*, independently dialable tail the way the other four did, which is
-  what `BT1`/`BT2`'s own Wet/Level sliders (Bass Generator config, `CT8tracks.scd`) need;
+  what `BT1`/`BT2`'s own Wet/Level sliders (Mono Track config, `CT8tracks.scd`) need;
   both existing sends are passed through unaffected by `wet`/`level` (see each SynthDef's
   own comment). One caveat, not yet addressed for every instrument with this tail:
   `\baseD`/`\kick` free themselves via `DetectSilence` watching the tail's own
@@ -444,7 +444,7 @@ their own bullets below for exactly where the line falls:
   `PT4`) and as one of `BT1`/`BT2`'s two selectable Bass Generator instruments (the
   other, `\plucking`, has its own hand-tuned bass-register envelope - see its own
   comment in this file), each of HT1/MT1's FM params hardcoded rather than read from a
-  shared table (BT1/BT2 read theirs from the generic Bass Generator config instead, same
+  shared table (BT1/BT2 read theirs from the generic Mono Track config instead, same
   idea as PT1-4). `\fm`'s `fx` (reverb-send) arg must be passed explicitly as `~revBus`
   (wrapped in `Pfunc { ~revBus }` inside a Pbind, since a bare Bus value in a Pbind key is
   suspect — see `~buildPercPattern`'s `\fx` comment, CT8tracks.scd), since a SynthDef
@@ -469,13 +469,13 @@ their own bullets below for exactly where the line falls:
   symbol is chosen), and `~percWet[name]`/`~percLevel[name]` are the odd ones out of the
   whole group, read via plain `Pfunc`s rather than baked into a pre-resolved array like
   the rest, so unlike every other one of these each takes effect immediately with no
-  rebuild needed), the parallel Bass Generator config for `BT1`-`BT2` (`~bassSource`/
-  `~bassInstrument`/`~bassPattern`/`~bassPitchMode`/`~bassVolumeMode`/
-  `~bassVolumeLevels`/`~bassWet`/`~bassLevel`/`~bassSplitPercent` - same shape and same
+  rebuild needed), the parallel Mono Track config for `BT1`-`BT2` (`~monoSource`/
+  `~monoInstrument`/`~monoPattern`/`~monoPitchMode`/`~monoVolumeMode`/
+  `~monoVolumeLevels`/`~monoWet`/`~monoLevel`/`~monoSplitPercent` - same shape and same
   live-`CT8guiPercGenerator.scd`-set/`?`-guarded-default convention as percussion's, just
   a shorter list since bass has fewer pitch modes, no per-instrument pitch-arg-name
   dispatch to carry, and no `~bassBasePitch` of its own at all - pitch reads the shared
-  `~currentRange[name]`, `CT8harmonySelect.scd`, instead - see BASS GENERATOR CONFIG's
+  `~currentRange[name]`, `CT8harmonySelect.scd`, instead - see MONO TRACK CONFIG's
   own comment for exactly which differences), every
   `~buildXPattern` function that turns `CT8guiClock.scd`'s scan output into an actual
   Pbind, and the playback lifecycle (`~setStartPbinds`, `~stopPbinds`, `~updatePbinds`,
@@ -493,8 +493,8 @@ their own bullets below for exactly where the line falls:
   Pbind tracks. `PT1`/`PT2`/`PT3`/`PT4` all read the Percussion Generator's per-track
   config globals via one shared, parameterized builder (`~buildPercPattern.(name)` - see
   below), rather than each having its own bespoke builder the way they used to; `BT1`/
-  `BT2` mirror that exactly via their own shared builder, `~buildBassTrackPattern.(name)`,
-  reading the Bass Generator config instead.
+  `BT2` mirror that exactly via their own shared builder, `~buildMonoTrackPattern.(name)`,
+  reading the Mono Track config instead.
 
 - **`CT8main.scd`** — the coordinator. Loads `CT8synths.scd`, `CT8guiClock.scd`,
   `CT8harmonySelect.scd`, `CT8tracks.scd`, and the four remaining GUI files itself
@@ -520,14 +520,16 @@ percussion `PT1-4`, 2 bass `BT1-2`, 4 rhythm/harmony `HT1-4`, 4 melody `MT1-4`) 
 planned generative "Daily Piece" mode. Per feedback ("I am reconsidering how I think of
 these tracks... BT1/BT2/MT1/MT2 will be structured the same way"), `BT1`/`BT2`/`MT1`/
 `MT2` are no longer thought of as separate "bass" and "melody" track families - they're
-four interchangeable SINGLE LINE tracks, sharing one structure, one builder
-(`~buildBassTrackPattern.(name)` - still named for "bass," per feedback not to rename
-anything visible), and one set of config globals (`~bassX[name]`, `CT8tracks.scd`'s BASS
-GENERATOR CONFIG section), differing only in which options each one is currently set to
-- `MT1`/`MT2` used to have their own bespoke builder (`~buildMelodyPattern`, with
+the four "Note" tracks (one of the project's three track families by now - Perc/Note/
+Harmony, named `perc`/`mono`/`poly` in code for how many notes each ever sounds at
+once), sharing one structure, one builder (`~buildMonoTrackPattern.(name)`), and one set
+of config globals (`~monoX[name]`, `CT8tracks.scd`'s MONO TRACK CONFIG section -
+renamed from `~bassX`/BASS GENERATOR CONFIG by this same reconception), differing only
+in which options each one is currently set to - `MT1`/`MT2` used to have their own
+bespoke builder (`~buildMelodyPattern`, with
 hand-tuned FM voicing, now gone entirely) before this change. `PT4`, `BT2`, and `HT1` (a
 chord-per-row harmony pad) also have real builders (`PT4` shares `~buildPercPattern`;
-`BT2` shares `~buildBassTrackPattern`; `HT1` keeps its own bespoke one) and are fully
+`BT2` shares `~buildMonoTrackPattern`; `HT1` keeps its own bespoke one) and are fully
 playable - just disabled by default until toggled on in the Percussion + Bass Generator
 window (`PT4`/`BT2`, beside each one's name) or the Harmony + Melody Generator/Clock Toy
 Adjust windows (`HT1`); `MT2` defaults ON, unlike `BT2` (per feedback, "go ahead and turn
@@ -543,9 +545,9 @@ yet). See the TRACK REGISTRY block in `CT8tracks.scd`:
   currently `PT1`/`PT2`/`PT3`/`PT4`/`BT1`/`BT2`/`MT1`/`MT2`/`HT1` have one registered.
   `PT1`-`PT4` each get a small wrapper closure (`{ ~buildPercPattern.(\PT1) }`, etc.)
   around the one shared `~buildPercPattern` function; `BT1`/`BT2`/`MT1`/`MT2` all mirror
-  that with their own shared `~buildBassTrackPattern` (the four single line tracks -
+  that with their own shared `~buildMonoTrackPattern` (the four Note tracks -
   see the paragraph above); `HT1` keeps its own bespoke builder
-  (`~buildHarmonyPattern`). Registering a builder
+  (`~buildPolyPattern`). Registering a builder
   for a new track name is the only step needed to bring it under the existing
   `~setStartPbinds`/`~stopPbinds`/`~updatePbinds`/`~restartPbinds` machinery, which all
   loop generically over `~trackNames` rather than hardcoding specific tracks.
@@ -645,36 +647,37 @@ above middle C) - but still fires exactly once per row event either way, so the
 differs. `MT1` used to mirror `HT1`'s structure from `~colPattern`/`\columnStart`
 through its own bespoke builder, `~buildMelodyPattern` - that builder is gone now,
 along with the whole idea of "melody tracks" as their own family; `MT1`/`MT2` are driven
-by `~buildBassTrackPattern` instead, exactly like `BT1`/`BT2` - see that paragraph,
-below, for the shared single line track structure all four now have. Neither `HT1` nor
+by `~buildMonoTrackPattern` instead, exactly like `BT1`/`BT2` - see that paragraph,
+below, for the shared Note track structure all four now have. Neither `HT1` nor
 `MT1`/`MT2` advances the chord progression itself - see `~checkForNewChordBar`,
 `CT8harmonySelect.scd`'s own bullet, for where that lives instead.
 
-`BT1`/`BT2`/`MT1`/`MT2` are four interchangeable "single line tracks" now, per feedback
+`BT1`/`BT2`/`MT1`/`MT2` are four interchangeable "Note tracks" now, per feedback
 ("I am reconsidering how I think of these tracks... BT1/BT2/MT1/MT2 will be structured
 the same way... they differ only in the options they are currently set to") - sharing one
-structure, driven by the Bass Generator config exactly the way `PT1`-`PT4` are driven by
+structure, driven by the Mono Track config exactly the way `PT1`-`PT4` are driven by
 the Percussion Generator config (same single-source-scan/pre-resolve-the-bar technique),
-through their own shared, parameterized builder, `~buildBassTrackPattern.(name)`
+through their own shared, parameterized builder, `~buildMonoTrackPattern.(name)`
 (`CT8tracks.scd`) - replacing `BT1`'s old bespoke builder (a fixed `Ppar` of a row-start
 AND a column-start sub-pattern running simultaneously, always both at once) and `MT1`'s
 old bespoke one (`~buildMelodyPattern`, with hand-tuned FM voicing - gone entirely now),
-and giving `BT2`/`MT2` real builders for the first time. `~bassX[name]` (BASS GENERATOR
-CONFIG, `CT8tracks.scd`) still carries that name - not renamed, per feedback - even
-though it's no longer "bass-specific," now covering `MT1`/`MT2` too; `MT1`/`MT2`'s own
+and giving `BT2`/`MT2` real builders for the first time. `~monoX[name]` (MONO TRACK
+CONFIG, `CT8tracks.scd`) was `~bassX[name]` until this same reconception renamed it,
+per feedback - the TRACK names (`BT1`/`BT2`/`MT1`/`MT2`) stayed put, only the globals'
+own names changed; `MT1`/`MT2`'s own
 GUI blocks stay physically in the Harmony + Melody Generator window
 (`CT8guiHarmonyMelodyGenerator.scd`, not `CT8guiPercGenerator.scd`), per feedback not to
-change any layout, even though they read/write these same `~bassX[name]` globals, via
-that window's own `makeSlTrackSection` - a near-exact copy of
-`CT8guiPercGenerator.scd`'s own `makeBassTrackSection`. Each of the four instead picks
-ONE scan via `~bassSource[name]` (`\row`/`\col`, same as `PT1`-`4`) - `BT1`/`MT1` default
+change any layout, even though they read/write these same `~monoX[name]` globals, via
+that window's own `makeMonoTrackSection` - a near-exact copy of
+`CT8guiPercGenerator.scd`'s own `makeMonoTrackSection`. Each of the four instead picks
+ONE scan via `~monoSource[name]` (`\row`/`\col`, same as `PT1`-`4`) - `BT1`/`MT1` default
 to `\row`, `BT2`/`MT2` to `\col` (`MT1`/`MT2` used to default to a fixed `\col`-only scan,
 back when they were "melody" tracks - per feedback, `MT1`/`MT2` now split `\row`/`\col`
-the same way `BT1`/`BT2` do). `~bassInstrument[name]` picks `\fm` or `\plucking` (`BT1`
+the same way `BT1`/`BT2` do). `~monoInstrument[name]` picks `\fm` or `\plucking` (`BT1`
 defaults `\fm`, `BT2`/`MT1`/`MT2` default differently) - both take a plain `\midinote`
 key (no per-instrument pitch-arg-name dispatch needed, unlike `~buildPercPattern`'s
 `pitchArgName` switch) and a plain `\amp` key (no amp-arg-name dispatch either).
-`~bassPitchMode[name]` is Fixed (`~chordRootInRange` -
+`~monoPitchMode[name]` is Fixed (`~chordRootInRange` -
 the chord's own root note, deterministic, not a random pick), Random (`~chordNoteInRange`
 - any chord tone, any octave, re-picked per baseline slot), or Rising
 (`~makeRisingPitchGen` - starts at the same root `~chordRootInRange` would give, then
@@ -682,10 +685,10 @@ climbs `~scales[~chordSet]` one degree per baseline slot, not per row/column-sta
 wrapping back to the root once the climb would exceed the range's high end, and
 resetting fully only at the next bar - see that function's own bullet,
 `CT8harmonySelect.scd`, for the exact rule) - no separate `~bassBasePitch` any more, all
-three modes share `~currentRange[name]` (`~bassRangeDefaults`, `CT8tracks.scd`: `BT1`/
+three modes share `~currentRange[name]` (`~monoRangeDefaults`, `CT8tracks.scd`: `BT1`/
 `BT2` default to 12-59, "below middle C"; `MT1`/`MT2` keep their own higher historical
 default, 60-96, even though all four are otherwise identical in structure now - nothing
-about "single line track" forces every one of them into the same register), the same
+about "Note track" forces every one of them into the same register), the same
 global `HT1` reads live, just resolved once per rebuild here instead - so a mid-bar
 chord change isn't heard on any of the four until their next rebuild, unlike `HT1`'s
 live per-hit read. Per feedback, which split/merge group a hit falls under (the six
@@ -705,7 +708,7 @@ their on/off buttons in the Percussion + Bass Generator window
 on/off button in the Clock Toy Adjust window (`CT8guiAdjust.scd`) instead.
 
 **Track Copy ("Copy T")** — `CT8tracks.scd`'s TRACK COPY section, restricted to
-`BT1`/`BT2`/`MT1`-`4` only (not `HT1`-`4`/`PT1`-`4` - both bass and melody are single-
+`BT1`/`BT2`/`MT1`-`4` only (not `HT1`-`4`/`PT1`-`4` - the Note tracks are all single-
 note-per-event, so a `(dur, midinote)` pair means the same thing on either side of a
 copy; harmony plays chords and percussion's pitch is Hz, neither fits). No GUI yet -
 tried by hand from the post window: `~copyTStartRecord.(sourceName, beats)` tapes that
@@ -716,7 +719,7 @@ preserve a recording's silence, per feedback); `~copyTStartPlayback.(destName)` 
 (same instrument/amp/wet/pan/everything else about it untouched) until the buffer runs
 out, then falls straight back to its own normal pattern. `~makeCopyAwarePair` is the
 shared mechanism every eligible track's `\dur`/`\midinote` keys go through (all four of
-`BT1`/`BT2`/`MT1`/`MT2` via their one shared `~buildBassTrackPattern` now) instead of a
+`BT1`/`BT2`/`MT1`/`MT2` via their one shared `~buildMonoTrackPattern` now) instead of a
 plain `Pseq`/`Pfunc` - each wraps a retained,
 manually-advanced stream of that track's own normal pattern, so pausing it to serve a
 copy and resuming afterward picks up exactly where it left off, with no separate

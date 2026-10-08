@@ -15,9 +15,10 @@
 // Requires CT8synths.scd (the SynthDefs themselves - \baseD/\cym/\hat/\kick/
 // \fm/\plucking), CT8guiClock.scd (~rowPattern/~colPattern/~clockEvents/
 // ~columnEvents), and CT8harmonySelect.scd (~chords/~chordNoteInRange - the
-// shared "current chord" concept HT1/MT1 read live every hit; BT1/BT2 also
-// read it, but only for their Random pitch mode, and only once per rebuild
-// rather than live - see the Bass Generator config below) to already be
+// shared "current chord" concept HT1 reads live every hit; BT1/BT2/MT1/MT2
+// (the Note tracks) also read it, for their Random/Fixed/Rising pitch
+// modes, but only once per rebuild rather than live - see the Mono Track
+// config below) to already be
 // loaded - CT8main.scd's ~loadAllCt8Files loads every file in the right
 // order.
 
@@ -200,30 +201,36 @@
 
 
 // ---------------------------------------------------------------------------
-// BASS GENERATOR CONFIG (BT1/BT2/MT1/MT2 - "single line tracks")
+// MONO TRACK CONFIG (BT1/BT2/MT1/MT2 - the "Note" tracks)
 // ---------------------------------------------------------------------------
+// The project now groups its 13 tracks into three families - Perc tracks
+// (PT1-4, ~percX config above), Note tracks (BT1/BT2/MT1/MT2, ~monoX
+// here), and Harmony tracks (HT1-4, ~polyX, CT8guiHarmonyMelodyGenerator.scd)
+// - named for their code prefix after how many notes they ever sound at
+// once: perc(ussion) keeps its own name; mono(phonic), one note at a
+// time, for BT1/BT2/MT1/MT2; poly(phonic), a chord at a time, for HT1-4.
 // Per feedback, BT1/BT2/MT1/MT2 are no longer thought of as "bass tracks"
 // and "melody tracks" with their own separate structures - they're four
-// interchangeable SINGLE LINE tracks, differing only in which options
-// they each happen to be set to (same Dur Pat/Pit Pat/Accents choices,
-// same two instruments). MT1/MT2 share every one of these globals with
-// BT1/BT2 (keyed by \MT1/\MT2 right alongside \BT1/\BT2) and are built by
-// the exact same ~buildBassTrackPattern, below - MT1/MT2 used to have
-// their own bespoke builder (~buildMelodyPattern, with hand-tuned FM
-// voicing); that's gone now, since a bespoke per-track voicing is exactly
-// the kind of difference this change removes. Still named ~bassX, not
-// renamed to something track-family-neutral - the track names BT1/BT2/
-// MT1/MT2, and which window each one's controls physically live in
-// (BT1/BT2 in the Percussion + Bass Generator window,
-// CT8guiPercGenerator.scd; MT1/MT2 still in the separate Harmony + Melody
-// Generator window, CT8guiHarmonyMelodyGenerator.scd), stay exactly as
-// they are, per feedback - only the structure underneath unifies, so
-// MT1/MT2's GUI blocks (unchanged in appearance) now read/write these
-// same ~bassX globals instead of their own former ~hmX ones. Set live by
-// whichever window a given track's block happens to be in - per-track
-// dictionaries keyed by track name symbol, read fresh on every rebuild by
-// ~buildBassTrackPattern, below - but a few shapes differ, since these
-// two instruments (\fm/\plucking) aren't percussion's four:
+// interchangeable Note tracks, differing only in which options they each
+// happen to be set to (same Dur Pat/Pit Pat/Accents choices, same two
+// instruments). MT1/MT2 share every one of these globals with BT1/BT2
+// (keyed by \MT1/\MT2 right alongside \BT1/\BT2) and are built by the
+// exact same ~buildMonoTrackPattern, below - MT1/MT2 used to have their
+// own bespoke builder (~buildMelodyPattern, with hand-tuned FM voicing);
+// that's gone now, since a bespoke per-track voicing is exactly the kind
+// of difference this change removes. The track names BT1/BT2/MT1/MT2, and
+// which window each one's controls physically live in (BT1/BT2 in the
+// Percussion + Bass Generator window, CT8guiPercGenerator.scd; MT1/MT2
+// still in the separate Harmony + Melody Generator window,
+// CT8guiHarmonyMelodyGenerator.scd), stay exactly as they are, per
+// feedback - only the structure (and the globals' own names, ~bassX ->
+// ~monoX) underneath changes, so MT1/MT2's GUI blocks (unchanged in
+// appearance) now read/write these same ~monoX globals instead of their
+// own former, placeholder ~hmX ones. Set live by whichever window a given
+// track's block happens to be in - per-track dictionaries keyed by track
+// name symbol, read fresh on every rebuild by ~buildMonoTrackPattern,
+// below - but a few shapes differ, since these two instruments
+// (\fm/\plucking) aren't percussion's four:
 //   - Both \fm/\plucking take a \midinote key directly (Pbind/Event's
 //     standard pitch-key handling converts it to \freq for us), so there's
 //     no per-instrument pitch-ARG-name dispatch the way baseD/cym/hat/kick
@@ -242,80 +249,80 @@
 //     \amp key for their output level, so there's no per-instrument
 //     amp-arg-name dispatch needed either (unlike pitch/amp-arg dispatch
 //     being two separate concerns for baseD/cym/hat/kick).
-//   - ~bassVolumeLevels[name] is a [lo, hi] pair (one dual-handle
+//   - ~monoVolumeLevels[name] is a [lo, hi] pair (one dual-handle
 //     RangeSlider in the GUI) - Fixed reads its high end; Alternate uses
 //     the whole span, same idea as percussion's ~percVolumeLevels.
 //   - Pattern has no \firstBeat option (per feedback, not a useful choice
-//     for a single line part) - otherwise the exact same twelve choices
+//     for a Note track part) - otherwise the exact same twelve choices
 //     PT1-4 have.
-// ~bassTrackNames stays [\BT1, \BT2] - CT8guiPercGenerator.scd still uses
+// ~btTrackNames stays [\BT1, \BT2] - CT8guiPercGenerator.scd still uses
 // it to decide which blocks render in ITS window, and MT1/MT2's blocks
 // stay in the Harmony + Melody Generator window instead, per feedback
-// ("I do not want to change ... the layouts"). ~slTrackNames is the
-// broader list ("single line tracks") used below for filling in/
+// ("I do not want to change ... the layouts"). ~monoTrackNames is the
+// broader list ("Note tracks") used below for filling in/
 // resetting all four tracks' shared config, regardless of which window
 // each one's own GUI block actually lives in.
-~bassTrackNames = [\BT1, \BT2];
-~slTrackNames = [\BT1, \BT2, \MT1, \MT2];
-~bassSource = ~bassSource ? ();
-~bassInstrument = ~bassInstrument ? ();
-~bassPattern = ~bassPattern ? ();
-~bassPitchMode = ~bassPitchMode ? ();
-~bassVolumeMode = ~bassVolumeMode ? ();
-~bassVolumeLevels = ~bassVolumeLevels ? ();
-~bassWet = ~bassWet ? ();
-~bassLevel = ~bassLevel ? ();
-~bassSplitPercent = ~bassSplitPercent ? ();
+~btTrackNames = [\BT1, \BT2];
+~monoTrackNames = [\BT1, \BT2, \MT1, \MT2];
+~monoSource = ~monoSource ? ();
+~monoInstrument = ~monoInstrument ? ();
+~monoPattern = ~monoPattern ? ();
+~monoPitchMode = ~monoPitchMode ? ();
+~monoVolumeMode = ~monoVolumeMode ? ();
+~monoVolumeLevels = ~monoVolumeLevels ? ();
+~monoWet = ~monoWet ? ();
+~monoLevel = ~monoLevel ? ();
+~monoSplitPercent = ~monoSplitPercent ? ();
 // BT1/MT1 default to Row, BT2/MT2 to Col - per feedback, MT1/MT2 flip
 // their own default from the old bespoke ~buildMelodyPattern's hardcoded
 // Col-only behavior, so MT1/MT2 now mirror BT1/BT2's own Row/Col split
 // exactly rather than defaulting to the same scan.
-~bassSourceDefaults = (BT1: \row, BT2: \col, MT1: \row, MT2: \col);
-~bassInstrumentDefaults = (BT1: \fm, BT2: \plucking, MT1: \fm, MT2: \fm);
+~monoSourceDefaults = (BT1: \row, BT2: \col, MT1: \row, MT2: \col);
+~monoInstrumentDefaults = (BT1: \fm, BT2: \plucking, MT1: \fm, MT2: \fm);
 // Each instrument's own default amp, straight off its SynthDef
 // (CT8synths.scd) - same idea as ~percInstrumentVolumeDefaults, above.
-~bassInstrumentVolumeDefaults = (fm: 0.2, plucking: 0.2);
+~monoInstrumentVolumeDefaults = (fm: 0.2, plucking: 0.2);
 // Each track's own default ~currentRange[name] (CT8harmonySelect.scd) -
 // BT1/BT2 keep their historical "below middle C" register; MT1/MT2 keep
 // their own historical higher one, even though both pairs are otherwise
-// identical in structure now - nothing about "single line track" forces
+// identical in structure now - nothing about "Note track" forces
 // every one of them into the same register.
-~bassRangeDefaults = (BT1: [12, 59], BT2: [12, 59], MT1: [60, 96], MT2: [60, 96]);
-~slTrackNames.do { |name|
-    ~bassSource[name] = ~bassSource[name] ? ~bassSourceDefaults[name];
-    ~bassInstrument[name] = ~bassInstrument[name] ? ~bassInstrumentDefaults[name];
-    ~bassPattern[name] = ~bassPattern[name] ? \everyBeat;
-    ~bassPitchMode[name] = ~bassPitchMode[name] ? \fixed;
-    ~bassVolumeMode[name] = ~bassVolumeMode[name] ? \fixed;
-    ~bassVolumeLevels[name] = ~bassVolumeLevels[name] ? {
-        var d = ~bassInstrumentVolumeDefaults[~bassInstrumentDefaults[name]];
+~monoRangeDefaults = (BT1: [12, 59], BT2: [12, 59], MT1: [60, 96], MT2: [60, 96]);
+~monoTrackNames.do { |name|
+    ~monoSource[name] = ~monoSource[name] ? ~monoSourceDefaults[name];
+    ~monoInstrument[name] = ~monoInstrument[name] ? ~monoInstrumentDefaults[name];
+    ~monoPattern[name] = ~monoPattern[name] ? \everyBeat;
+    ~monoPitchMode[name] = ~monoPitchMode[name] ? \fixed;
+    ~monoVolumeMode[name] = ~monoVolumeMode[name] ? \fixed;
+    ~monoVolumeLevels[name] = ~monoVolumeLevels[name] ? {
+        var d = ~monoInstrumentVolumeDefaults[~monoInstrumentDefaults[name]];
         [d, d]
     }.value;
-    ~bassWet[name] = ~bassWet[name] ? 0;
-    ~bassLevel[name] = ~bassLevel[name] ? 1;
-    ~bassSplitPercent[name] = ~bassSplitPercent[name] ? 33;
+    ~monoWet[name] = ~monoWet[name] ? 0;
+    ~monoLevel[name] = ~monoLevel[name] ? 1;
+    ~monoSplitPercent[name] = ~monoSplitPercent[name] ? 33;
 };
 
 // Forcibly resets one track's whole Bass Generator config back to these same
 // original defaults - mirrors ~resetPercConfig exactly, same reason (see its
 // comment, above).
-~resetBassConfig = { |name|
+~resetMonoConfig = { |name|
     var volD;
-    ~bassSource[name] = ~bassSourceDefaults[name];
-    ~bassInstrument[name] = ~bassInstrumentDefaults[name];
-    ~bassPattern[name] = \everyBeat;
-    ~bassPitchMode[name] = \fixed;
-    ~bassVolumeMode[name] = \fixed;
-    volD = ~bassInstrumentVolumeDefaults[~bassInstrumentDefaults[name]];
-    ~bassVolumeLevels[name] = [volD, volD];
-    ~bassWet[name] = 0;
-    ~bassLevel[name] = 1;
-    ~bassSplitPercent[name] = 33;
+    ~monoSource[name] = ~monoSourceDefaults[name];
+    ~monoInstrument[name] = ~monoInstrumentDefaults[name];
+    ~monoPattern[name] = \everyBeat;
+    ~monoPitchMode[name] = \fixed;
+    ~monoVolumeMode[name] = \fixed;
+    volD = ~monoInstrumentVolumeDefaults[~monoInstrumentDefaults[name]];
+    ~monoVolumeLevels[name] = [volD, volD];
+    ~monoWet[name] = 0;
+    ~monoLevel[name] = 1;
+    ~monoSplitPercent[name] = 33;
 // Also resets ~currentRange[name] (CT8harmonySelect.scd) back to its own
-// per-track default (~bassRangeDefaults, above) - previously missed here,
+// per-track default (~monoRangeDefaults, above) - previously missed here,
 // which meant this button couldn't recover a track whose Pitch
 // RangeSlider had left it holding a bad value.
-    ~currentRange[name] = ~bassRangeDefaults[name];
+    ~currentRange[name] = ~monoRangeDefaults[name];
 };
 
 
@@ -336,8 +343,8 @@
 // on/off choice) needs a real default, so it survives re-evaluation sanely.
 ~trackNames.do { |name|
 // Only PT1/PT2/PT3 default on here - PT4/BT1/BT2/HT1/MT1/MT2 all have real
-// builders too (~buildPercPattern/~buildBassTrackPattern/
-// ~buildHarmonyPattern) but default off regardless, by THIS guard - kept
+// builders too (~buildPercPattern/~buildMonoTrackPattern/
+// ~buildPolyPattern) but default off regardless, by THIS guard - kept
 // as optional slots rather than because they don't exist. CT8main.scd
 // then unconditionally forces HT1/MT1/BT1/MT2 on anyway, every run (not
 // just the first) - see its own comment for why MT2 joined that list, per
@@ -667,7 +674,7 @@
 // exactly once per row event either way, so the "one new chord at every
 // row-start, held for that row's span" cadence is unchanged; only where
 // the 4 notes come from differs.
-~buildHarmonyPattern = {
+~buildPolyPattern = {
     var events = ~rowPattern ? [];
     if(events.isEmpty) {
         "No active clock cells to play.".warn;
@@ -721,17 +728,17 @@
 // MT1/MT2 used to have their own bespoke builder here (~buildMelodyPattern -
 // one slot per \columnStart, hand-tuned FM voicing, a 4-note chord stab
 // before that) - per feedback, BT1/BT2/MT1/MT2 are now four
-// interchangeable "single line tracks" differing only in which options
+// interchangeable "Note tracks" differing only in which options
 // they're set to, so MT1/MT2 are registered below with the exact same
-// ~buildBassTrackPattern every one of the four now shares (see the BASS
-// GENERATOR CONFIG section's own comment, above, for the full
+// ~buildMonoTrackPattern every one of the four now shares (see the MONO
+// TRACK CONFIG section's own comment, above, for the full
 // explanation) rather than a separate builder of their own.
 
 
 // ---------------------------------------------------------------------------
 // TRACK COPY ("Copy T") - BT1/BT2/MT1-4 ONLY
 // ---------------------------------------------------------------------------
-// Lets one bass/melody track quote another (or itself)'s recent output
+// Lets one Note track quote another (or itself)'s recent output
 // verbatim: ~copyTStartRecord.(sourceName, beats) tapes that track's actual
 // sounding (dur, midinote) pairs for the next `beats` TempoClock beats;
 // ~copyTStartPlayback.(destName) then has `destName` play that taped buffer
@@ -739,11 +746,11 @@
 // everything else about it, just borrowed timing+pitch - until the buffer
 // runs out, then it falls straight back into whatever it would normally be
 // doing. Restricted to BT1/BT2/MT1-4 (per feedback), not HT1-4/PT1-4 -
-// bass and melody tracks are both single-note-per-event now (see MT1's own
-// header comment, above), so a (dur, midinote) pair means the same thing
-// on either side of a copy; HT1-4 plays chords (an Array, not a scalar,
-// \midinote) and PT1-4's pitch is Hz, not MIDI - neither fits this scheme
-// without a redesign this feature doesn't attempt.
+// Note tracks are all single-note-per-event (see the MONO TRACK CONFIG
+// section's own comment, above), so a (dur, midinote) pair means the same
+// thing on either side of a copy; HT1-4 plays chords (an Array, not a
+// scalar, \midinote) and PT1-4's pitch is Hz, not MIDI - neither fits
+// this scheme without a redesign this feature doesn't attempt.
 //
 // Deliberately simple for this first pass: one active recorder at a time
 // (starting a new recording while one is already running just restarts
@@ -797,7 +804,7 @@
 
 ~copyTStartRecord = { |sourceName, beats|
     if(~copyEligibleTracks.includes(sourceName).not) {
-        ("Copy: % is not a bass/melody track - ignoring record request.".format(sourceName)).warn;
+        ("Copy: % is not a Note track - ignoring record request.".format(sourceName)).warn;
     } {
         ~copyRecording = true;
         ~copyRecordSource = sourceName;
@@ -809,7 +816,7 @@
 
 ~copyTStartPlayback = { |destName|
     if(~copyEligibleTracks.includes(destName).not) {
-        ("Copy: % is not a bass/melody track - ignoring playback request.".format(destName)).warn;
+        ("Copy: % is not a Note track - ignoring playback request.".format(destName)).warn;
     } {
         if(~copyBuffer.isEmpty) {
             ("Copy: no completed recording yet - ignoring playback request for %.".format(destName)).warn;
@@ -900,7 +907,7 @@
 // PT1-4 - replacing BT1's old bespoke builder (a fixed Ppar of row-start AND
 // column-start sub-patterns, chord-aware via ~currentChord/
 // ~chordNoteInRange) and giving BT2 a real builder for the first time.
-// ~bassSource[name] picks ONE scan (row or col), same as PT1-4, rather than
+// ~monoSource[name] picks ONE scan (row or col), same as PT1-4, rather than
 // always running both simultaneously the way the old BT1 did - a track that
 // wants both can still be approximated by running BT1 on \row and BT2 on
 // \col (their defaults), same net effect as the old single BT1.
@@ -910,8 +917,8 @@
 // arg) - both \fm/\plucking take a plain \midinote key, which Pbind/Event's
 // standard pitch handling converts to \freq for us. No amp-arg-name
 // dispatch needed either - both instruments just take a plain \amp key.
-~buildBassTrackPattern = { |name|
-    var fromRow = (~bassSource[name] == \row);
+~buildMonoTrackPattern = { |name|
+    var fromRow = (~monoSource[name] == \row);
     var events = if(fromRow) { ~rowPattern ? [] } { ~colPattern ? [] };
     var startRole = if(fromRow) { \rowStart } { \columnStart };
 
@@ -923,8 +930,8 @@
         var baseSlotIdx;
         var durs = [], pitches = [], restFlags = [], amps = [];
         var beatIndex = 0, ampIndex = 0, nextAmp;
-        var instrument = ~bassInstrument[name];
-        var pattern = ~bassPattern[name];
+        var instrument = ~monoInstrument[name];
+        var pattern = ~monoPattern[name];
         var splitCount, splitVariant, lastOfGroupIdx;
         var isMergePattern, mergeVariant, mergeStart;
         var normalDurStream, normalMidinoteStream, copyPair;
@@ -939,13 +946,13 @@
 // grid, same as ~buildPercPattern.
         baseSlotIdx = if(pattern == \startOnly) { startIdx } { (0..events.size - 1) };
 
-// ~bassVolumeLevels[name] is [lo, hi] (one dual-handle RangeSlider in the
+// ~monoVolumeLevels[name] is [lo, hi] (one dual-handle RangeSlider in the
 // GUI, same convention as ~percVolumeLevels) - \fixed reads hi; \alternate
 // alternates hi, lo every hit, high end first, same as percussion.
         nextAmp = {
-            var lo = ~bassVolumeLevels[name][0];
-            var hi = ~bassVolumeLevels[name][1];
-            var v = if(~bassVolumeMode[name] == \alternate) {
+            var lo = ~monoVolumeLevels[name][0];
+            var hi = ~monoVolumeLevels[name][1];
+            var v = if(~monoVolumeMode[name] == \alternate) {
                 if(ampIndex % 2 == 0) { hi } { lo }
             } {
                 hi
@@ -986,7 +993,7 @@
                 \random, {
                     var groupStart = 0;
                     while ({ (groupStart + 3) < baseSlotIdx.size }) {
-                        if(100.0.rand < ~bassSplitPercent[name]) { mergeStart[groupStart] = true };
+                        if(100.0.rand < ~monoSplitPercent[name]) { mergeStart[groupStart] = true };
                         groupStart = groupStart + 4;
                     };
                 },
@@ -1028,16 +1035,16 @@
         {
             var pitchFor, slotI = 0;
             var fixedNote, risingGen;
-            if(~bassPitchMode[name] == \fixed) {
+            if(~monoPitchMode[name] == \fixed) {
                 fixedNote = ~chordRootInRange.(~currentChord, ~currentRange[name][0], ~currentRange[name][1]);
             };
-            if(~bassPitchMode[name] == \rising) {
+            if(~monoPitchMode[name] == \rising) {
                 risingGen = ~makeRisingPitchGen.(
                     ~currentChord, ~chordSet, ~currentRange[name][0], ~currentRange[name][1]
                 );
             };
             pitchFor = { |idx|
-                switch(~bassPitchMode[name],
+                switch(~monoPitchMode[name],
                     \fixed, { fixedNote },
                     \random, { ~chordNoteInRange.(~currentChord, ~currentRange[name][0], ~currentRange[name][1]) },
                     \rising, { risingGen.value }
@@ -1065,7 +1072,7 @@
                     var pitch = pitchFor.(idx);
                     var shouldSplit = (splitCount > 1) and: {
                         switch(splitVariant,
-                            \random, { 100.0.rand < ~bassSplitPercent[name] },
+                            \random, { 100.0.rand < ~monoSplitPercent[name] },
                             \lastOfBar, { idx == (events.size - 1) },
                             \lastOfRowCol, { lastOfGroupIdx.includes(idx) }
                         )
@@ -1076,7 +1083,7 @@
                         restFlags = restFlags.addAll(Array.fill(splitCount, { false }));
                         amps = amps.addAll(Array.fill(splitCount, { nextAmp.value }));
                     } {
-                        var isSkip = (pattern == \randomSkip) and: { 100.0.rand < ~bassSplitPercent[name] };
+                        var isSkip = (pattern == \randomSkip) and: { 100.0.rand < ~monoSplitPercent[name] };
                         durs = durs.add(span);
                         pitches = pitches.add(pitch);
                         restFlags = restFlags.add(isSkip);
@@ -1111,8 +1118,8 @@
 // as ~percWet[name]/~percLevel[name] - the only two Bass Generator controls
 // that update immediately with no rebuild/Apply now needed.
             \fx, Pfunc { ~revBus },
-            \wet, Pfunc { ~bassWet[name] },
-            \level, Pfunc { ~bassLevel[name] },
+            \wet, Pfunc { ~monoWet[name] },
+            \level, Pfunc { ~monoLevel[name] },
             \type, Pfunc {
                 var isRest = (~trackEnabled[name].not) or: { restFlags[beatIndex] };
                 beatIndex = (beatIndex + 1) % restFlags.size;
@@ -1128,7 +1135,7 @@
 // Register every track's builder. Adding track N's builder here is the only
 // step needed to bring it under the same start/stop/rebuild machinery below.
 // PT1-PT4 all share ~buildPercPattern; BT1/BT2/MT1/MT2 all share
-// ~buildBassTrackPattern - the four "single line tracks" (per feedback -
+// ~buildMonoTrackPattern - the four "Note tracks" (per feedback -
 // see that section's own comment, above) - each parameterized per track
 // name, each getting its own small wrapper closure so ~trackBuilders
 // keeps its existing "one zero-arg function per track name" shape.
@@ -1136,11 +1143,11 @@
 ~trackBuilders[\PT2] = { ~buildPercPattern.(\PT2) };
 ~trackBuilders[\PT3] = { ~buildPercPattern.(\PT3) };
 ~trackBuilders[\PT4] = { ~buildPercPattern.(\PT4) };
-~trackBuilders[\HT1] = ~buildHarmonyPattern;
-~trackBuilders[\BT1] = { ~buildBassTrackPattern.(\BT1) };
-~trackBuilders[\BT2] = { ~buildBassTrackPattern.(\BT2) };
-~trackBuilders[\MT1] = { ~buildBassTrackPattern.(\MT1) };
-~trackBuilders[\MT2] = { ~buildBassTrackPattern.(\MT2) };
+~trackBuilders[\HT1] = ~buildPolyPattern;
+~trackBuilders[\BT1] = { ~buildMonoTrackPattern.(\BT1) };
+~trackBuilders[\BT2] = { ~buildMonoTrackPattern.(\BT2) };
+~trackBuilders[\MT1] = { ~buildMonoTrackPattern.(\MT1) };
+~trackBuilders[\MT2] = { ~buildMonoTrackPattern.(\MT2) };
 
 // ---------------------------------------------------------------------------
 // START PATTERN

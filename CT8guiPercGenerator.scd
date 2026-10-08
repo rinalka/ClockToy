@@ -5,7 +5,7 @@
 //
 // Live control over how all four percussion tracks (PT1/PT2/PT3/PT4) and
 // both bass tracks (BT1/BT2) get generated (~buildPercPattern/
-// ~buildBassTrackPattern, CT8tracks.scd) - on/off, source scan, instrument,
+// ~buildMonoTrackPattern, CT8tracks.scd) - on/off, source scan, instrument,
 // which beats sound, and how pitch/volume vary, independently per track.
 // Formerly CT8guiPT1Generator.scd/PT1-only; generalized to cover all four
 // percussion tracks once ~buildRowPattern (PT1)/~buildColumnPattern (PT2's
@@ -14,7 +14,7 @@
 // ~buildPercPattern, then extended again to add BT1/BT2 at the bottom,
 // replacing BT1's old bespoke bar builder and giving BT2 a real one for the
 // first time - same per-track-block convention, just a second, shorter list
-// of per-track globals (~bassX rather than ~percX) and a smaller instrument/
+// of per-track globals (~monoX rather than ~percX) and a smaller instrument/
 // pattern/pitch-mode menu, since bass's two instruments (\fm/\plucking)
 // aren't percussion's four. The window itself is dark-themed to match
 // CT8guiSynthLab.scd, but each track's own block sits on a randomly-rolled
@@ -35,8 +35,8 @@
 //
 // LEFT PANE (25% of the block's width) - this instrument's own per-voice
 // controls, as 4 vertical Sliders: Mix/Vol (the existing Wet/Level
-// controls, ~percWet[name]/~percLevel[name] or ~bassWet[name]/
-// ~bassLevel[name] - that instrument's own tiny built-in ~allpassWash tail,
+// controls, ~percWet[name]/~percLevel[name] or ~monoWet[name]/
+// ~monoLevel[name] - that instrument's own tiny built-in ~allpassWash tail,
 // see CT8synths.scd - renamed/relabeled, not rewired; still read live via
 // Pfunc, no rebuild needed) plus two more, Send A/Send B, that don't do
 // anything yet - plain Sliders with no backing global, placeholders for a
@@ -44,9 +44,9 @@
 //
 // RIGHT PANE (75% of the block's width) - everything else, in three rows:
 //   Row 1: Title (the track name) + the on/off square + Source
-//          (~percSource[name]/~bassSource[name]: Row or Col scan) +
+//          (~percSource[name]/~monoSource[name]: Row or Col scan) +
 //          Instrument (~percInstrument[name]: \baseD/\cym/\hat/\kick;
-//          ~bassInstrument[name]: \fm/\plucking).
+//          ~monoInstrument[name]: \fm/\plucking).
 //   Row 2: Pattern/Pitch/Volume menus, all on one row (previously spread
 //          across three separate rows, each with its own sub-controls
 //          directly beside it - the sub-controls moved below, into their
@@ -57,7 +57,7 @@
 //          Col/the six 1/8th-1/3rd split variants/the three 4/3 merge
 //          variants/Skip %); Pitch is Fixed/Rising at start/Random for
 //          percussion (its own separate Hz-based scheme); Fixed/Random/
-//          Rising for bass (chord/scale-based - see ~buildBassTrackPattern's
+//          Rising for bass (chord/scale-based - see ~buildMonoTrackPattern's
 //          own comment, CT8tracks.scd); Volume is Fixed/Alternate for
 //          both.
 //   Row 3: one sub-control per menu above, in three same-width columns so
@@ -77,7 +77,7 @@
 //              for the exact rule) - so the SAME slider stays visible
 //              across every mode, nothing to show/hide.
 //            - Under Volume: the same idea, one dual-handle RangeSlider
-//              for ~percVolumeLevels[name]/~bassVolumeLevels[name] (now
+//              for ~percVolumeLevels[name]/~monoVolumeLevels[name] (now
 //              always [lo, hi], 0-4), replacing the old Fixed-Slider-or-
 //              two-Alternate-Sliders switch - Fixed reads hi, Alternate
 //              alternates hi/lo.
@@ -95,7 +95,7 @@
 (
 
 ~makePercGeneratorWindow = {
-    var window, statusText, applyNow, makeTrackSection, makeBassTrackSection;
+    var window, statusText, applyNow, makeTrackSection, makeMonoTrackSection;
     var percGenWidth = 640;
 // Tall enough for all six blocks (PT1-4 + BT1-2) plus header/buttons -
 // resizable:true (unlike the old fixed-size window) in case a shorter
@@ -440,7 +440,7 @@
 
 // Builds one bass track's full control block - same shape as
 // makeTrackSection above (name/on-off, source/instrument/wet/level,
-// pattern/percent, pitch, volume), wired to ~bassX[name] (CT8tracks.scd)
+// pattern/percent, pitch, volume), wired to ~monoX[name] (CT8tracks.scd)
 // instead of ~percX[name], with the smaller menus BT1/BT2 actually need
 // (two instruments, no First-beat-only pattern, two pitch modes instead of
 // three, pitch in MIDI notes rather than Hz). Kept as its own closure
@@ -449,7 +449,7 @@
 // list, pattern list, pitch units and mode count) that threading all of it
 // through one shared function would need about as many parameters as just
 // writing the block twice.
-    makeBassTrackSection = { |name|
+    makeMonoTrackSection = { |name|
         var trackContainer, trackColor, labelColor = Color.black;
         var leftPane, rightPane;
         var mixSlider, volSlider, sendASlider, sendBSlider;
@@ -492,7 +492,7 @@
         ~percGeneratorWindow.view.decorator.nextLine;
 
 // LEFT PANE - identical layout/role to makeTrackSection's own left pane,
-// just wired to ~bassWet[name]/~bassLevel[name] instead.
+// just wired to ~monoWet[name]/~monoLevel[name] instead.
 // Rect's x here is 484, not 6 - empirically, whatever this Qt build does
 // with nested CompositeView positioning displays a child's Rect mirrored
 // left-right within its parent (supplying x=6 rendered at the FAR RIGHT
@@ -517,15 +517,15 @@
         leftPane.decorator.nextLine;
 
         mixSlider = Slider(leftPane, 20@90)
-            .value_(~bassWet[name])
+            .value_(~monoWet[name])
             .action_({ |sl|
-                ~bassWet[name] = sl.value;
+                ~monoWet[name] = sl.value;
                 statusText.string_("Mix updated (live, no rebuild needed).");
             });
         volSlider = Slider(leftPane, 20@90)
-            .value_(~bassLevel[name])
+            .value_(~monoLevel[name])
             .action_({ |sl|
-                ~bassLevel[name] = sl.value;
+                ~monoLevel[name] = sl.value;
                 statusText.string_("Vol updated (live, no rebuild needed).");
             });
         sendASlider = Slider(leftPane, 20@90);
@@ -552,19 +552,19 @@
         StaticText(rightPane, 26@22).string_("Src").stringColor_(labelColor);
         sourceMenu = PopUpMenu(rightPane, 55@22)
             .items_(["Row", "Col"])
-            .value_([\row, \col].indexOf(~bassSource[name]) ? 0)
+            .value_([\row, \col].indexOf(~monoSource[name]) ? 0)
             .action_({ |m|
-                ~bassSource[name] = [\row, \col][m.value];
-                patternMenu.items_(patternLabelsFor.(~bassSource[name]));
-                patternMenu.value_(patternSymbols.indexOf(~bassPattern[name]) ? 0);
+                ~monoSource[name] = [\row, \col][m.value];
+                patternMenu.items_(patternLabelsFor.(~monoSource[name]));
+                patternMenu.value_(patternSymbols.indexOf(~monoPattern[name]) ? 0);
                 statusText.string_("Changed - not yet applied.");
             });
         StaticText(rightPane, 30@22).string_("Inst").stringColor_(labelColor);
         instrumentMenu = PopUpMenu(rightPane, 80@22)
             .items_(["fm", "plucking"])
-            .value_([\fm, \plucking].indexOf(~bassInstrument[name]) ? 0)
+            .value_([\fm, \plucking].indexOf(~monoInstrument[name]) ? 0)
             .action_({ |m|
-                ~bassInstrument[name] = [\fm, \plucking][m.value];
+                ~monoInstrument[name] = [\fm, \plucking][m.value];
                 statusText.string_("Changed - not yet applied.");
             });
         rightPane.decorator.nextLine;
@@ -577,25 +577,25 @@
         rightPane.decorator.nextLine;
 
         patternMenu = PopUpMenu(rightPane, 120@22)
-            .items_(patternLabelsFor.(~bassSource[name]))
-            .value_(patternSymbols.indexOf(~bassPattern[name]) ? 0)
+            .items_(patternLabelsFor.(~monoSource[name]))
+            .value_(patternSymbols.indexOf(~monoPattern[name]) ? 0)
             .action_({ |m|
-                ~bassPattern[name] = patternSymbols[m.value];
+                ~monoPattern[name] = patternSymbols[m.value];
                 updatePatternPercentVisibility.value;
                 statusText.string_("Changed - not yet applied.");
             });
         pitchMenu = PopUpMenu(rightPane, 120@22)
             .items_(["Fixed", "Random", "Rising"])
-            .value_([\fixed, \random, \rising].indexOf(~bassPitchMode[name]) ? 0)
+            .value_([\fixed, \random, \rising].indexOf(~monoPitchMode[name]) ? 0)
             .action_({ |m|
-                ~bassPitchMode[name] = [\fixed, \random, \rising][m.value];
+                ~monoPitchMode[name] = [\fixed, \random, \rising][m.value];
                 statusText.string_("Changed - not yet applied.");
             });
         volumeMenu = PopUpMenu(rightPane, 120@22)
             .items_(["Fixed", "Alternate"])
-            .value_([\fixed, \alternate].indexOf(~bassVolumeMode[name]) ? 0)
+            .value_([\fixed, \alternate].indexOf(~monoVolumeMode[name]) ? 0)
             .action_({ |m|
-                ~bassVolumeMode[name] = [\fixed, \alternate][m.value];
+                ~monoVolumeMode[name] = [\fixed, \alternate][m.value];
                 statusText.string_("Changed - not yet applied.");
             });
         rightPane.decorator.nextLine;
@@ -605,17 +605,17 @@
         volumeSubView = CompositeView(rightPane, 120@40).background_(trackColor);
 
         percentSlider = Slider(patternSubView, Rect(2, 2, 116, 18))
-            .value_(~bassSplitPercent[name] / 100)
+            .value_(~monoSplitPercent[name] / 100)
             .action_({ |sl|
                 var v = (sl.value * 100).round(1);
-                ~bassSplitPercent[name] = v;
+                ~monoSplitPercent[name] = v;
                 percentReadout.string_(v.asString ++ "%");
                 statusText.string_("Changed - not yet applied.");
             });
         percentReadout = StaticText(patternSubView, Rect(2, 21, 116, 16))
-            .string_(~bassSplitPercent[name].round(1).asString ++ "%").stringColor_(labelColor);
+            .string_(~monoSplitPercent[name].round(1).asString ++ "%").stringColor_(labelColor);
         updatePatternPercentVisibility = {
-            var pattern = ~bassPattern[name];
+            var pattern = ~monoPattern[name];
             var isPercentPattern = #[
                 \random8thPercent, \random3rdPercent, \random4to3Percent, \randomSkip
             ].includes(pattern);
@@ -654,31 +654,31 @@
         updatePitchRangeReadout.value;
 
 // Under Volume: identical to makeTrackSection's own Volume RangeSlider,
-// just wired to ~bassVolumeLevels[name].
+// just wired to ~monoVolumeLevels[name].
         volumeRangeSlider = RangeSlider(volumeSubView, Rect(2, 2, 116, 18))
-            .lo_(~bassVolumeLevels[name][0].linlin(0, 4, 0, 1))
-            .hi_(~bassVolumeLevels[name][1].linlin(0, 4, 0, 1));
+            .lo_(~monoVolumeLevels[name][0].linlin(0, 4, 0, 1))
+            .hi_(~monoVolumeLevels[name][1].linlin(0, 4, 0, 1));
         volumeRangeReadout = StaticText(volumeSubView, Rect(2, 21, 116, 16)).stringColor_(labelColor);
         updateVolumeRangeReadout = {
             volumeRangeReadout.string_(
-                ~bassVolumeLevels[name][0].round(0.01).asString ++ " - " ++ ~bassVolumeLevels[name][1].round(0.01).asString
+                ~monoVolumeLevels[name][0].round(0.01).asString ++ " - " ++ ~monoVolumeLevels[name][1].round(0.01).asString
             );
         };
         volumeRangeSlider.action_({ |rs|
-            ~bassVolumeLevels[name] = [rs.lo.linlin(0, 1, 0, 4), rs.hi.linlin(0, 1, 0, 4)];
+            ~monoVolumeLevels[name] = [rs.lo.linlin(0, 1, 0, 4), rs.hi.linlin(0, 1, 0, 4)];
             updateVolumeRangeReadout.value;
             statusText.string_("Changed - not yet applied.");
         });
         updateVolumeRangeReadout.value;
     };
 
-    ~bassTrackNames.do(makeBassTrackSection);
+    ~btTrackNames.do(makeMonoTrackSection);
 
     Button(~percGeneratorWindow, 120@26).states_([["Apply now", Color.black, Color(0.65, 0.85, 0.65)]])
         .action_({ applyNow.value });
 
 // Forcibly resets every track's whole config (~resetPercConfig/
-// ~resetBassConfig, CT8tracks.scd), then rebuilds this window from scratch
+// ~resetMonoConfig, CT8tracks.scd), then rebuilds this window from scratch
 // so every menu/box reflects the reset values, then applies immediately the
 // same way Apply now does - a plain re-call of ~makePercGeneratorWindow
 // rather than reusing this instance's own applyNow, since that closure
@@ -686,7 +686,7 @@
     Button(~percGeneratorWindow, 150@26).states_([["Reset to defaults", Color.black, Color(0.85, 0.55, 0.55)]])
         .action_({
             ~percTrackNames.do(~resetPercConfig);
-            ~bassTrackNames.do(~resetBassConfig);
+            ~btTrackNames.do(~resetMonoConfig);
             ~makePercGeneratorWindow.value;
             ~stopPbinds.value;
             ~updatePbinds.value;

@@ -6,9 +6,9 @@
 // Owns the shared harmonic concept the rhythm/harmony tracks (HT1-4) are
 // meant to generate around: a "current chord" those tracks pick notes
 // from, rather than each inventing their own pitch material
-// independently. BT1/BT2/MT1/MT2 (the four "single line tracks" - per
-// feedback, no longer thought of as separate "bass"/"melody" families)
-// are on the generic Bass Generator config instead (~buildBassTrackPattern,
+// independently. BT1/BT2/MT1/MT2 (the four "Note" tracks - per feedback,
+// no longer thought of as separate "bass"/"melody" families) are on the
+// generic Mono Track config instead (~buildMonoTrackPattern,
 // CT8tracks.scd), the same source/instrument/pattern/pitch/volume scheme
 // PT1-4 already use - but still read ~currentChord/~chordNoteInRange/
 // ~chordRootInRange/~makeRisingPitchGen from here for their own
@@ -206,7 +206,7 @@
 // range (some tracks' ranges narrow and fixed, others recalculated every
 // bar - not yet designed) only has to reassign this, not touch any
 // builder. A `name -> [lo, hi]` dictionary, same convention as every other
-// per-track config table in this project (~percX/~bassX, CT8tracks.scd).
+// per-track config table in this project (~percX/~monoX, CT8tracks.scd).
 ~currentRange = ~currentRange ? ();
 ~currentRange[\HT1] = ~currentRange[\HT1] ? [60, 96];
 ~currentRange[\HT2] = ~currentRange[\HT2] ? [60, 96];
@@ -249,8 +249,8 @@
 };
 
 // Deterministic sibling of ~chordNoteInRange, for the Fixed and Rising
-// pitch modes (~buildBassTrackPattern, CT8tracks.scd - shared by all four
-// single line tracks, BT1/BT2/MT1/MT2) -
+// pitch modes (~buildMonoTrackPattern, CT8tracks.scd - shared by all four
+// Note tracks, BT1/BT2/MT1/MT2) -
 // always the chord's own FIRST written note (chord[0], its root in every
 // ~chords entry here), transposed by ~currentKey, mapped to the LOWEST
 // octave of that pitch class inside [lo, hi] - not a random pick among
@@ -303,8 +303,8 @@
 
 // ~currentChord is the one shared "current chord". Read LIVE (not
 // snapshotted into a local var, so a change is heard on the very next
-// note) by ~buildHarmonyPattern (HT1), CT8tracks.scd; ~buildBassTrackPattern
-// (BT1/BT2/MT1/MT2 - the four single line tracks) also reads it, but only
+// note) by ~buildPolyPattern (HT1), CT8tracks.scd; ~buildMonoTrackPattern
+// (BT1/BT2/MT1/MT2 - the four Note tracks) also reads it, but only
 // once per rebuild - see this
 // file's header. Its actual initial value is set below, in INITIAL STATE/
 // PIECE START, alongside ~chordSet/~secondLastChord/~lastChord (all four
