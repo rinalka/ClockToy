@@ -393,6 +393,58 @@
                 "Skip %"
             ]
         };
+// Pitch menu - normally 8 flat entries, but per feedback the three Arp
+// modes each grow into their own Up/Down/Ran sub-variant (9 entries total)
+// whenever Dur Pat is one of the three 1/8th patterns (splitCount == 2 in
+// ~buildMonoTrackPattern, CT8tracks.scd) - that's the only place a 1/8th
+// split pair's second note can differ from its first. `pitchSymbols` (the
+// var updatePitchMenuItems keeps pointed at whichever list is current) is
+// what pitchMenu's own .action_, below, actually indexes into - not a
+// fixed literal - so it always matches whatever's currently on screen.
+        var basePitchSymbols = [
+            \fixed, \random, \rising, \falling, \looping,
+            \arpRising, \arpFalling, \arpLooping
+        ];
+        var basePitchLabels = [
+            "Fixed", "Random", "Rising", "Falling", "Looping",
+            "Arp Rising", "Arp Falling", "Arp Looping"
+        ];
+        var extendedPitchSymbols = [
+            \fixed, \random, \rising, \falling, \looping,
+            \arpRisingUp, \arpRisingDown, \arpRisingRan,
+            \arpFallingUp, \arpFallingDown, \arpFallingRan,
+            \arpLoopingUp, \arpLoopingDown, \arpLoopingRan
+        ];
+        var extendedPitchLabels = [
+            "Fixed", "Random", "Rising", "Falling", "Looping",
+            "Arp Rising Up", "Arp Rising Down", "Arp Rising Ran",
+            "Arp Falling Up", "Arp Falling Down", "Arp Falling Ran",
+            "Arp Looping Up", "Arp Looping Down", "Arp Looping Ran"
+        ];
+// Collapsing OUT of the extended list (Dur Pat no longer a 1/8th pattern)
+// strips a mode like \arpRisingUp back down to its bare \arpRising, since
+// the base list has no Up/Down/Ran entries to show it as; expanding INTO
+// the extended list does the opposite, defaulting a bare \arpRising to its
+// own \arpRisingUp (first of its three) rather than leaving it pointed at
+// a symbol the visible list doesn't contain.
+        var baseArpOf = { |sym|
+            switch(sym,
+                \arpRisingUp, { \arpRising }, \arpRisingDown, { \arpRising }, \arpRisingRan, { \arpRising },
+                \arpFallingUp, { \arpFalling }, \arpFallingDown, { \arpFalling }, \arpFallingRan, { \arpFalling },
+                \arpLoopingUp, { \arpLooping }, \arpLoopingDown, { \arpLooping }, \arpLoopingRan, { \arpLooping },
+                { sym }
+            )
+        };
+        var upVariantOf = { |sym|
+            switch(sym,
+                \arpRising, { \arpRisingUp },
+                \arpFalling, { \arpFallingUp },
+                \arpLooping, { \arpLoopingUp },
+                { sym }
+            )
+        };
+        var pitchSymbols;
+        var updatePitchMenuItems;
 
         trackColor = Color.rand(0.7);
         trackContainer = CompositeView(~hmGeneratorWindow, 600@140).background_(trackColor);
@@ -470,24 +522,10 @@
             .action_({ |m|
                 ~monoPattern[name] = patternSymbols[m.value];
                 updatePatternPercentVisibility.value;
+                updatePitchMenuItems.value;
                 statusText.string_("Changed - not yet applied.");
             });
-        pitchMenu = PopUpMenu(rightPane, 120@22)
-            .items_([
-                "Fixed", "Random", "Rising", "Falling", "Looping",
-                "Arp Rising", "Arp Falling", "Arp Looping"
-            ])
-            .value_(
-                [\fixed, \random, \rising, \falling, \looping,
-                 \arpRising, \arpFalling, \arpLooping].indexOf(~monoPitchMode[name]) ? 0
-            )
-            .action_({ |m|
-                ~monoPitchMode[name] = [
-                    \fixed, \random, \rising, \falling, \looping,
-                    \arpRising, \arpFalling, \arpLooping
-                ][m.value];
-                statusText.string_("Changed - not yet applied.");
-            });
+        pitchMenu = PopUpMenu(rightPane, 120@22);
         volumeMenu = PopUpMenu(rightPane, 120@22)
             .items_(["Fixed", "Alternate"])
             .value_([\fixed, \alternate].indexOf(~monoVolumeMode[name]) ? 0)
@@ -520,6 +558,36 @@
             percentReadout.visible_(isPercentPattern);
         };
         updatePatternPercentVisibility.value;
+
+// Rebuilds pitchMenu's own items_/value_ to whichever of basePitchSymbols/
+// extendedPitchSymbols fits the CURRENT Dur Pat (see that pair's own
+// comment, above, for why), renormalizing ~monoPitchMode[name] across the
+// switch via baseArpOf/upVariantOf so it's never left pointing at a symbol
+// the now-visible list doesn't contain. Called once here at build time,
+// then again from patternMenu's own .action_, above, every time Dur Pat
+// changes.
+        updatePitchMenuItems = {
+            var is1_8 = #[
+                \random8thPercent, \random8thLastBar, \random8thLastRowCol
+            ].includes(~monoPattern[name]);
+            var mode = ~monoPitchMode[name];
+            if(is1_8) {
+                mode = upVariantOf.(mode);
+                pitchSymbols = extendedPitchSymbols;
+                pitchMenu.items_(extendedPitchLabels);
+            } {
+                mode = baseArpOf.(mode);
+                pitchSymbols = basePitchSymbols;
+                pitchMenu.items_(basePitchLabels);
+            };
+            ~monoPitchMode[name] = mode;
+            pitchMenu.value_(pitchSymbols.indexOf(mode) ? 0);
+        };
+        updatePitchMenuItems.value;
+        pitchMenu.action_({ |m|
+            ~monoPitchMode[name] = pitchSymbols[m.value];
+            statusText.string_("Changed - not yet applied.");
+        });
 
         pitchRangeSlider = RangeSlider(pitchSubView, Rect(2, 2, 116, 18))
             .lo_(~currentRange[name][0].linlin(0, 127, 0, 1))

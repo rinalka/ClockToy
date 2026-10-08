@@ -412,6 +412,31 @@
     intervals;
 };
 
+// ~chordStepTone.(chord, key, note, dir) - the mono Arp pitch modes' own
+// "Up"/"Down"/"Ran" sub-variants (CT8tracks.scd's ~buildMonoTrackPattern,
+// CT8guiPercGenerator.scd/CT8guiHarmonyMelodyGenerator.scd's pitchMenu) use
+// this to derive the SECOND note of a 1/8th-split pair from the first, per
+// feedback: try a whole tone (2 semitones) in `dir` (1 up, -1 down) first;
+// if the current chord (transposed by `key`, same convention as
+// ~chordRootInRange) has no tone at that exact pitch class, fall back to a
+// semitone in the same direction; if the chord has no tone there either,
+// give up and repeat `note` unchanged, rather than landing on a pitch
+// outside the current chord's own structure.
+~chordStepTone = { |chord, key, note, dir|
+    var chordPitchClasses = chord.collect { |n| (n + key) % 12 };
+    var toneCandidate = note + (dir * 2);
+    var semitoneCandidate = note + dir;
+    if(chordPitchClasses.includes(toneCandidate % 12)) {
+        toneCandidate;
+    } {
+        if(chordPitchClasses.includes(semitoneCandidate % 12)) {
+            semitoneCandidate;
+        } {
+            note;
+        };
+    };
+};
+
 // ~currentChord is the one shared "current chord". Read LIVE (not
 // snapshotted into a local var, so a change is heard on the very next
 // note) by ~buildPolyPattern (HT1), CT8tracks.scd; ~buildMonoTrackPattern

@@ -1115,7 +1115,7 @@
                     ~currentChord, ~scales[~chordSet], ~currentRange[name][0], ~currentRange[name][1]
                 );
             };
-            if(~monoPitchMode[name] == \arpRising) {
+            if(#[\arpRising, \arpRisingUp, \arpRisingDown, \arpRisingRan].includes(~monoPitchMode[name])) {
                 risingGen = ~makeRisingPitchGen.(
                     ~currentChord, ~chordArpIntervals.(~currentChord),
                     ~currentRange[name][0], ~currentRange[name][1]
@@ -1126,7 +1126,7 @@
                     ~currentChord, ~scales[~chordSet], ~currentRange[name][0], ~currentRange[name][1]
                 );
             };
-            if(~monoPitchMode[name] == \arpFalling) {
+            if(#[\arpFalling, \arpFallingUp, \arpFallingDown, \arpFallingRan].includes(~monoPitchMode[name])) {
                 fallingGen = ~makeFallingPitchGen.(
                     ~currentChord, ~chordArpIntervals.(~currentChord),
                     ~currentRange[name][0], ~currentRange[name][1]
@@ -1137,7 +1137,7 @@
                     ~currentChord, ~scales[~chordSet], ~currentRange[name][0], ~currentRange[name][1]
                 );
             };
-            if(~monoPitchMode[name] == \arpLooping) {
+            if(#[\arpLooping, \arpLoopingUp, \arpLoopingDown, \arpLoopingRan].includes(~monoPitchMode[name])) {
                 loopingGen = ~makeLoopingPitchGen.(
                     ~currentChord, ~chordArpIntervals.(~currentChord),
                     ~currentRange[name][0], ~currentRange[name][1]
@@ -1148,17 +1148,31 @@
 // ~makeRisingPitchGen's own comment, CT8harmonySelect.scd), just built
 // above with ~chordArpIntervals.(~currentChord) (the current chord's own
 // tones) instead of ~scales[~chordSet] (the current chord's parent
-// scale) as the list of offsets to step through.
+// scale) as the list of offsets to step through. Their own Up/Down/Ran
+// sub-variants (only offered in the Pitch menu when Dur Pat is one of the
+// three 1/8th patterns - see the splitPitches comment below) resolve this
+// SAME generator call for the first note of a split pair; the sub-variant
+// suffix only matters once the second note gets derived from the first,
+// further down.
             pitchFor = { |idx|
                 switch(~monoPitchMode[name],
                     \fixed, { fixedNote },
                     \random, { ~chordNoteInRange.(~currentChord, ~currentRange[name][0], ~currentRange[name][1]) },
                     \rising, { risingGen.value },
                     \arpRising, { risingGen.value },
+                    \arpRisingUp, { risingGen.value },
+                    \arpRisingDown, { risingGen.value },
+                    \arpRisingRan, { risingGen.value },
                     \falling, { fallingGen.value },
                     \arpFalling, { fallingGen.value },
+                    \arpFallingUp, { fallingGen.value },
+                    \arpFallingDown, { fallingGen.value },
+                    \arpFallingRan, { fallingGen.value },
                     \looping, { loopingGen.value },
-                    \arpLooping, { loopingGen.value }
+                    \arpLooping, { loopingGen.value },
+                    \arpLoopingUp, { loopingGen.value },
+                    \arpLoopingDown, { loopingGen.value },
+                    \arpLoopingRan, { loopingGen.value }
                 )
             };
             while ({ slotI < baseSlotIdx.size }) {
@@ -1189,8 +1203,33 @@
                         )
                     };
                     if(shouldSplit) {
+// Per feedback: when the Dur Pat is one of the three 1/8th patterns
+// (splitCount == 2 - the 1/3 and 4/3 patterns don't get this yet, a
+// planned separate later pass) AND the Pit Pat is one of the Arp
+// Rising/Falling/Looping Up/Down/Ran sub-variants, the SECOND of the
+// split pair's two notes isn't just a repeat of the first - it's derived
+// from it via ~chordStepTone (CT8harmonySelect.scd): a tone (2 semitones)
+// in the given direction if the current chord has a tone there, else a
+// semitone, else the same note repeated after all. Up/Down always step
+// that one fixed direction; Ran rerolls a fresh random direction for
+// every split pair. Every other Pit Pat (including the bare, un-suffixed
+// \arpRising/\arpFalling/\arpLooping, and every non-Arp mode) falls
+// through to the plain "same pitch for both halves" behavior unchanged.
+                        var splitDir = switch(~monoPitchMode[name],
+                            \arpRisingUp, { 1 }, \arpFallingUp, { 1 }, \arpLoopingUp, { 1 },
+                            \arpRisingDown, { -1 }, \arpFallingDown, { -1 }, \arpLoopingDown, { -1 },
+                            \arpRisingRan, { [1, -1].choose },
+                            \arpFallingRan, { [1, -1].choose },
+                            \arpLoopingRan, { [1, -1].choose },
+                            { nil }
+                        );
+                        var splitPitches = if((splitCount == 2) and: { splitDir.notNil }) {
+                            [pitch, ~chordStepTone.(~currentChord, ~currentKey, pitch, splitDir)];
+                        } {
+                            Array.fill(splitCount, { pitch });
+                        };
                         durs = durs.addAll(Array.fill(splitCount, { span / splitCount }));
-                        pitches = pitches.addAll(Array.fill(splitCount, { pitch }));
+                        pitches = pitches.addAll(splitPitches);
                         restFlags = restFlags.addAll(Array.fill(splitCount, { false }));
                         amps = amps.addAll(Array.fill(splitCount, { nextAmp.value }));
                     } {
