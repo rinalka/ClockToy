@@ -184,36 +184,54 @@ their own bullets below for exactly where the line falls:
   own bullet - the three Arp modes reuse the exact same Rising/Falling/Looping
   generator functions, just stepping through the current chord's own tones instead of
   its parent scale's degrees). Whenever Dur Pat (same menu, directly to Pitch's own
-  left) is one of the three 1/8th patterns specifically (`\random8thPercent`/
-  `\random8thLastBar`/`\random8thLastRowCol` - NOT yet the 1/3 or 4/3 families, per
-  feedback "not yet but i will do something very similar for 1/3 and 4/3 options," a
-  planned separate later pass), each of the three Arp modes expands into three of its
-  own Up/Down/Ran sub-variants in this same menu - Arp Rising Up/Down/Ran, Arp Falling
-  Up/Down/Ran, Arp Looping Up/Down/Ran - turning what's otherwise 8 Pitch choices into
-  14 (5 plain + 9 Arp) while a 1/8th pattern is selected, per feedback: "if the dur pat
-  is one of the 3 possible 1/8 options, then the 3 arp pit pat will have additional
-  options... turning the now three Arp choices into 9." The menu's own item list is
-  rebuilt live by `updatePitchMenuItems` (`CT8guiPercGenerator.scd`/
-  `CT8guiHarmonyMelodyGenerator.scd`'s own `makeMonoTrackSection`) every time Dur Pat
-  changes, swapping between `basePitchSymbols`/`basePitchLabels` (8 entries) and
-  `extendedPitchSymbols`/`extendedPitchLabels` (14) - `baseArpOf`/`upVariantOf`
-  renormalize `~monoPitchMode[name]` across that swap (stripping a mode like
-  `\arpRisingUp` back to bare `\arpRising` on the way out, defaulting a bare
-  `\arpRising` to `\arpRisingUp` - first of its three - on the way in) so the global
-  never ends up pointing at a symbol the currently-visible list doesn't contain. Up/
-  Down/Ran only change anything inside a 1/8th split pair specifically - the FIRST of
-  the pair's two notes still comes from the normal Rising/Falling/Looping generator
-  call, same as every other Pit Pat; it's only the SECOND note that these three
-  sub-variants touch, via `~chordStepTone` (`CT8harmonySelect.scd`) in
-  `~buildMonoTrackPattern`'s own split-handling code (`CT8tracks.scd`): Up/Down always
-  step one fixed direction, Ran rerolls a fresh random direction per split pair, and
-  per feedback, if the current chord has no tone exactly a whole tone (2 semitones)
-  away in that direction, it falls back to a semitone, and if even that isn't a chord
-  tone, it just repeats the first note. Every other Pit Pat choice, including the bare,
-  un-suffixed Arp modes if a 1/8th pattern happens to still show them (e.g. right after
-  `~resetMonoConfig`, before `updatePitchMenuItems` has had a chance to run against the
-  live Dur Pat), falls through to the older "same pitch for both halves of the split"
-  behavior unchanged. Volume is
+  left) is one of the three 1/8th patterns (`\random8thPercent`/`\random8thLastBar`/
+  `\random8thLastRowCol`) OR one of the three 1/3rd patterns (`\random3rdPercent`/
+  `\random3rdLastBar`/`\random3rdLastRowCol` - the 4/3 family still isn't covered, per
+  feedback "not yet but i will do something very similar for 1/3 and 4/3 options," so
+  4/3 remains a planned separate later step), each of the three Arp modes expands into
+  its own family of sub-variants in this same menu - a DIFFERENT set of four for 1/3rd
+  than the three for 1/8th, per feedback: Up/Down/Ran for 1/8th (Arp Rising Up/Down/Ran,
+  Arp Falling Up/Down/Ran, Arp Looping Up/Down/Ran - 9 entries, turning the base 8
+  Pitch choices into 14 while a 1/8th pattern is selected), or Repeat/Up/Down/Lop for
+  1/3rd (Arp Rising Repeat/Up/Down/Lop, Arp Falling Repeat/Up/Down/Lop, Arp Looping
+  Repeat/Up/Down/Lop - 12 entries, turning the base 8 into 17 while a 1/3rd pattern is
+  selected). The menu's own item list is rebuilt live by `updatePitchMenuItems`
+  (`CT8guiPercGenerator.scd`/`CT8guiHarmonyMelodyGenerator.scd`'s own
+  `makeMonoTrackSection`) every time Dur Pat changes, picking between
+  `basePitchSymbols`/`basePitchLabels` (8), `pitchSymbols18`/`pitchLabels18` (14), and
+  `pitchSymbols13`/`pitchLabels13` (17) - `baseArpOf` always collapses
+  `~monoPitchMode[name]` back to its bare Arp symbol first (it recognizes symbols from
+  EITHER extended family), then `upVariantOf`/`repeatVariantOf` re-expands it into
+  whichever family is now showing (defaulting to that family's own first entry - Up for
+  1/8th, Repeat for 1/3rd) - so jumping directly from a 1/8th pattern to a 1/3rd one (or
+  back) renormalizes correctly too, not just toggling to/from the plain base 8, and the
+  global never ends up pointing at a symbol the currently-visible list doesn't contain.
+  Both families only change anything inside their own kind of split - the FIRST note of
+  a 1/8th split pair, or a 1/3rd triplet, still always comes from the normal Rising/
+  Falling/Looping generator call, same as every other Pit Pat; it's only the REMAINING
+  note(s) that these sub-variants touch, via `~chordStepTone` (`CT8harmonySelect.scd`)
+  in `~buildMonoTrackPattern`'s own split-handling code (`CT8tracks.scd`). For 1/8th
+  (2 notes per split): Up/Down always step one fixed direction, Ran rerolls a fresh
+  random direction per split pair, and per feedback, if the current chord has no tone
+  exactly a whole tone (2 semitones) away in that direction, it falls back to a
+  semitone, and if even that isn't a chord tone, it just repeats the first note. For
+  1/3rd (3 notes per split), per feedback ("very similar to 1/8 BUT arp rising will
+  repeat the note[,] and instead of moving by tones/semitones where possible, repeat
+  when not possible"): Repeat is its own explicit choice that just repeats the first
+  note across all 3 (the plain pre-this-feature behavior, now surfaced as a named
+  option rather than only reachable as a fallback); Up walks UP the triplet two
+  `~chordStepTone` steps in a row (note 2 from note 1, note 3 from note 2 - a tiny
+  2-step climb, each step falling back tone-then-semitone-then-repeat exactly like
+  1/8th's own Up/Down); Down mirrors it walking down; Lop arcs up then back down (note
+  2 up from note 1, note 3 down from note 2) - a little loop/arch shape across the
+  triplet, distinct from Up or Down's straight run (this exact shape for "Lop" is this
+  session's own interpretation of a deliberately terse instruction, not something the
+  user spelled out note-by-note - worth a sanity-check by ear against intent). Every
+  other Pit Pat choice, including the bare, un-suffixed Arp modes if either extended
+  pattern happens to still show them (e.g. right after `~resetMonoConfig`, before
+  `updatePitchMenuItems` has had a chance to run against the live Dur Pat), falls
+  through to the older "same pitch for every sub-hit in the split" behavior unchanged.
+  Volume is
   Fixed/Alternate for both.
   Row 3 has one fixed-width `CompositeView` per menu above (`patternSubView`/
   `pitchSubView`/`volumeSubView`, each exactly as wide as its own row-2 menu so the two
@@ -429,22 +447,26 @@ their own bullets below for exactly where the line falls:
   climb/descent/bounce resets only at the next full bar, never at a row/column-start
   within it -
   a row/column-boundary-aware version is a planned, separate, future step, per feedback.
-  `~chordStepTone.(chord, key, note, dir)` is the separate helper behind the three Arp
-  modes' own Up/Down/Ran sub-variants (only offered, in the Pitch menu, when Dur Pat is
-  one of the three 1/8th patterns - see that menu's own bullet,
-  `CT8guiPercGenerator.scd`, for the full picture): given the first note of a 1/8th
-  split pair, it derives the second - tries a whole tone (2 semitones) in `dir` (`1`
-  up, `-1` down) first, checking whether the CURRENT chord (`chord.collect { |n| (n +
-  key) % 12 }`, every tone's pitch class, not just the root) actually has a tone at
-  that pitch class; if not, falls back to a semitone in the same direction; if even
-  that isn't a chord tone, gives up and returns `note` unchanged (the pair's second
-  note just repeats the first) - per feedback: "If the structure of the current chord
-  is such that a tone is not possible it will move a semi tone. If a semi tone is not
-  possible it will repeat the first note." `~buildMonoTrackPattern`
-  (`CT8tracks.scd`) picks `dir` itself - a fixed `1`/`-1` for Up/Down, or a fresh
-  `[1, -1].choose` per split pair for Ran - and only calls this at all when Dur Pat is
-  1/8th-based AND the Pit Pat is one of the nine Up/Down/Ran symbols; every other
-  combination leaves both notes of a split pair identical, as before.
+  `~chordStepTone.(chord, key, note, dir)` is the separate helper behind both the
+  1/8th and 1/3rd Arp sub-variant families (only offered, in the Pitch menu, when Dur
+  Pat is one of those six patterns - see that menu's own bullet,
+  `CT8guiPercGenerator.scd`, for the full picture): given one note (the first note of a
+  1/8th split pair, or any note within a 1/3rd triplet), it derives the NEXT one - tries
+  a whole tone (2 semitones) in `dir` (`1` up, `-1` down) first, checking whether the
+  CURRENT chord (`chord.collect { |n| (n + key) % 12 }`, every tone's pitch class, not
+  just the root) actually has a tone at that pitch class; if not, falls back to a
+  semitone in the same direction; if even that isn't a chord tone, gives up and returns
+  `note` unchanged (that note just repeats the one before it) - per feedback: "If the
+  structure of the current chord is such that a tone is not possible it will move a
+  semi tone. If a semi tone is not possible it will repeat the first note."
+  `~buildMonoTrackPattern` (`CT8tracks.scd`) picks `dir` itself and decides how many
+  times to call this per split: for 1/8th, a fixed `1`/`-1` for Up/Down or a fresh
+  `[1, -1].choose` per split pair for Ran, called once to get the pair's second note;
+  for 1/3rd, two calls chained (Up: `1` then `1` again from the result; Down: `-1` then
+  `-1` again; Lop: `1` then `-1`) to get the triplet's second and third notes, while
+  1/3rd's own Repeat skips this helper entirely and just reuses the first note for all
+  three. Every other Pit Pat/Dur Pat combination leaves every note of a split
+  identical, as before.
   `~currentChord` is the one shared "current chord" global. Read LIVE, not
   snapshotted into a local var, by `~buildPolyPattern`
   (`HT1`, `CT8tracks.scd`); `~buildMonoTrackPattern` (`BT1`/`BT2`/`MT1`/`MT2`) also reads it, for
@@ -611,10 +633,17 @@ their own bullets below for exactly where the line falls:
   can take effect, since the server is already running by the time any `~makeXWindow`
   (including the Sound Lab's) gets called.
 
-Only four tracks are currently enabled by default — `PT1`, `PT2`, `PT3` (all three
-Percussion Generator-driven, see below) and `MT1` — out of 13 planned tracks (4
-percussion `PT1-4`, 2 bass `BT1-2`, 4 rhythm/harmony `HT1-4`, 4 melody `MT1-4`) for a
-planned generative "Daily Piece" mode. Per feedback ("I am reconsidering how I think of
+Every track starts disabled by default now, per feedback ("set things to start with all
+tracks off") - previously `PT1`/`PT2`/`PT3`/`MT1` defaulted on via `CT8tracks.scd`'s own
+`~trackEnabled` guard, and `CT8main.scd` separately forced `HT1`/`MT1`/`BT1`/`MT2` on too,
+every run; both of those are gone now, leaving `CT8tracks.scd`'s single `?? false` guard
+(TRACK REGISTRY block) as the only place a default is set, for every one of the 13
+planned tracks (4 percussion `PT1-4`, 2 bass `BT1-2`, 4 rhythm/harmony `HT1-4`, 4 melody
+`MT1-4`) for a planned generative "Daily Piece" mode uniformly. Every track that HAS a
+real builder can still be switched on by hand, either in the Percussion + Bass Generator
+window (`PT1`-`4`/`BT1`-`2`) or the Harmony + Melody Generator/Clock Toy Adjust windows
+(everything else) - see each one's own bullet, above, for exactly where its on/off button
+lives. Per feedback ("I am reconsidering how I think of
 these tracks... BT1/BT2/MT1/MT2 will be structured the same way"), `BT1`/`BT2`/`MT1`/
 `MT2` are no longer thought of as separate "bass" and "melody" track families - they're
 the four "Note" tracks (one of the project's three track families by now - Perc/Note/
@@ -627,10 +656,11 @@ bespoke builder (`~buildMelodyPattern`, with
 hand-tuned FM voicing, now gone entirely) before this change. `PT4`, `BT2`, and `HT1` (a
 chord-per-row harmony pad) also have real builders (`PT4` shares `~buildPercPattern`;
 `BT2` shares `~buildMonoTrackPattern`; `HT1` keeps its own bespoke one) and are fully
-playable - just disabled by default until toggled on in the Percussion + Bass Generator
-window (`PT4`/`BT2`, beside each one's name) or the Harmony + Melody Generator/Clock Toy
-Adjust windows (`HT1`); `MT2` defaults ON, unlike `BT2` (per feedback, "go ahead and turn
-MT2 on"); `HT2-4`/`MT3-4` are still registered but inert (no builder exists for them
+playable - just disabled by default like every other track now (see this section's own
+opening paragraph, above) until toggled on in the Percussion + Bass Generator window
+(`PT4`/`BT2`, beside each one's name) or the Harmony + Melody Generator/Clock Toy
+Adjust windows (`HT1`); `HT2-4`/`MT3-4` are still registered but inert (no builder exists
+for them
 yet). See the TRACK REGISTRY block in `CT8tracks.scd`:
 - **`~trackNames`** — all 13 track name symbols.
 - **`~trackPatterns[name]`** / **`~trackPlayers[name]`** / **`~trackEnabled[name]`** — that
@@ -793,12 +823,15 @@ a 3-note chord's root appended an octave up so it arpeggiates as 4 tones - see
 `~chordArpIntervals`'s own bullet, `CT8harmonySelect.scd`) in place of
 `~scales[~chordSet]`, so an Arp mode climbs/descends/bounces through the current
 chord's own tones rather than its parent scale's degrees. Each of the three Arp modes
-further splits into its own Up/Down/Ran sub-variant (`\arpRisingUp`/`\arpRisingDown`/
-`\arpRisingRan`, etc. - 9 symbols total) whenever this track's Dur Pat is one of the
-three 1/8th patterns - see the Pitch menu's own bullet, `CT8guiPercGenerator.scd`, and
-`~chordStepTone`'s own bullet, `CT8harmonySelect.scd`, for how those three change just
-the SECOND note of each 1/8th split pair - no separate `~bassBasePitch` any more, all
-eight base modes (seventeen counting the Up/Down/Ran sub-variants) share
+further splits into its own family of sub-variants depending on this track's Dur Pat -
+Up/Down/Ran (`\arpRisingUp`/`\arpRisingDown`/`\arpRisingRan`, etc. - 9 symbols total)
+for the three 1/8th patterns, or Repeat/Up/Down/Lop (`\arpRising3rdRepeat`/
+`\arpRising3rdUp`/`\arpRising3rdDown`/`\arpRising3rdLop`, etc. - 12 symbols total) for
+the three 1/3rd patterns - see the Pitch menu's own bullet, `CT8guiPercGenerator.scd`,
+and `~chordStepTone`'s own bullet, `CT8harmonySelect.scd`, for how each family changes
+the note(s) after the first in its own kind of split - no separate `~bassBasePitch` any
+more, every one of these base/Up/Down/Ran/Repeat/Lop modes (29 symbols in total across
+all three families) shares
 `~currentRange[name]` (`~monoRangeDefaults`, `CT8tracks.scd`: `BT1`/
 `BT2` default to 12-59, "below middle C"; `MT1`/`MT2` keep their own higher historical
 default, 60-96, even though all four are otherwise identical in structure now - nothing

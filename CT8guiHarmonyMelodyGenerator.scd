@@ -394,13 +394,15 @@
             ]
         };
 // Pitch menu - normally 8 flat entries, but per feedback the three Arp
-// modes each grow into their own Up/Down/Ran sub-variant (9 entries total)
-// whenever Dur Pat is one of the three 1/8th patterns (splitCount == 2 in
-// ~buildMonoTrackPattern, CT8tracks.scd) - that's the only place a 1/8th
-// split pair's second note can differ from its first. `pitchSymbols` (the
-// var updatePitchMenuItems keeps pointed at whichever list is current) is
-// what pitchMenu's own .action_, below, actually indexes into - not a
-// fixed literal - so it always matches whatever's currently on screen.
+// modes each grow into their own sub-variants whenever Dur Pat is one of
+// the 1/8th patterns (splitCount == 2 in ~buildMonoTrackPattern,
+// CT8tracks.scd - Up/Down/Ran, 9 entries total) or one of the 1/3rd
+// patterns (splitCount == 3 - Repeat/Up/Down/Lop, 12 entries total) -
+// those are the only two places a split's later note(s) can differ from
+// its first. `pitchSymbols` (the var updatePitchMenuItems keeps pointed at
+// whichever list is current) is what pitchMenu's own .action_, below,
+// actually indexes into - not a fixed literal - so it always matches
+// whatever's currently on screen.
         var basePitchSymbols = [
             \fixed, \random, \rising, \falling, \looping,
             \arpRising, \arpFalling, \arpLooping
@@ -409,29 +411,57 @@
             "Fixed", "Random", "Rising", "Falling", "Looping",
             "Arp Rising", "Arp Falling", "Arp Looping"
         ];
-        var extendedPitchSymbols = [
+        var pitchSymbols18 = [
             \fixed, \random, \rising, \falling, \looping,
             \arpRisingUp, \arpRisingDown, \arpRisingRan,
             \arpFallingUp, \arpFallingDown, \arpFallingRan,
             \arpLoopingUp, \arpLoopingDown, \arpLoopingRan
         ];
-        var extendedPitchLabels = [
+        var pitchLabels18 = [
             "Fixed", "Random", "Rising", "Falling", "Looping",
             "Arp Rising Up", "Arp Rising Down", "Arp Rising Ran",
             "Arp Falling Up", "Arp Falling Down", "Arp Falling Ran",
             "Arp Looping Up", "Arp Looping Down", "Arp Looping Ran"
         ];
-// Collapsing OUT of the extended list (Dur Pat no longer a 1/8th pattern)
-// strips a mode like \arpRisingUp back down to its bare \arpRising, since
-// the base list has no Up/Down/Ran entries to show it as; expanding INTO
-// the extended list does the opposite, defaulting a bare \arpRising to its
-// own \arpRisingUp (first of its three) rather than leaving it pointed at
-// a symbol the visible list doesn't contain.
+// The 1/3rd family's own four sub-variants, per feedback - "very similar
+// to 1/8 BUT arp rising will repeat the note[: Repeat is its own explicit
+// choice, not just a fallback,] and instead of moving by tones/semitones
+// where possible[, falling back to a] repeat when not possible[, that's
+// what Up/Down/Lop still do, same as 1/8]." See ~buildMonoTrackPattern's
+// own splitPitches comment, CT8tracks.scd, for exactly what Repeat/Up/
+// Down/Lop each do across a triplet's 3 notes.
+        var pitchSymbols13 = [
+            \fixed, \random, \rising, \falling, \looping,
+            \arpRising3rdRepeat, \arpRising3rdUp, \arpRising3rdDown, \arpRising3rdLop,
+            \arpFalling3rdRepeat, \arpFalling3rdUp, \arpFalling3rdDown, \arpFalling3rdLop,
+            \arpLooping3rdRepeat, \arpLooping3rdUp, \arpLooping3rdDown, \arpLooping3rdLop
+        ];
+        var pitchLabels13 = [
+            "Fixed", "Random", "Rising", "Falling", "Looping",
+            "Arp Rising Repeat", "Arp Rising Up", "Arp Rising Down", "Arp Rising Lop",
+            "Arp Falling Repeat", "Arp Falling Up", "Arp Falling Down", "Arp Falling Lop",
+            "Arp Looping Repeat", "Arp Looping Up", "Arp Looping Down", "Arp Looping Lop"
+        ];
+// Collapsing OUT of either extended list (Dur Pat no longer 1/8th- or
+// 1/3rd-based) strips a mode like \arpRisingUp or \arpRising3rdLop back
+// down to its bare \arpRising, since the base list has none of those
+// sub-variant entries to show it as; expanding INTO the 1/8th list
+// defaults a bare mode to its own Up variant (first of its three), and
+// expanding INTO the 1/3rd list defaults it to Repeat (first of its four,
+// and the closest match to the old, pre-this-feature default behavior)
+// instead - rather than leaving ~monoPitchMode[name] pointed at a symbol
+// the newly-visible list doesn't contain.
         var baseArpOf = { |sym|
             switch(sym,
                 \arpRisingUp, { \arpRising }, \arpRisingDown, { \arpRising }, \arpRisingRan, { \arpRising },
                 \arpFallingUp, { \arpFalling }, \arpFallingDown, { \arpFalling }, \arpFallingRan, { \arpFalling },
                 \arpLoopingUp, { \arpLooping }, \arpLoopingDown, { \arpLooping }, \arpLoopingRan, { \arpLooping },
+                \arpRising3rdRepeat, { \arpRising }, \arpRising3rdUp, { \arpRising },
+                \arpRising3rdDown, { \arpRising }, \arpRising3rdLop, { \arpRising },
+                \arpFalling3rdRepeat, { \arpFalling }, \arpFalling3rdUp, { \arpFalling },
+                \arpFalling3rdDown, { \arpFalling }, \arpFalling3rdLop, { \arpFalling },
+                \arpLooping3rdRepeat, { \arpLooping }, \arpLooping3rdUp, { \arpLooping },
+                \arpLooping3rdDown, { \arpLooping }, \arpLooping3rdLop, { \arpLooping },
                 { sym }
             )
         };
@@ -440,6 +470,14 @@
                 \arpRising, { \arpRisingUp },
                 \arpFalling, { \arpFallingUp },
                 \arpLooping, { \arpLoopingUp },
+                { sym }
+            )
+        };
+        var repeatVariantOf = { |sym|
+            switch(sym,
+                \arpRising, { \arpRising3rdRepeat },
+                \arpFalling, { \arpFalling3rdRepeat },
+                \arpLooping, { \arpLooping3rdRepeat },
                 { sym }
             )
         };
@@ -560,25 +598,37 @@
         updatePatternPercentVisibility.value;
 
 // Rebuilds pitchMenu's own items_/value_ to whichever of basePitchSymbols/
-// extendedPitchSymbols fits the CURRENT Dur Pat (see that pair's own
-// comment, above, for why), renormalizing ~monoPitchMode[name] across the
-// switch via baseArpOf/upVariantOf so it's never left pointing at a symbol
-// the now-visible list doesn't contain. Called once here at build time,
-// then again from patternMenu's own .action_, above, every time Dur Pat
-// changes.
+// pitchSymbols18/pitchSymbols13 fits the CURRENT Dur Pat (see that trio's
+// own comment, above, for why), renormalizing ~monoPitchMode[name] across
+// the switch via baseArpOf/upVariantOf/repeatVariantOf so it's never left
+// pointing at a symbol the now-visible list doesn't contain - always
+// collapsing to the bare mode first (baseArpOf handles symbols from
+// EITHER extended list) before re-expanding into whichever list is now
+// showing, so jumping directly between a 1/8th and a 1/3rd pattern
+// normalizes correctly too, not just toggling to/from the base 8. Called
+// once here at build time, then again from patternMenu's own .action_,
+// above, every time Dur Pat changes.
         updatePitchMenuItems = {
             var is1_8 = #[
                 \random8thPercent, \random8thLastBar, \random8thLastRowCol
             ].includes(~monoPattern[name]);
-            var mode = ~monoPitchMode[name];
+            var is1_3 = #[
+                \random3rdPercent, \random3rdLastBar, \random3rdLastRowCol
+            ].includes(~monoPattern[name]);
+            var mode = baseArpOf.(~monoPitchMode[name]);
             if(is1_8) {
                 mode = upVariantOf.(mode);
-                pitchSymbols = extendedPitchSymbols;
-                pitchMenu.items_(extendedPitchLabels);
+                pitchSymbols = pitchSymbols18;
+                pitchMenu.items_(pitchLabels18);
             } {
-                mode = baseArpOf.(mode);
-                pitchSymbols = basePitchSymbols;
-                pitchMenu.items_(basePitchLabels);
+                if(is1_3) {
+                    mode = repeatVariantOf.(mode);
+                    pitchSymbols = pitchSymbols13;
+                    pitchMenu.items_(pitchLabels13);
+                } {
+                    pitchSymbols = basePitchSymbols;
+                    pitchMenu.items_(basePitchLabels);
+                };
             };
             ~monoPitchMode[name] = mode;
             pitchMenu.value_(pitchSymbols.indexOf(mode) ? 0);

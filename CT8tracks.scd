@@ -366,20 +366,14 @@
 // unbuilt/not-playing track should read as. Only ~trackEnabled (the user's
 // on/off choice) needs a real default, so it survives re-evaluation sanely.
 ~trackNames.do { |name|
-// Only PT1/PT2/PT3 default on here - PT4/BT1/BT2/HT1/MT1/MT2 all have real
-// builders too (~buildPercPattern/~buildMonoTrackPattern/
-// ~buildPolyPattern) but default off regardless, by THIS guard - kept
-// as optional slots rather than because they don't exist. CT8main.scd
-// then unconditionally forces HT1/MT1/BT1/MT2 on anyway, every run (not
-// just the first) - see its own comment for why MT2 joined that list, per
-// feedback ("go ahead and turn MT2 on"). Everything else not listed
-// anywhere (HT2-4/MT3-4, which genuinely have no builder yet) defaults
-// off for that reason instead. All can still be switched on by hand,
-// either in the Percussion Generator window (PT1-4/BT1-2) or the Harmony
-// + Melody Generator/Clock Toy Adjust windows (everything else).
-    ~trackEnabled[name] = ~trackEnabled[name] ? (
-        (name == \PT1) or: { name == \PT2 } or: { name == \PT3 }
-    );
+// Every track defaults off now, per feedback ("set things to start with
+// all tracks off") - previously PT1/PT2/PT3 defaulted on here, and
+// CT8main.scd separately forced HT1/MT1/BT1/MT2 on too, every run; both of
+// those are gone now (see CT8main.scd's own RUNTIME PARAMETERS comment).
+// All thirteen tracks can still be switched on by hand, either in the
+// Percussion Generator window (PT1-4/BT1-2) or the Harmony + Melody
+// Generator/Clock Toy Adjust windows (everything else).
+    ~trackEnabled[name] = ~trackEnabled[name] ? false;
 };
 
 // ---------------------------------------------------------------------------
@@ -1115,7 +1109,10 @@
                     ~currentChord, ~scales[~chordSet], ~currentRange[name][0], ~currentRange[name][1]
                 );
             };
-            if(#[\arpRising, \arpRisingUp, \arpRisingDown, \arpRisingRan].includes(~monoPitchMode[name])) {
+            if(#[
+                \arpRising, \arpRisingUp, \arpRisingDown, \arpRisingRan,
+                \arpRising3rdRepeat, \arpRising3rdUp, \arpRising3rdDown, \arpRising3rdLop
+            ].includes(~monoPitchMode[name])) {
                 risingGen = ~makeRisingPitchGen.(
                     ~currentChord, ~chordArpIntervals.(~currentChord),
                     ~currentRange[name][0], ~currentRange[name][1]
@@ -1126,7 +1123,10 @@
                     ~currentChord, ~scales[~chordSet], ~currentRange[name][0], ~currentRange[name][1]
                 );
             };
-            if(#[\arpFalling, \arpFallingUp, \arpFallingDown, \arpFallingRan].includes(~monoPitchMode[name])) {
+            if(#[
+                \arpFalling, \arpFallingUp, \arpFallingDown, \arpFallingRan,
+                \arpFalling3rdRepeat, \arpFalling3rdUp, \arpFalling3rdDown, \arpFalling3rdLop
+            ].includes(~monoPitchMode[name])) {
                 fallingGen = ~makeFallingPitchGen.(
                     ~currentChord, ~chordArpIntervals.(~currentChord),
                     ~currentRange[name][0], ~currentRange[name][1]
@@ -1137,7 +1137,10 @@
                     ~currentChord, ~scales[~chordSet], ~currentRange[name][0], ~currentRange[name][1]
                 );
             };
-            if(#[\arpLooping, \arpLoopingUp, \arpLoopingDown, \arpLoopingRan].includes(~monoPitchMode[name])) {
+            if(#[
+                \arpLooping, \arpLoopingUp, \arpLoopingDown, \arpLoopingRan,
+                \arpLooping3rdRepeat, \arpLooping3rdUp, \arpLooping3rdDown, \arpLooping3rdLop
+            ].includes(~monoPitchMode[name])) {
                 loopingGen = ~makeLoopingPitchGen.(
                     ~currentChord, ~chordArpIntervals.(~currentChord),
                     ~currentRange[name][0], ~currentRange[name][1]
@@ -1149,11 +1152,11 @@
 // above with ~chordArpIntervals.(~currentChord) (the current chord's own
 // tones) instead of ~scales[~chordSet] (the current chord's parent
 // scale) as the list of offsets to step through. Their own Up/Down/Ran
-// sub-variants (only offered in the Pitch menu when Dur Pat is one of the
-// three 1/8th patterns - see the splitPitches comment below) resolve this
-// SAME generator call for the first note of a split pair; the sub-variant
-// suffix only matters once the second note gets derived from the first,
-// further down.
+// sub-variants (1/8th patterns only) and Repeat/Up/Down/Lop sub-variants
+// (1/3 patterns only - see the splitPitches comment below for both) all
+// resolve this SAME generator call for the first note of a split; the
+// sub-variant suffix only matters once the remaining note(s) get derived
+// from it, further down.
             pitchFor = { |idx|
                 switch(~monoPitchMode[name],
                     \fixed, { fixedNote },
@@ -1163,16 +1166,28 @@
                     \arpRisingUp, { risingGen.value },
                     \arpRisingDown, { risingGen.value },
                     \arpRisingRan, { risingGen.value },
+                    \arpRising3rdRepeat, { risingGen.value },
+                    \arpRising3rdUp, { risingGen.value },
+                    \arpRising3rdDown, { risingGen.value },
+                    \arpRising3rdLop, { risingGen.value },
                     \falling, { fallingGen.value },
                     \arpFalling, { fallingGen.value },
                     \arpFallingUp, { fallingGen.value },
                     \arpFallingDown, { fallingGen.value },
                     \arpFallingRan, { fallingGen.value },
+                    \arpFalling3rdRepeat, { fallingGen.value },
+                    \arpFalling3rdUp, { fallingGen.value },
+                    \arpFalling3rdDown, { fallingGen.value },
+                    \arpFalling3rdLop, { fallingGen.value },
                     \looping, { loopingGen.value },
                     \arpLooping, { loopingGen.value },
                     \arpLoopingUp, { loopingGen.value },
                     \arpLoopingDown, { loopingGen.value },
-                    \arpLoopingRan, { loopingGen.value }
+                    \arpLoopingRan, { loopingGen.value },
+                    \arpLooping3rdRepeat, { loopingGen.value },
+                    \arpLooping3rdUp, { loopingGen.value },
+                    \arpLooping3rdDown, { loopingGen.value },
+                    \arpLooping3rdLop, { loopingGen.value }
                 )
             };
             while ({ slotI < baseSlotIdx.size }) {
@@ -1204,17 +1219,14 @@
                     };
                     if(shouldSplit) {
 // Per feedback: when the Dur Pat is one of the three 1/8th patterns
-// (splitCount == 2 - the 1/3 and 4/3 patterns don't get this yet, a
-// planned separate later pass) AND the Pit Pat is one of the Arp
-// Rising/Falling/Looping Up/Down/Ran sub-variants, the SECOND of the
-// split pair's two notes isn't just a repeat of the first - it's derived
-// from it via ~chordStepTone (CT8harmonySelect.scd): a tone (2 semitones)
-// in the given direction if the current chord has a tone there, else a
+// (splitCount == 2) AND the Pit Pat is one of the Arp Rising/Falling/
+// Looping Up/Down/Ran sub-variants, the SECOND of the split pair's two
+// notes isn't just a repeat of the first - it's derived from it via
+// ~chordStepTone (CT8harmonySelect.scd): a tone (2 semitones) in the
+// given direction if the current chord has a tone there, else a
 // semitone, else the same note repeated after all. Up/Down always step
 // that one fixed direction; Ran rerolls a fresh random direction for
-// every split pair. Every other Pit Pat (including the bare, un-suffixed
-// \arpRising/\arpFalling/\arpLooping, and every non-Arp mode) falls
-// through to the plain "same pitch for both halves" behavior unchanged.
+// every split pair.
                         var splitDir = switch(~monoPitchMode[name],
                             \arpRisingUp, { 1 }, \arpFallingUp, { 1 }, \arpLoopingUp, { 1 },
                             \arpRisingDown, { -1 }, \arpFallingDown, { -1 }, \arpLoopingDown, { -1 },
@@ -1223,10 +1235,52 @@
                             \arpLoopingRan, { [1, -1].choose },
                             { nil }
                         );
+// The three 1/3rd patterns (splitCount == 3) get their own four
+// sub-variants instead - Repeat/Up/Down/Lop, "very similar to 1/8 BUT"
+// (per feedback) Repeat is an explicit choice that always just repeats
+// the first note across all 3 (the plain behavior every Pit Pat had
+// before this whole feature), rather than only falling back to a repeat
+// when a step isn't available the way Up/Down/Lop do. Up walks UP the
+// triplet two steps in a row (note2 from note1, note3 from note2, each
+// via ~chordStepTone same as the 1/8th family); Down mirrors it walking
+// down; Lop arcs up then back down (note2 up from note1, note3 down from
+// note2) - a little loop/arch shape across the triplet, distinct from
+// a straight Up or Down run.
+                        var third = switch(~monoPitchMode[name],
+                            \arpRising3rdRepeat, { \repeat }, \arpFalling3rdRepeat, { \repeat }, \arpLooping3rdRepeat, { \repeat },
+                            \arpRising3rdUp, { \up }, \arpFalling3rdUp, { \up }, \arpLooping3rdUp, { \up },
+                            \arpRising3rdDown, { \down }, \arpFalling3rdDown, { \down }, \arpLooping3rdDown, { \down },
+                            \arpRising3rdLop, { \lop }, \arpFalling3rdLop, { \lop }, \arpLooping3rdLop, { \lop },
+                            { nil }
+                        );
+// Every other Pit Pat (including the bare, un-suffixed \arpRising/
+// \arpFalling/\arpLooping, and every non-Arp mode) falls through to the
+// plain "same pitch for every sub-hit" behavior unchanged.
                         var splitPitches = if((splitCount == 2) and: { splitDir.notNil }) {
                             [pitch, ~chordStepTone.(~currentChord, ~currentKey, pitch, splitDir)];
                         } {
-                            Array.fill(splitCount, { pitch });
+                            if((splitCount == 3) and: { third.notNil }) {
+                                switch(third,
+                                    \repeat, { [pitch, pitch, pitch] },
+                                    \up, {
+                                        var n2 = ~chordStepTone.(~currentChord, ~currentKey, pitch, 1);
+                                        var n3 = ~chordStepTone.(~currentChord, ~currentKey, n2, 1);
+                                        [pitch, n2, n3];
+                                    },
+                                    \down, {
+                                        var n2 = ~chordStepTone.(~currentChord, ~currentKey, pitch, -1);
+                                        var n3 = ~chordStepTone.(~currentChord, ~currentKey, n2, -1);
+                                        [pitch, n2, n3];
+                                    },
+                                    \lop, {
+                                        var n2 = ~chordStepTone.(~currentChord, ~currentKey, pitch, 1);
+                                        var n3 = ~chordStepTone.(~currentChord, ~currentKey, n2, -1);
+                                        [pitch, n2, n3];
+                                    }
+                                );
+                            } {
+                                Array.fill(splitCount, { pitch });
+                            };
                         };
                         durs = durs.addAll(Array.fill(splitCount, { span / splitCount }));
                         pitches = pitches.addAll(splitPitches);

@@ -88,15 +88,6 @@ if(
     Error("A CT8 file failed to load - check the post window above for the actual error.").throw;
 };
 
-// set current tracks true
-~trackEnabled[\PT1] = true;
-~trackEnabled[\PT2] = true;
-~trackEnabled[\PT3] = true;
-~trackEnabled[\HT1] = true;
-~trackEnabled[\MT1] = true;
-~trackEnabled[\MT2] = true;
-~trackEnabled[\BT1] = true;
-
 // ---------------------------------------------------------------------------
 // 2. CLEAN UP ANY PREVIOUS RUN
 // If the previous synth file defined ~stopAll, call it to dispose of the old engine.
@@ -119,14 +110,10 @@ CmdPeriod.add(~closeWindowsOnCmdPeriod);
 // ---------------------------------------------------------------------------
 // 3. RUNTIME PARAMETERS
 
-// set current tracks true
-~trackEnabled[\PT1] = true;
-~trackEnabled[\PT2] = true;
-~trackEnabled[\PT3] = true;
-~trackEnabled[\HT1] = true;
-~trackEnabled[\MT1] = true;
-~trackEnabled[\MT2] = true;
-~trackEnabled[\BT1] = true;
+// Every track starts OFF, per feedback - CT8tracks.scd's own ~trackEnabled
+// default guard (TRACK REGISTRY section) already sets every track to
+// false; nothing here overrides it any more. All thirteen can still be
+// switched on by hand once the windows are up.
 
 ~twelveHourClock = true;  // false makes it a 24-hour clock
 ~runningRealTime = true;  // false starts the clock at a fixed time and advances it using ~fakeSecond
