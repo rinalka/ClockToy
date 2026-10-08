@@ -55,11 +55,16 @@
 //          from every label and a 4/3 "merge 4 beats into 3" family added
 //          (First beat only - percussion only/Every beat/Start of Row-or-
 //          Col/the six 1/8th-1/3rd split variants/the three 4/3 merge
-//          variants/Skip %); Pitch is Fixed/Rising at start/Random for
-//          percussion (its own separate Hz-based scheme); Fixed/Random/
-//          Rising for bass (chord/scale-based - see ~buildMonoTrackPattern's
-//          own comment, CT8tracks.scd); Volume is Fixed/Alternate for
-//          both.
+//          variants/Skip %); Pitch is Fixed/Rising at start/Random/Falling
+//          at start for percussion (its own separate Hz-based scheme -
+//          Falling is Rising's mirror: starts at hi, steps down toward lo
+//          in the same 8 fixed steps, but WRAPS back to hi once it goes
+//          below lo, rather than clamping and staying there the way Rising
+//          does); Fixed/Random/Rising/Falling for bass, in that menu order
+//          (chord/scale-based - see ~buildMonoTrackPattern's
+//          own comment, CT8tracks.scd, and ~chordTopInRange/
+//          ~makeFallingPitchGen, CT8harmonySelect.scd's own comment);
+//          Volume is Fixed/Alternate for both.
 //   Row 3: one sub-control per menu above, in three same-width columns so
 //          each lines up under its own menu:
 //            - Under Pattern: a Percent Slider (visible for every "%"-
@@ -335,10 +340,10 @@
                 statusText.string_("Changed - not yet applied.");
             });
         pitchMenu = PopUpMenu(rightPane, 120@22)
-            .items_(["Fixed", "Rising at start", "Random"])
-            .value_([\fixed, \rising, \random].indexOf(~percPitchMode[name]) ? 0)
+            .items_(["Fixed", "Rising at start", "Random", "Falling at start"])
+            .value_([\fixed, \rising, \random, \falling].indexOf(~percPitchMode[name]) ? 0)
             .action_({ |m|
-                ~percPitchMode[name] = [\fixed, \rising, \random][m.value];
+                ~percPitchMode[name] = [\fixed, \rising, \random, \falling][m.value];
                 statusText.string_("Changed - not yet applied.");
             });
         volumeMenu = PopUpMenu(rightPane, 120@22)
@@ -585,10 +590,10 @@
                 statusText.string_("Changed - not yet applied.");
             });
         pitchMenu = PopUpMenu(rightPane, 120@22)
-            .items_(["Fixed", "Random", "Rising"])
-            .value_([\fixed, \random, \rising].indexOf(~monoPitchMode[name]) ? 0)
+            .items_(["Fixed", "Random", "Rising", "Falling"])
+            .value_([\fixed, \random, \rising, \falling].indexOf(~monoPitchMode[name]) ? 0)
             .action_({ |m|
-                ~monoPitchMode[name] = [\fixed, \random, \rising][m.value];
+                ~monoPitchMode[name] = [\fixed, \random, \rising, \falling][m.value];
                 statusText.string_("Changed - not yet applied.");
             });
         volumeMenu = PopUpMenu(rightPane, 120@22)

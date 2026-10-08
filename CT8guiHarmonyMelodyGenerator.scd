@@ -473,10 +473,10 @@
                 statusText.string_("Changed - not yet applied.");
             });
         pitchMenu = PopUpMenu(rightPane, 120@22)
-            .items_(["Fixed", "Random", "Rising"])
-            .value_([\fixed, \random, \rising].indexOf(~monoPitchMode[name]) ? 0)
+            .items_(["Fixed", "Random", "Rising", "Falling"])
+            .value_([\fixed, \random, \rising, \falling].indexOf(~monoPitchMode[name]) ? 0)
             .action_({ |m|
-                ~monoPitchMode[name] = [\fixed, \random, \rising][m.value];
+                ~monoPitchMode[name] = [\fixed, \random, \rising, \falling][m.value];
                 statusText.string_("Changed - not yet applied.");
             });
         volumeMenu = PopUpMenu(rightPane, 120@22)

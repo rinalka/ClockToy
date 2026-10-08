@@ -301,6 +301,45 @@
     };
 };
 
+// Falling's own deterministic starting point - the mirror of
+// ~chordRootInRange: same chord[0] pitch class, transposed by
+// ~currentKey, but the HIGHEST matching octave inside [lo, hi] instead of
+// the lowest, since Falling starts at the top of the range and descends.
+~chordTopInRange = { |chord, lo, hi|
+    var pitchClass = (chord[0] + ~currentKey) % 12;
+    var loI = lo.ceil.asInteger;
+    var hiI = hi.floor.asInteger;
+    var candidates = (loI..hiI).select { |n| (n % 12) == pitchClass };
+    candidates.last;
+};
+
+// The mirror of ~makeRisingPitchGen, for the Falling pitch mode (Note
+// tracks - BT1/BT2/MT1/MT2): starts at ~chordTopInRange's own note (the
+// TOP of the range, not the bottom), then each later call descends one
+// degree further down ~scales[scaleSet], extending into lower octaves
+// once the scale's 7 degrees are exhausted. Once the next degree would
+// land below `lo`, the descent wraps back to the start note and begins
+// again - same "starts over" rule ~makeRisingPitchGen uses, just upside
+// down. Same reset rule too: only at the next full bar, never at a
+// row/column-start within it.
+~makeFallingPitchGen = { |chord, scaleSet, lo, hi|
+    var scale = ~scales[scaleSet];
+    var startNote = ~chordTopInRange.(chord, lo, hi);
+    var stepIdx = 0;
+    {
+        var octave = stepIdx div: scale.size;
+        var degree = stepIdx mod: scale.size;
+        var candidate = startNote - scale[degree] - (octave * 12);
+        if(candidate < lo) {
+            candidate = startNote;
+            stepIdx = 1;
+        } {
+            stepIdx = stepIdx + 1;
+        };
+        candidate;
+    };
+};
+
 // ~currentChord is the one shared "current chord". Read LIVE (not
 // snapshotted into a local var, so a change is heard on the very next
 // note) by ~buildPolyPattern (HT1), CT8tracks.scd; ~buildMonoTrackPattern

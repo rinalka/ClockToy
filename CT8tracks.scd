@@ -91,6 +91,10 @@
 //     \rising - resets to lo at every start, then climbs toward hi in 8
 //       fixed steps per hit after that (clipped at hi - see this function's
 //       own basePitches comment for why 8 specifically).
+//     \falling - Rising's mirror, per feedback: resets to hi at every
+//       start, then steps DOWN toward lo in the same 8 fixed steps, but
+//       WRAPS back to hi (not clamping) once it would go below lo - see
+//       this function's own basePitches comment for the exact rule.
 //     \random - anywhere in [lo, hi], chosen independently each hit - no
 //       chord-aware selection yet, that's a planned future step (unlike
 //       BT1/BT2's own Random pitch mode, which already is).
@@ -235,7 +239,7 @@
 //     standard pitch-key handling converts it to \freq for us), so there's
 //     no per-instrument pitch-ARG-name dispatch the way baseD/cym/hat/kick
 //     need (~buildPercPattern's pitchArgName switch). Pitch doesn't even
-//     need its own ~bassBasePitch any more - all three pitch modes read
+//     need its own ~bassBasePitch any more - all four pitch modes read
 //     ~currentRange[name] directly (CT8harmonySelect.scd), the exact same
 //     global HT1/MT1 use for their own chord-note picks: Fixed is
 //     ~chordRootInRange (the chord's own root note, deterministic, not a
@@ -245,7 +249,10 @@
 //     would give, then climbs ~scales[~chordSet] one degree per baseline
 //     slot - not per row/column-start - wrapping back to the root once
 //     the climb would exceed the range's high end, and resetting fully
-//     only at the next bar). Both instruments also just take a plain
+//     only at the next bar); Falling is ~makeFallingPitchGen, its mirror -
+//     starts at the TOP of the range (~chordTopInRange) and descends
+//     instead, wrapping back to the top once it would go below the
+//     range's low end. Both instruments also just take a plain
 //     \amp key for their output level, so there's no per-instrument
 //     amp-arg-name dispatch needed either (unlike pitch/amp-arg dispatch
 //     being two separate concerns for baseD/cym/hat/kick).
@@ -400,7 +407,7 @@
         ~trackPatterns[name] = Pbind(\dur, 1, \type, \rest);
     } {
         var startIdx = [];
-        var baseSlotIdx, basePitches, pitchOffset = 0;
+        var baseSlotIdx, basePitches, pitchOffset = 0, fallSteps = 0;
         var durs = [], pitches = [], restFlags = [], amps = [];
         var beatIndex = 0, ampIndex = 0, nextAmp;
         var instrument = ~percInstrument[name];
@@ -444,16 +451,26 @@
 // a row/column span, in 8 fixed steps (an arbitrary subdivision, not
 // derived from how many slots the span actually has - a span shorter than
 // 8 slots just doesn't reach hi before the next reset), resetting to lo at
-// every genuine start. This is the ONLY place pitchOffset changes. Computed
-// once per baseline slot, before any random splitting below - a slot split
-// into a double hit or triplet gives every one of those hits the same
-// pitch, rather than advancing mid-split.
+// every genuine start, then CLAMPING at hi once reached (stays there for
+// the rest of the span) - this is the ONLY place pitchOffset changes.
+// \falling is Rising's mirror, per feedback - starts at hi and steps DOWN
+// toward lo in the same 8 fixed steps, but WRAPS back to hi (not clamping)
+// once it would go below lo, so a span longer than 8 slots hears the
+// descent repeat rather than sitting at lo for the remainder; fallSteps
+// (separate from pitchOffset, which \rising still owns alone) tracks steps
+// taken since the last reset/wrap - reset to 0 at every genuine start,
+// same as pitchOffset, and reset to 1 (not 0) on a wrap, so the following
+// hit continues from the SECOND step rather than repeating hi twice in a
+// row. Computed once per baseline slot, before any random splitting below
+// - a slot split into a double hit or triplet gives every one of those
+// hits the same pitch, rather than advancing mid-split.
         basePitches = baseSlotIdx.collect { |idx|
             var isStart = startIdx.includes(idx);
             var lo = ~percBasePitch[name][0];
             var hi = ~percBasePitch[name][1];
             if(isStart) {
                 pitchOffset = 0;
+                fallSteps = 0;
             } {
                 if(~percPitchMode[name] == \rising) {
                     pitchOffset = pitchOffset + ((hi - lo) / 8);
@@ -462,6 +479,16 @@
             switch(~percPitchMode[name],
                 \fixed, { hi },
                 \rising, { (lo + pitchOffset).min(hi) },
+                \falling, {
+                    var candidate = hi - (fallSteps * ((hi - lo) / 8));
+                    if(candidate < lo) {
+                        fallSteps = 1;
+                        hi;
+                    } {
+                        fallSteps = fallSteps + 1;
+                        candidate;
+                    }
+                },
                 \random, { rrand(lo, hi) }
             )
         };
@@ -1034,7 +1061,7 @@
 // groups.
         {
             var pitchFor, slotI = 0;
-            var fixedNote, risingGen;
+            var fixedNote, risingGen, fallingGen;
             if(~monoPitchMode[name] == \fixed) {
                 fixedNote = ~chordRootInRange.(~currentChord, ~currentRange[name][0], ~currentRange[name][1]);
             };
@@ -1043,11 +1070,17 @@
                     ~currentChord, ~chordSet, ~currentRange[name][0], ~currentRange[name][1]
                 );
             };
+            if(~monoPitchMode[name] == \falling) {
+                fallingGen = ~makeFallingPitchGen.(
+                    ~currentChord, ~chordSet, ~currentRange[name][0], ~currentRange[name][1]
+                );
+            };
             pitchFor = { |idx|
                 switch(~monoPitchMode[name],
                     \fixed, { fixedNote },
                     \random, { ~chordNoteInRange.(~currentChord, ~currentRange[name][0], ~currentRange[name][1]) },
-                    \rising, { risingGen.value }
+                    \rising, { risingGen.value },
+                    \falling, { fallingGen.value }
                 )
             };
             while ({ slotI < baseSlotIdx.size }) {

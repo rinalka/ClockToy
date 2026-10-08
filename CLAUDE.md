@@ -166,10 +166,14 @@ their own bullets below for exactly where the line falls:
   rebuild - it used to be a fixed, non-adjustable ~1/4, now it shares the same Percent
   slider/global as the "%" split/merge patterns above, so switching between any of them
   keeps whichever percent was already set). Pitch is Fixed/Rising at
-  start/Random for percussion (its own separate Hz-based scheme - unrelated to the
-  below); Fixed/Random/Rising for bass, in that menu order (chord/scale-based - see
+  start/Random/Falling at start for percussion (its own separate Hz-based scheme -
+  unrelated to the below; Falling is Rising's mirror, per feedback - starts at `hi`
+  and steps down toward `lo` in the same 8 fixed steps, but WRAPS back to `hi` once
+  it would go below `lo`, rather than clamping and staying there the way Rising does);
+  Fixed/Random/Rising/Falling for bass, in that menu order (chord/scale-based - see
   `~buildMonoTrackPattern`'s own bullet, `CT8tracks.scd`, and `~chordRootInRange`/
-  `~makeRisingPitchGen`, `CT8harmonySelect.scd`'s own bullet). Volume is
+  `~chordTopInRange`/`~makeRisingPitchGen`/`~makeFallingPitchGen`, `CT8harmonySelect.scd`'s
+  own bullet). Volume is
   Fixed/Alternate for both.
   Row 3 has one fixed-width `CompositeView` per menu above (`patternSubView`/
   `pitchSubView`/`volumeSubView`, each exactly as wide as its own row-2 menu so the two
@@ -191,7 +195,10 @@ their own bullets below for exactly where the line falls:
   `CT8tracks.scd`, for the exact rule per mode) - Fixed reads `hi`; Random picks
   anywhere in `[lo, hi]` (chord-aware for bass, via `~chordNoteInRange`; plain `rrand`
   for percussion); Rising (percussion only) climbs from `lo` toward `hi` in 8 fixed
-  steps per hit, resetting at every row/column start. Because the same slider means
+  steps per hit, resetting at every row/column start; Falling (percussion only) is its
+  mirror, resetting to `hi` at every row/column start and stepping down toward `lo` in
+  the same 8 fixed steps, but wrapping back to `hi` (not clamping, the way Rising does)
+  once it would go below `lo`. Because the same slider means
   something sensible in every mode, it stays visible across all of them - nothing to
   show or hide here any more, unlike the old mode-specific widget-swapping.
   Under Volume, the same idea: one dual-handle `RangeSlider` (+ readout) for
@@ -344,10 +351,17 @@ their own bullets below for exactly where the line falls:
   octaves once the scale's 7 degrees are exhausted; once the next degree would land above
   `hi`, it wraps back to the start note and climbs again ("the whole thing starts over,"
   per feedback, not clamping and staying there the way percussion's own, unrelated Rising
-  pitch mode does). A fresh generator is made once per rebuild (same as the plain
+  pitch mode does). `~chordTopInRange.(chord, lo, hi)` is `~chordRootInRange`'s own
+  mirror, for Falling - same approach but the HIGHEST matching octave inside `[lo, hi]`,
+  since Falling starts at the top of the range and descends.
+  `~makeFallingPitchGen.(chord, scaleSet, lo, hi)` is `~makeRisingPitchGen`'s mirror:
+  starts at `~chordTopInRange`'s own note, descends `~scales[scaleSet]` one degree per
+  call (extending into LOWER octaves), and wraps back to the top once the next degree
+  would land below `lo`. A fresh generator (either one) is made once per rebuild (same
+  as the plain
   `durs`/pitch arrays every chord-aware track already pre-resolves once per bar), so the
-  climb resets only at the next full bar, never at a row/column-start within it - a
-  row/column-boundary-aware version is a planned, separate, future step, per feedback.
+  climb/descent resets only at the next full bar, never at a row/column-start within it -
+  a row/column-boundary-aware version is a planned, separate, future step, per feedback.
   `~currentChord` is the one shared "current chord" global. Read LIVE, not
   snapshotted into a local var, by `~buildPolyPattern`
   (`HT1`, `CT8tracks.scd`); `~buildMonoTrackPattern` (`BT1`/`BT2`/`MT1`/`MT2`) also reads it, for
@@ -679,13 +693,15 @@ key (no per-instrument pitch-arg-name dispatch needed, unlike `~buildPercPattern
 `pitchArgName` switch) and a plain `\amp` key (no amp-arg-name dispatch either).
 `~monoPitchMode[name]` is Fixed (`~chordRootInRange` -
 the chord's own root note, deterministic, not a random pick), Random (`~chordNoteInRange`
-- any chord tone, any octave, re-picked per baseline slot), or Rising
+- any chord tone, any octave, re-picked per baseline slot), Rising
 (`~makeRisingPitchGen` - starts at the same root `~chordRootInRange` would give, then
 climbs `~scales[~chordSet]` one degree per baseline slot, not per row/column-start,
 wrapping back to the root once the climb would exceed the range's high end, and
 resetting fully only at the next bar - see that function's own bullet,
-`CT8harmonySelect.scd`, for the exact rule) - no separate `~bassBasePitch` any more, all
-three modes share `~currentRange[name]` (`~monoRangeDefaults`, `CT8tracks.scd`: `BT1`/
+`CT8harmonySelect.scd`, for the exact rule), or Falling (`~makeFallingPitchGen`/
+`~chordTopInRange` - the mirror of Rising: starts at the TOP of the range instead and
+descends, same reset/wrap rules otherwise) - no separate `~bassBasePitch` any more, all
+four modes share `~currentRange[name]` (`~monoRangeDefaults`, `CT8tracks.scd`: `BT1`/
 `BT2` default to 12-59, "below middle C"; `MT1`/`MT2` keep their own higher historical
 default, 60-96, even though all four are otherwise identical in structure now - nothing
 about "Note track" forces every one of them into the same register), the same
@@ -693,9 +709,10 @@ global `HT1` reads live, just resolved once per rebuild here instead - so a mid-
 chord change isn't heard on any of the four until their next rebuild, unlike `HT1`'s
 live per-hit read. Per feedback, which split/merge group a hit falls under (the six
 1/8th-1/3rd/4/3
-families) doesn't yet change how Rising advances - every hit in one such group still
-shares its one pitch/one climb-step, same "same pitch throughout the group" rule Fixed/
-Random already followed - pending a separate, later pass specifically on that. `\fx`
+families) doesn't yet change how Rising/Falling advances - every hit in one such group
+still shares its one pitch/one climb-or-descent-step, same "same pitch throughout the
+group" rule Fixed/Random already followed - pending a separate, later pass specifically
+on that. `\fx`
 reaches `~clockRev` through `\fm`'s real `fx`/`fxsend` send (ignored by `\plucking`, which
 has no `\fx` arg - its own hardcoded, independently-attenuated `~revBus` send, via its
 own `dynamic` arg, is separate and untouched either way - see `CT8synths.scd`'s bullet);
