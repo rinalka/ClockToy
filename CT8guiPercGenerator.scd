@@ -116,8 +116,9 @@
 // resizable:true (unlike the old fixed-size window) in case a shorter
 // screen still can't show all of it at once. 1360 -> 1060: each block
 // shrank by 50px (190 -> 140, from the Mix/Vol/Dry/Rev sliders going 130
-// -> 90) - 50 * 6 blocks = 300px saved overall.
-    var percGenHeight = 1060;
+// -> 90) - 50 * 6 blocks = 300px saved overall. 1060 -> 1124: BT1/BT2's
+// two blocks each grew by 32px (140 -> 172) for the new COPY TRACK ROW.
+    var percGenHeight = 1124;
 // Fixed top-left position rather than derived from ~adjustWindow's bounds
 // (as this used to be) - at this height, inheriting ~adjustWindow's
 // vertical position (itself already offset above the main clock window,
@@ -473,6 +474,18 @@
         var percentSlider, percentReadout, updatePatternPercentVisibility;
         var pitchRangeSlider, pitchRangeReadout, updatePitchRangeReadout;
         var volumeRangeSlider, volumeRangeReadout, updateVolumeRangeReadout;
+// COPY TRACK ROW - see the TRACK COPY section, CT8tracks.scd, for what
+// each of these three widgets actually drives (~copyTrackButtonPressed/
+// ~copyPlaybackMenuAction/~copyStopPlaybackPressed); refreshCopyUi is this
+// track's own redraw closure, registered into ~copyButtonRefreshers so
+// ~refreshAllCopyButtons can reach it from anywhere, including from
+// MT1/MT2's own copy of this same block in a different window entirely
+// (CT8guiHarmonyMelodyGenerator.scd).
+        var copyButton, copyMenu, copyStopButton, refreshCopyUi;
+        var copyChoiceSymbols = [\nextBar, \nextRowCol, \nextBeat];
+        var copyMenuLabelsFor = { |source|
+            ["Next Bar", "Next " ++ (if(source == \row) { "Row" } { "Col" }), "Next Beat"]
+        };
 // Same flattened Pattern list as percussion's patternSymbols/patternLabelsFor
 // (see makeTrackSection, above), minus \firstBeat - not a useful choice for
 // a bass part, per feedback.
@@ -590,8 +603,10 @@
 // Shrunk from 190 along with leftPane/rightPane and the Mix/Vol/Dry/Rev
 // sliders below (130 -> 90, ~30% shorter, per feedback) - the freed-up
 // height let every one of the six track blocks (and so the window itself)
-// get considerably shorter too.
-        trackContainer = CompositeView(~percGeneratorWindow, 600@140).background_(trackColor);
+// get considerably shorter too. 140 -> 172 now, to fit the new COPY TRACK
+// ROW (below) as a fourth row in rightPane without crowding the existing
+// three.
+        trackContainer = CompositeView(~percGeneratorWindow, 600@172).background_(trackColor);
 // No decorator on trackContainer itself - see makeTrackSection's own
 // comment for why leftPane/rightPane get explicit Rects instead.
         ~percGeneratorWindow.view.decorator.nextLine;
@@ -610,7 +625,9 @@
 // component-wise rather than `trackColor * 0.8`, which crashes (Color has
 // no `*` operator for a plain number) and was taking down the whole
 // window build the instant it ran, on literally the first track.
-        leftPane = CompositeView(trackContainer, Rect(484, 6, 110, 128)).background_(
+// Height 160, not 128 - matches rightPane's own +32 (below), so the two
+// panes still line up edge-to-edge now that the block itself is taller.
+        leftPane = CompositeView(trackContainer, Rect(484, 6, 110, 160)).background_(
             Color.new(trackColor.red * 0.8, trackColor.green * 0.8, trackColor.blue * 0.8, trackColor.alpha)
         );
         leftPane.decorator = FlowLayout(leftPane.bounds, 4@4, 4@4);
@@ -636,10 +653,14 @@
         sendASlider = Slider(leftPane, 20@90);
         sendBSlider = Slider(leftPane, 20@90);
 
-// RIGHT PANE - same three-row shape as makeTrackSection's own right pane.
+// RIGHT PANE - same three-row shape as makeTrackSection's own right pane,
+// plus a fourth row for COPY TRACK (below, makeMonoTrackSection only -
+// PT1-4 don't have this, since percussion's pitch isn't a (dur, midinote)
+// pair - see the TRACK COPY section's own header comment, CT8tracks.scd).
 // x=6, not 124 - the mirror image of leftPane's own x, for the same
-// reason - see leftPane's comment, just above.
-        rightPane = CompositeView(trackContainer, Rect(6, 6, 470, 128)).background_(trackColor);
+// reason - see leftPane's comment, just above. Height 160, not 128, to
+// fit that fourth row.
+        rightPane = CompositeView(trackContainer, Rect(6, 6, 470, 160)).background_(trackColor);
         rightPane.decorator = FlowLayout(rightPane.bounds, 6@6, 4@4);
 
         StaticText(rightPane, 48@22).string_(name.asString)
@@ -662,6 +683,7 @@
                 ~monoSource[name] = [\row, \col][m.value];
                 patternMenu.items_(patternLabelsFor.(~monoSource[name]));
                 patternMenu.value_(patternSymbols.indexOf(~monoPattern[name]) ? 0);
+                copyMenu.items_(copyMenuLabelsFor.(~monoSource[name]));
                 statusText.string_("Changed - not yet applied.");
             });
         StaticText(rightPane, 30@22).string_("Inst").stringColor_(labelColor);
@@ -812,6 +834,50 @@
             statusText.string_("Changed - not yet applied.");
         });
         updateVolumeRangeReadout.value;
+
+// COPY TRACK ROW - per feedback: one "Copy Track" button per track
+// (~copyTrackButtonPressed, CT8tracks.scd) that claims the source role and
+// turns the other three off; a Playback dropdown + Stop Playback button
+// for whichever three tracks AREN'T currently the source. copyButton
+// itself is never disabled - any track can claim the source role at any
+// time, including re-claiming its own (to re-arm a fresh recording).
+        rightPane.decorator.nextLine;
+        copyButton = Button(rightPane, 85@24)
+            .states_([
+                ["Copy Track", Color.black, Color.grey(0.6)],
+                ["Copy Track", Color.black, Color.new(1.0, 0.55, 0.0)],
+                ["Copy Track", Color.black, Color.green]
+            ])
+            .action_({ ~copyTrackButtonPressed.(name) });
+        StaticText(rightPane, 54@22).string_("Playback").stringColor_(labelColor);
+        copyMenu = PopUpMenu(rightPane, 90@22)
+            .items_(copyMenuLabelsFor.(~monoSource[name]))
+            .action_({ |m|
+                ~copyPlaybackMenuAction.(name, ~monoSource[name], copyChoiceSymbols[m.value]);
+            });
+        copyStopButton = Button(rightPane, 95@24)
+            .states_([["Stop Playback", Color.black, Color.grey(0.8)]])
+            .action_({ ~copyStopPlaybackPressed.(name) });
+
+// Redraws this track's three widgets from the shared Copy Track state
+// (CT8tracks.scd) - registered so ~refreshAllCopyButtons can reach it
+// from anywhere, including a click on a DIFFERENT track's button (even
+// one in the other window, MT1/MT2's own copy of this same block,
+// CT8guiHarmonyMelodyGenerator.scd) or a scheduled record/playback
+// start/stop firing from inside a Pbind's own Pfunc. copyMenu disabled
+// while this track IS the current source (can't play back into itself at
+// the same time it's being recorded) or while there's no completed
+// recording yet to play; copyStopButton stays independent of either,
+// since a leftover loop from an earlier recording can still be mid-flight
+// on this track even after a DIFFERENT track has since become the source.
+        refreshCopyUi = {
+            var state = ~copyButtonStateFor.(name);
+            copyButton.value_(switch(state, \idle, { 0 }, \copying, { 1 }, \ready, { 2 }));
+            copyMenu.enabled_((~copySourceTrack != name) and: { ~copyBuffer.notEmpty });
+            copyStopButton.enabled_(~copyPlaying[name] or: { ~copyPlayStartArmed[name] });
+        };
+        ~copyButtonRefreshers[name] = refreshCopyUi;
+        refreshCopyUi.value;
     };
 
     ~btTrackNames.do(makeMonoTrackSection);

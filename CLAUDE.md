@@ -870,15 +870,65 @@ on/off button in the Clock Toy Adjust window (`CT8guiAdjust.scd`) instead.
 **Track Copy ("Copy T")** — `CT8tracks.scd`'s TRACK COPY section, restricted to
 `BT1`/`BT2`/`MT1`-`4` only (not `HT1`-`4`/`PT1`-`4` - the Note tracks are all single-
 note-per-event, so a `(dur, midinote)` pair means the same thing on either side of a
-copy; harmony plays chords and percussion's pitch is Hz, neither fits). No GUI yet -
-tried by hand from the post window: `~copyTStartRecord.(sourceName, beats)` tapes that
+copy; harmony plays chords and percussion's pitch is Hz, neither fits). The original
+GUI-less pair, `~copyTStartRecord.(sourceName, beats)` (tapes that
 track's actual sounding `(dur, midinote)` pairs for the next `beats` TempoClock beats
-into `~copyBuffer` (only real `\note` hits, never rests - this feature doesn't try to
-preserve a recording's silence, per feedback); `~copyTStartPlayback.(destName)` then has
-`destName` splice that buffer in, verbatim, in place of its own normal pitch/duration
-(same instrument/amp/wet/pan/everything else about it untouched) until the buffer runs
-out, then falls straight back to its own normal pattern. `~makeCopyAwarePair` is the
-shared mechanism every eligible track's `\dur`/`\midinote` keys go through (all four of
+into `~copyBuffer` - only real `\note` hits, never rests - this feature doesn't try to
+preserve a recording's silence, per feedback) and `~copyTStartPlayback.(destName)`
+(splices that buffer into `destName`, verbatim, in place of its own normal
+pitch/duration - same instrument/amp/wet/pan/everything else about it untouched),
+still exist unchanged and still callable by hand from the post window, but now also
+have a real GUI (`~copyGuiTracks`, i.e. `BT1`/`BT2`/`MT1`/`MT2` only - `MT3`/`MT4` stay
+copy-eligible at the data-model level, per feedback they're just unused now) built on
+top of them, in each of those four tracks' own blocks (the Percussion + Bass
+Generator/Harmony + Melody Generator windows): a "Copy Track" button, a Playback
+timing dropdown, and a Stop Playback button, per feedback ("a 'copy track' button on
+each of the mono tracks is needed, and clicking one turns the others off... At the
+remaining three tracks allow a pull down menu... once it starts there is a button for
+stop playback"). Three behaviors changed for the GUI path specifically (direct
+`~copyTStartRecord`/`~copyTStartPlayback` calls are untouched): recording always waits
+for the source's own next bar boundary before it actually starts (never the instant
+you click), and always tapes exactly one bar; playback can be scheduled to start on
+the destination's next bar, next row/col start, or next beat, rather than always
+immediately; and playback LOOPS the copied bar indefinitely once started, rather than
+playing it through once - Stop Playback ends the loop, but only once the CURRENT pass
+finishes, never mid-buffer, per feedback ("finishes the current loop and goes back to
+what it was doing"). `~copySourceTrack` is the one `~copyGuiTracks` name currently
+selected as the source (or `nil`) - `~copyTrackButtonPressed.(name)`, the Copy Track
+button's own `.action_`, reassigns this on every click (even re-clicking the
+already-selected track, which just re-arms a fresh recording) rather than each button
+tracking independent state, which is what actually enforces "only one source at a
+time." `~copyArmedSource` is non-nil from the click until the scheduled next-bar
+callback actually starts the tape - both that waiting period and an in-progress
+recording display as the same orange "copying" button color
+(`~copyButtonStateFor.(name)` - `\idle`/`\copying`/`\ready`, i.e. grey/orange/green);
+there's no separate visual for "waiting to start" vs. "actively taping." Both
+`~copyBeatsUntilNextBar` and `~copyBeatsUntilNextRowCol.(source)` compute a one-shot
+delay in TempoClock beats from right now, scheduled via a single `t.sched` call rather
+than any new persistent per-beat checker - `~copyBeatsUntilNextBar` reuses
+`~chordBarBeatCount`/`~numBeats` (`CT8harmonySelect.scd`'s own bar-boundary counter,
+already exactly the row-scan bar length every track shares) instead of tracking a
+second, separate bar counter; `~copyBeatsUntilNextRowCol` finds the next `\rowStart`/
+`\columnStart` index in `~rowPattern`/`~colPattern` after the current beat position,
+wrapping to the following bar's first start if the current bar has none left - each
+array index already IS a beat offset (one event per beat), so no `\dur` summing is
+needed. `~copyPlaybackMenuAction.(destName, source, choice)` is the Playback dropdown's
+own `.action_` (selecting an item IS the start trigger, per feedback - no separate
+Start Playback button); `source` is that destination's own `~monoSource[destName]`
+at the moment of selection, not re-read later, so the delay computed then and
+whatever `~copyBeatsUntilNextRowCol` actually waits for always agree even if Source
+changes again before the scheduled moment arrives. `~copyStopPlaybackPressed.(name)`
+either raises `~copyStopRequested[name]` (if already looping - checked only at the
+next loop-wrap, inside `~makeCopyAwarePair`, so the current pass always finishes
+cleanly) or cancels a still-pending `~copyPlayStartArmed[name]` outright (if the
+scheduled start hasn't fired yet, there's no loop in progress to let finish).
+`~refreshAllCopyButtons` calls every registered `~copyButtonRefreshers[name]` closure
+(each track's own redraw function, set when its block is built) so a change to this
+shared state redraws every track's widgets at once, even across the two different
+windows/files BT1/BT2 and MT1/MT2 live in - the cross-window coordination this
+feature needs, since clicking BT1's button must also visually reset MT1/MT2's
+buttons. `~makeCopyAwarePair` is the shared mechanism every eligible track's
+`\dur`/`\midinote` keys go through (all four of
 `BT1`/`BT2`/`MT1`/`MT2` via their one shared `~buildMonoTrackPattern` now) instead of a
 plain `Pseq`/`Pfunc` - each wraps a retained,
 manually-advanced stream of that track's own normal pattern, so pausing it to serve a
@@ -896,7 +946,8 @@ beat countdown AFTER subtracting a captured hit's own duration, so the last note
 finishes naturally rather than being truncated to land exactly on the requested beat
 count; playback only ever swaps in a COMPLETE `(dur, midinote)` pair at an event boundary
 (a Pbind asks for these once per event, never mid-event), so falling back to the normal
-pattern once the buffer is exhausted always happens cleanly between notes.
+pattern once a stopped loop's current pass finishes always happens cleanly between
+notes, never inside one.
 
 Row/col clock-face flashing is a separate, independent process from any of the above now
 — see `CT8guiClock.scd`'s "ROW/COL FLASH PLAYERS" section: `~buildRowFlashPattern`/

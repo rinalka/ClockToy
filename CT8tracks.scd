@@ -809,18 +809,34 @@
 // sounding (dur, midinote) pairs for the next `beats` TempoClock beats;
 // ~copyTStartPlayback.(destName) then has `destName` play that taped buffer
 // back in place of its own normal pattern - same instrument/amp/wet/pan/
-// everything else about it, just borrowed timing+pitch - until the buffer
-// runs out, then it falls straight back into whatever it would normally be
-// doing. Restricted to BT1/BT2/MT1-4 (per feedback), not HT1-4/PT1-4 -
+// everything else about it, just borrowed timing+pitch. Restricted to
+// BT1/BT2/MT1-4 (per feedback), not HT1-4/PT1-4 -
 // Note tracks are all single-note-per-event (see the MONO TRACK CONFIG
 // section's own comment, above), so a (dur, midinote) pair means the same
 // thing on either side of a copy; HT1-4 plays chords (an Array, not a
 // scalar, \midinote) and PT1-4's pitch is Hz, not MIDI - neither fits
 // this scheme without a redesign this feature doesn't attempt.
 //
-// Deliberately simple for this first pass: one active recorder at a time
-// (starting a new recording while one is already running just restarts
-// it), but any number of simultaneous playback consumers - each one snapshots
+// Now has a real GUI (the Copy Track button/Playback menu/Stop Playback
+// button in each of ~copyGuiTracks' own blocks, CT8guiPercGenerator.scd/
+// CT8guiHarmonyMelodyGenerator.scd - see ~copyTrackButtonPressed/
+// ~copyPlaybackMenuAction/~copyStopPlaybackPressed, below, for what each
+// one does), on top of the original GUI-less ~copyTStartRecord/
+// ~copyTStartPlayback pair, which those three build on rather than
+// replace. Per feedback, three behaviors changed along with the GUI's
+// arrival: (1) a GUI-triggered recording always starts on the source's
+// own next bar boundary, never immediately on click, and always tapes
+// exactly one bar (~numBeats beats) - ~copyTStartRecord itself is
+// unchanged and still starts immediately for any `beats` count if called
+// directly; (2) GUI-triggered playback can be scheduled to start on the
+// destination's next bar, next row/col start, or next beat, rather than
+// always immediately; (3) GUI-triggered playback LOOPS the copied bar
+// indefinitely rather than playing it once - Stop Playback ends the loop,
+// but only once the CURRENT pass finishes, never mid-buffer. Still one
+// active recorder/one active copy-SOURCE at a time (per feedback, "I will
+// want to be able to copy only 1 track at a time") - ~copySourceTrack,
+// below, is what the GUI enforces that through - but any number of
+// simultaneous playback consumers, same as before: each one snapshots
 // ~copyBuffer (the last COMPLETED recording) into its own
 // ~copyPlayBuffer[name] the moment ITS playback starts, then drains that
 // private copy at its own pace via its own ~copyPlayIdx[name], so a LATER
@@ -840,16 +856,62 @@
 // finishes naturally. Playback never interrupts a note mid-flight either -
 // each override swaps in a COMPLETE (dur, midinote) pair at an event
 // boundary (a Pbind only ever asks for \dur/\midinote once per event, not
-// mid-event), so handing control back to the normal pattern once the
-// buffer is exhausted always happens cleanly between notes, never inside
-// one.
+// mid-event), so handing control back to the normal pattern once a
+// stopped loop's current pass finishes always happens cleanly between
+// notes, never inside one.
 ~copyEligibleTracks = [\BT1, \BT2, \MT1, \MT2, \MT3, \MT4];
+// The subset of ~copyEligibleTracks that actually has Copy Track UI
+// (Percussion + Bass Generator/Harmony + Melody Generator windows) - per
+// feedback, MT3/MT4 are unused now (melody reduced to MT1/MT2 only), so
+// they stay copy-eligible at the data-model level (harmless) but never get
+// a button, menu, or Stop control of their own.
+~copyGuiTracks = [\BT1, \BT2, \MT1, \MT2];
 
 ~copyRecording = false;        // true while ~copyRecordSource is being taped
 ~copyRecordSource = nil;       // track name currently being recorded
 ~copyRecordBeatsLeft = 0;      // counts down by each captured hit's own \dur
 ~copyRecordingBuffer = [];     // being built live, while ~copyRecording
 ~copyBuffer = [];              // last COMPLETED recording - what playback reads
+
+// ~copySourceTrack - the ~copyGuiTracks name currently selected as the
+// Copy Track source (its button shows orange or green), or nil if none.
+// Per feedback ("I will want to be able to copy only 1 track at a time"),
+// only one of the four buttons is ever selected - ~copyTrackButtonPressed,
+// below, is what enforces that by reassigning this on every click rather
+// than each button tracking its own independent state.
+~copySourceTrack = nil;
+// ~copyArmedSource - non-nil from the moment a Copy Track button is
+// clicked until the scheduled "next bar" callback actually starts the
+// tape (~copyTStartRecord) - per feedback, recording never starts the
+// instant you click; it waits for the source's own next bar boundary,
+// THEN tapes exactly one full bar. Both ~copyArmedSource and an in-progress
+// ~copyRecording display as the same orange "copying" button state (see
+// ~copyButtonStateFor, below) - there's no separate visual for "waiting to
+// start" vs. "actively taping," only "not yet ready."
+~copyArmedSource = nil;
+// name -> true while that destination's own loop-playback has been asked
+// to stop - checked only at the moment one full pass through
+// ~copyPlayBuffer[name] completes (~makeCopyAwarePair, below), so the
+// CURRENT loop always finishes cleanly rather than cutting off mid-buffer,
+// per feedback ("finishes the current loop and goes back to what it was
+// doing").
+~copyStopRequested = ~copyStopRequested ? ();
+// name -> true while a playback start has been scheduled (one of the
+// Next Bar/Next Row-Col/Next Beat menu choices) but hasn't fired yet -
+// lets Stop Playback cancel a pending start, not just an already-looping
+// one, and lets the GUI show the Stop button as live the instant the menu
+// is used rather than only once sound actually begins.
+~copyPlayStartArmed = ~copyPlayStartArmed ? ();
+// name -> a zero-arg function that redraws that track's own Copy Track
+// button/menu/Stop button from the current global state - registered by
+// whichever window last built that track's block (BT1/BT2 in
+// CT8guiPercGenerator.scd, MT1/MT2 in CT8guiHarmonyMelodyGenerator.scd),
+// so ~refreshAllCopyButtons (below) can update every track's widgets from
+// ONE call regardless of which of the two windows/files actually owns
+// each one - the cross-window coordination this feature needs, since
+// clicking BT1's button must also visually reset MT1/MT2's buttons even
+// though they live in a different window entirely.
+~copyButtonRefreshers = ~copyButtonRefreshers ? ();
 
 ~copyPlaying = ~copyPlaying ? ();   // name -> true while draining its ~copyPlayBuffer
 // name -> the buffer THIS track is currently draining - snapshotted from
@@ -866,6 +928,140 @@
     ~copyPlaying[name] = ~copyPlaying[name] ? false;
     ~copyPlayBuffer[name] = ~copyPlayBuffer[name] ? [];
     ~copyPlayIdx[name] = ~copyPlayIdx[name] ? 0;
+    ~copyStopRequested[name] = ~copyStopRequested[name] ? false;
+    ~copyPlayStartArmed[name] = ~copyPlayStartArmed[name] ? false;
+};
+
+// ~refreshAllCopyButtons - calls every registered ~copyButtonRefreshers
+// closure, so a change to the shared Copy Track state (a click, a
+// scheduled start/stop firing) redraws every track's widgets at once,
+// across both windows. Safe to call from any thread (each refresher
+// itself is responsible for `.defer`ring its own GUI writes - see
+// makeMonoTrackSection's own copy of it, CT8guiPercGenerator.scd/
+// CT8guiHarmonyMelodyGenerator.scd), so callers inside a Pbind's Pfunc
+// (the audio/pattern thread, not the GUI thread) can call this directly
+// without wrapping it themselves.
+~refreshAllCopyButtons = {
+    ~copyButtonRefreshers.keysValuesDo { |name, fn| if(fn.notNil) { fn.value } };
+};
+
+// ~copyButtonStateFor.(name) - \idle (not the selected source), \copying
+// (selected, but either still waiting for the next bar or actively taping
+// it - both look the same, orange), or \ready (selected, and the one-bar
+// recording has completed - green). Pure function of the shared globals
+// above; called by each track's own refresher to decide its button color.
+~copyButtonStateFor = { |name|
+    if(~copySourceTrack != name) {
+        \idle;
+    } {
+        if(~copyArmedSource == name or: { ~copyRecording and: { ~copyRecordSource == name } }) {
+            \copying;
+        } {
+            \ready;
+        };
+    };
+};
+
+// ~copyBeatsUntilNextBar - how many TempoClock beats from right now until
+// the next bar boundary (the same ~numBeats-long cycle ~checkForNewChordBar,
+// CT8harmonySelect.scd, already advances ~currentChord on - reused here
+// rather than tracking a second, separate bar counter). 0 if we happen to
+// already be exactly on one.
+~copyBeatsUntilNextBar = {
+    var n = (~numBeats ? 1).max(1);
+    (n - (~chordBarBeatCount ? 0)) % n;
+};
+
+// ~copyBeatsUntilNextRowCol.(source) - how many beats from right now until
+// the next \rowStart (source == \row) or \columnStart (source == \col)
+// event in ~rowPattern/~colPattern (CT8guiClock.scd) - wrapping into the
+// FOLLOWING bar's first start if the current bar has no more left. Each
+// event in those arrays is exactly one beat (its array index IS its beat
+// offset within the bar - the same convention ~buildPercPattern/
+// ~buildMonoTrackPattern's own `startIdx` already relies on), so no \dur
+// summing is needed, just the index.
+~copyBeatsUntilNextRowCol = { |source|
+    var pattern = if(source == \row) { ~rowPattern ? [] } { ~colPattern ? [] };
+    var startRole = if(source == \row) { \rowStart } { \columnStart };
+    var n = (~numBeats ? 1).max(1);
+    var cur = ~chordBarBeatCount ? 0;
+    var startOffsets = [];
+    pattern.do { |ev, i| if(ev[\role] == startRole) { startOffsets = startOffsets.add(i) } };
+    if(startOffsets.isEmpty) {
+        n;
+    } {
+        var future = startOffsets.select { |o| o > cur };
+        if(future.notEmpty) { future.minItem - cur } { (n - cur) + startOffsets.minItem };
+    };
+};
+
+// ~copyTrackButtonPressed.(name) - the Copy Track button's own .action_,
+// shared by all four ~copyGuiTracks. Per feedback: clicking any one of the
+// four (even the already-selected one, to re-arm a fresh recording)
+// immediately claims the source role and cancels whatever the PREVIOUS
+// source was doing - an in-progress recording is simply abandoned (never
+// written to ~copyBuffer, so the last COMPLETED recording survives
+// untouched), and a stale ~copyArmedSource for a different name will just
+// fail its own `~copyArmedSource == name` check, below, once its own
+// scheduled callback eventually fires, so there's nothing to explicitly
+// cancel there either.
+~copyTrackButtonPressed = { |name|
+    var delay;
+    if(~copyRecording and: { ~copyRecordSource != name }) { ~copyRecording = false };
+    ~copySourceTrack = name;
+    ~copyArmedSource = name;
+    ~refreshAllCopyButtons.value;
+    delay = ~copyBeatsUntilNextBar.value;
+    t.sched(delay, {
+        if(~copyArmedSource == name) {
+            ~copyArmedSource = nil;
+            ~copyTStartRecord.(name, ~numBeats ? 1);
+            { ~refreshAllCopyButtons.value }.defer;
+        };
+        nil;
+    });
+};
+
+// ~copyPlaybackMenuAction.(destName, source, choice) - the Playback timing
+// dropdown's own .action_ for one of the three non-source tracks; `source`
+// is that track's OWN current ~monoSource[destName] (\row or \col),
+// snapshotted at selection time, not re-read later, so the delay computed
+// now and whatever ~copyBeatsUntilNextRowCol actually waits for always
+// agree even if the Source menu is changed again before the scheduled
+// moment arrives. `choice` is \nextBar/\nextRowCol/\nextBeat. Per
+// feedback, selecting a menu item IS the start trigger - no separate
+// Start Playback button.
+~copyPlaybackMenuAction = { |destName, source, choice|
+    var delay = switch(choice,
+        \nextBar, { ~copyBeatsUntilNextBar.value },
+        \nextRowCol, { ~copyBeatsUntilNextRowCol.(source) },
+        \nextBeat, { 1 }
+    );
+    ~copyPlayStartArmed[destName] = true;
+    ~refreshAllCopyButtons.value;
+    t.sched(delay, {
+        if(~copyPlayStartArmed[destName]) {
+            ~copyPlayStartArmed[destName] = false;
+            ~copyTStartPlayback.(destName);
+            { ~refreshAllCopyButtons.value }.defer;
+        };
+        nil;
+    });
+};
+
+// ~copyStopPlaybackPressed.(name) - the Stop Playback button's own
+// .action_. If already looping, just raises the flag ~makeCopyAwarePair
+// checks at the next loop-wrap (below) so the CURRENT pass finishes
+// cleanly; if only ARMED (waiting for its scheduled start, never actually
+// sounded yet), there's no loop in progress to let finish, so this cancels
+// the pending start outright instead.
+~copyStopPlaybackPressed = { |name|
+    if(~copyPlaying[name]) {
+        ~copyStopRequested[name] = true;
+    } {
+        ~copyPlayStartArmed[name] = false;
+    };
+    ~refreshAllCopyButtons.value;
 };
 
 ~copyTStartRecord = { |sourceName, beats|
@@ -890,6 +1086,10 @@
             ~copyPlayBuffer[destName] = ~copyBuffer;
             ~copyPlayIdx[destName] = 0;
             ~copyPlaying[destName] = true;
+// Guards against a stale true left over from some earlier, unrelated
+// stop - a fresh playback should never inherit a pending stop it never
+// asked for.
+            ~copyStopRequested[destName] = false;
             ("Copy: % now playing back the % recorded notes.".format(destName, ~copyBuffer.size)).postln;
         };
     };
@@ -922,9 +1122,19 @@
             v = ~copyPlayBuffer[name][~copyPlayIdx[name]][1];
             ~copyPlayIdx[name] = ~copyPlayIdx[name] + 1;
             if(~copyPlayIdx[name] >= ~copyPlayBuffer[name].size) {
-                ~copyPlaying[name] = false;
                 ~copyPlayIdx[name] = 0;
-                ("Copy: % finished playing back the buffer - back to its own pattern.".format(name)).postln;
+// Per feedback, playback LOOPS indefinitely rather than playing the
+// buffer through once - only actually stop (and fall back to this
+// track's own normal pattern) once Stop Playback has raised
+// ~copyStopRequested[name], and only check that flag right here, at a
+// loop-wrap boundary, so the CURRENT pass always finishes cleanly rather
+// than cutting off mid-buffer ("finishes the current loop").
+                if(~copyStopRequested[name]) {
+                    ~copyPlaying[name] = false;
+                    ~copyStopRequested[name] = false;
+                    ("Copy: % finished its loop and stopped - back to its own pattern.".format(name)).postln;
+                    { ~refreshAllCopyButtons.value }.defer;
+                };
             };
         } {
             v = normalMidinoteFunc.value;
@@ -953,6 +1163,7 @@
                 ~copyRecording = false;
                 ~copyBuffer = ~copyRecordingBuffer;
                 ("Copy: finished recording % notes from %.".format(~copyBuffer.size, name)).postln;
+                { ~refreshAllCopyButtons.value }.defer;
             };
         };
 // Never return nil - a Pattern/Stream returning nil means "exhausted," and
