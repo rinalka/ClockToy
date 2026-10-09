@@ -892,9 +892,19 @@ GUI-less pair, `~copyTStartRecord.(sourceName, beats)` (tapes that
 track's actual sounding `(dur, midinote)` pairs for the next `beats` TempoClock beats
 into `~copyBuffer` - only real `\note` hits, never rests - this feature doesn't try to
 preserve a recording's silence, per feedback) and `~copyTStartPlayback.(destName)`
-(splices that buffer into `destName`, verbatim, in place of its own normal
-pitch/duration - same instrument/amp/wet/pan/everything else about it untouched),
-still exist unchanged and still callable by hand from the post window, but now also
+(splices that buffer into `destName` in place of its own normal pitch/duration - same
+instrument/amp/wet/pan/everything else about it untouched - transposed by a whole
+number of octaves first, per feedback: `~copyOctaveShiftFor.(note, range)` finds
+the single octave shift that brings the buffer's own FIRST note nearest the CENTER of
+`destName`'s own `~currentRange[destName]`, then `~copyTStartPlayback` applies that
+SAME shift to every note in the buffer, preserving the recorded phrase's own internal
+intervals exactly rather than distorting them by correcting each note individually -
+deliberately not re-checking any of the OTHER notes against the range afterward, so a
+phrase spanning more than an octave can still land partly outside it, per feedback
+("ignore for the time being if the new playback goes out of range")), still exist
+unchanged (aside from that transposition, which both the GUI path and a direct
+`~copyTStartPlayback` call now share) and still callable by hand from the post
+window, but now also
 have a real GUI (`~copyGuiTracks`, i.e. `BT1`/`BT2`/`MT1`/`MT2` only - `MT3`/`MT4` stay
 copy-eligible at the data-model level, per feedback they're just unused now) built on
 top of them, in each of those four tracks' own blocks (the Percussion + Bass

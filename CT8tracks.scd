@@ -1135,6 +1135,25 @@
     };
 };
 
+// ~copyOctaveShiftFor.(note, range) - per feedback, the source and
+// destination tracks' own Pitch ranges (~currentRange[name]) are likely
+// different, so playing a recorded buffer back verbatim could land it far
+// outside the destination's intended register. Rather than touching every
+// note individually (which would also distort the recorded phrase's own
+// internal intervals), this finds the single octave transposition (a
+// multiple of 12 semitones, up or down) that brings `note` - always the
+// buffer's own FIRST note, in practice - nearest the CENTER of `range`
+// ([lo, hi]), then that one shift gets applied to every note in the
+// buffer, below, preserving the phrase's shape exactly. Per feedback,
+// this deliberately does NOT clamp or re-check any of the OTHER notes
+// against `range` afterward - a recorded phrase spanning more than an
+// octave can still land partly outside it; only the first note's own
+// octave placement is considered.
+~copyOctaveShiftFor = { |note, range|
+    var mid = (range[0] + range[1]) / 2;
+    ((mid - note) / 12).round * 12;
+};
+
 ~copyTStartPlayback = { |destName|
     if(~copyEligibleTracks.includes(destName).not) {
         ("Copy: % is not a Note track - ignoring playback request.".format(destName)).warn;
@@ -1142,14 +1161,15 @@
         if(~copyBuffer.isEmpty) {
             ("Copy: no completed recording yet - ignoring playback request for %.".format(destName)).warn;
         } {
-            ~copyPlayBuffer[destName] = ~copyBuffer;
+            var shift = ~copyOctaveShiftFor.(~copyBuffer[0][1], ~currentRange[destName] ? [0, 127]);
+            ~copyPlayBuffer[destName] = ~copyBuffer.collect { |pair| [pair[0], pair[1] + shift] };
             ~copyPlayIdx[destName] = 0;
             ~copyPlaying[destName] = true;
 // Guards against a stale true left over from some earlier, unrelated
 // stop - a fresh playback should never inherit a pending stop it never
 // asked for.
             ~copyStopRequested[destName] = false;
-            ("Copy: % now playing back the % recorded notes.".format(destName, ~copyBuffer.size)).postln;
+            ("Copy: % now playing back the % recorded notes, shifted % semitones to fit its own pitch range.".format(destName, ~copyBuffer.size, shift)).postln;
         };
     };
 };
