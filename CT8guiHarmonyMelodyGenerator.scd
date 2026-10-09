@@ -697,12 +697,13 @@
 // MT1/MT2 through the same shared globals/functions (CT8tracks.scd).
         rightPane.decorator.nextLine;
         copyButton = Button(rightPane, 85@24)
-            .states_([
-                ["Copy Track", Color.black, Color.grey(0.6)],
-                ["Copy Track", Color.black, Color.new(1.0, 0.55, 0.0)],
-                ["Copy Track", Color.black, Color.green]
-            ])
-            .action_({ ~copyTrackButtonPressed.(name) });
+            .action_({
+                if(~copyButtonLabelFor.(name) == "Copy Track") {
+                    ~copyTrackButtonPressed.(name);
+                } {
+                    ~copyPlayButtonPressed.(name);
+                };
+            });
         StaticText(rightPane, 54@22).string_("Playback").stringColor_(labelColor);
         copyMenu = PopUpMenu(rightPane, 90@22)
             .items_(copyMenuLabelsFor.(~monoSource[name]))
@@ -714,9 +715,15 @@
             .action_({ ~copyStopPlaybackPressed.(name) });
 
         refreshCopyUi = {
+            var label = ~copyButtonLabelFor.(name);
             var state = ~copyButtonStateFor.(name);
+            copyButton.states_([
+                [label, Color.black, Color.grey(0.6)],
+                [label, Color.black, Color.new(1.0, 0.55, 0.0)],
+                [label, Color.black, Color.green]
+            ]);
             copyButton.value_(switch(state, \idle, { 0 }, \copying, { 1 }, \ready, { 2 }));
-            copyMenu.enabled_((~copySourceTrack != name) and: { ~copyBuffer.notEmpty });
+            copyMenu.enabled_(~copyPlayStartArmed[name]);
             copyStopButton.enabled_(~copyPlaying[name] or: { ~copyPlayStartArmed[name] });
         };
         ~copyButtonRefreshers[name] = refreshCopyUi;

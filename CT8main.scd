@@ -125,6 +125,24 @@ CmdPeriod.add(~closeWindowsOnCmdPeriod);
 // still be switched on by hand once the windows are up.
 ~trackNames.do { |name| ~trackEnabled[name] = false };
 
+// Same reasoning, same fix, for Copy Track (CT8tracks.scd's own TRACK
+// COPY section): ~copyRecording/~copySourceTrack/~copyArmedSource/
+// ~copyBuffer are already unconditional resets there, but
+// ~copyPlaying[name]/~copyPlayStartArmed[name]/~copyStopRequested[name]/
+// ~copyPlayBuffer[name] are all `?`-guarded like ~trackEnabled was, so a
+// track left mid-playback (or mid-arming) from an earlier run this same
+// sclang session would otherwise keep looping its OLD ~copyPlayBuffer
+// content on a fresh run too, completely bypassing its own current
+// Pit Pat/Dur Pat settings - exactly the kind of surprise this section
+// exists to rule out, every time, regardless of what was last done.
+~copyGuiTracks.do { |name|
+    ~copyPlaying[name] = false;
+    ~copyPlayStartArmed[name] = false;
+    ~copyStopRequested[name] = false;
+    ~copyPlayBuffer[name] = [];
+    ~copyPlayIdx[name] = 0;
+};
+
 ~twelveHourClock = true;  // false makes it a 24-hour clock
 ~runningRealTime = true;  // false starts the clock at a fixed time and advances it using ~fakeSecond
 ~tempo = 180 / 60;        // TempoClock uses beats per second

@@ -660,7 +660,14 @@ guard (`PT1`/`PT2`/`PT3`/`MT1` used to default on this way) and the old separate
 `HT1`/`MT1`/`BT1`/`MT2` force-on block `CT8main.scd` used to run every time - for every
 one of the 13
 planned tracks (4 percussion `PT1-4`, 2 bass `BT1-2`, 4 rhythm/harmony `HT1-4`, 4 melody
-`MT1-4`) for a planned generative "Daily Piece" mode uniformly. Every track that HAS a
+`MT1-4`) for a planned generative "Daily Piece" mode uniformly. The same section also
+unconditionally resets every `~copyGuiTracks` track's `~copyPlaying`/
+`~copyPlayStartArmed`/`~copyStopRequested`/`~copyPlayBuffer`/`~copyPlayIdx` (Track Copy,
+below) for the identical reason - those are `?`-guarded in `CT8tracks.scd`'s own TRACK
+COPY section, so without this a track left mid-playback (or mid-arming) from an
+earlier run this same sclang session would otherwise keep looping its OLD copied
+buffer on a fresh run too, completely bypassing its own current Pit Pat/Dur Pat
+settings. Every track that HAS a
 real builder can still be switched on by hand, either in the Percussion + Bass Generator
 window (`PT1`-`4`/`BT1`-`2`) or the Harmony + Melody Generator/Clock Toy Adjust windows
 (everything else) - see each one's own bullet, above, for exactly where its on/off button
@@ -891,47 +898,64 @@ still exist unchanged and still callable by hand from the post window, but now a
 have a real GUI (`~copyGuiTracks`, i.e. `BT1`/`BT2`/`MT1`/`MT2` only - `MT3`/`MT4` stay
 copy-eligible at the data-model level, per feedback they're just unused now) built on
 top of them, in each of those four tracks' own blocks (the Percussion + Bass
-Generator/Harmony + Melody Generator windows): a "Copy Track" button, a Playback
-timing dropdown, and a Stop Playback button, per feedback ("a 'copy track' button on
-each of the mono tracks is needed, and clicking one turns the others off... At the
-remaining three tracks allow a pull down menu... once it starts there is a button for
-stop playback"). Three behaviors changed for the GUI path specifically (direct
-`~copyTStartRecord`/`~copyTStartPlayback` calls are untouched): recording always waits
-for the source's own next bar boundary before it actually starts (never the instant
-you click), and always tapes exactly one bar; playback can be scheduled to start on
-the destination's next bar, next row/col start, or next beat, rather than always
-immediately; and playback LOOPS the copied bar indefinitely once started, rather than
-playing it through once - Stop Playback ends the loop, but only once the CURRENT pass
-finishes, never mid-buffer, per feedback ("finishes the current loop and goes back to
-what it was doing"). `~copySourceTrack` is the one `~copyGuiTracks` name currently
-selected as the source (or `nil`) - `~copyTrackButtonPressed.(name)`, the Copy Track
-button's own `.action_`, reassigns this on every click (even re-clicking the
-already-selected track, which just re-arms a fresh recording) rather than each button
-tracking independent state, which is what actually enforces "only one source at a
-time." `~copyArmedSource` is non-nil from the click until the scheduled next-bar
-callback actually starts the tape - both that waiting period and an in-progress
-recording display as the same orange "copying" button color
-(`~copyButtonStateFor.(name)` - `\idle`/`\copying`/`\ready`, i.e. grey/orange/green);
-there's no separate visual for "waiting to start" vs. "actively taping." Both
-`~copyBeatsUntilNextBar` and `~copyBeatsUntilNextRowCol.(source)` compute a one-shot
-delay in TempoClock beats from right now, scheduled via a single `t.sched` call rather
-than any new persistent per-beat checker - `~copyBeatsUntilNextBar` reuses
-`~chordBarBeatCount`/`~numBeats` (`CT8harmonySelect.scd`'s own bar-boundary counter,
-already exactly the row-scan bar length every track shares) instead of tracking a
-second, separate bar counter; `~copyBeatsUntilNextRowCol` finds the next `\rowStart`/
-`\columnStart` index in `~rowPattern`/`~colPattern` after the current beat position,
-wrapping to the following bar's first start if the current bar has none left - each
-array index already IS a beat offset (one event per beat), so no `\dur` summing is
-needed. `~copyPlaybackMenuAction.(destName, source, choice)` is the Playback dropdown's
-own `.action_` (selecting an item IS the start trigger, per feedback - no separate
-Start Playback button); `source` is that destination's own `~monoSource[destName]`
-at the moment of selection, not re-read later, so the delay computed then and
-whatever `~copyBeatsUntilNextRowCol` actually waits for always agree even if Source
-changes again before the scheduled moment arrives. `~copyStopPlaybackPressed.(name)`
-either raises `~copyStopRequested[name]` (if already looping - checked only at the
-next loop-wrap, inside `~makeCopyAwarePair`, so the current pass always finishes
-cleanly) or cancels a still-pending `~copyPlayStartArmed[name]` outright (if the
-scheduled start hasn't fired yet, there's no loop in progress to let finish).
+Generator/Harmony + Melody Generator windows): ONE shared, dual-purpose button, a
+Playback timing dropdown, and a Stop Playback button. The button reads "Copy Track"
+(`~copyButtonLabelFor.(name)`) for whichever track either IS the current source or
+could still become one (no completed recording exists yet at all), and "Play Copy"
+for every OTHER track once a completed `~copyBuffer` actually exists to play - before
+that, every track still reads "Copy Track," since nothing exists yet for anyone to
+play. "Copy Track" claims the source role and turns the other three's labels to "Play
+Copy" (`~copyTrackButtonPressed`); "Play Copy," per feedback correcting an earlier
+one-step design ("change the name on the copy track button to 'play copy', when it is
+clicked turn it orange, and wait for a selection from the choice of next bar, next
+row, next beat... wait for the play back to start change the 'play copy' to green"),
+just ARMS that track and waits (`~copyPlayButtonPressed`) - it's the SEPARATE Playback
+dropdown choice, made afterward, that actually schedules the start
+(`~copyPlaybackMenuAction`), not the button click itself. Several behaviors changed
+for the GUI path specifically (direct `~copyTStartRecord`/`~copyTStartPlayback` calls
+are untouched): recording always waits for the source's own next bar boundary before
+it actually starts (never the instant you click), and always tapes exactly one bar;
+playback is this two-step arm-then-choose flow, scheduled to start on the
+destination's next bar, next row/col start, or next beat depending on which the
+dropdown picks; and playback LOOPS the copied bar indefinitely once started, rather
+than playing it through once - Stop Playback ends the loop, but only once the CURRENT
+pass finishes, never mid-buffer, per feedback ("finishes the current loop and goes
+back to what it was doing"). `~copySourceTrack` is the one `~copyGuiTracks` name
+currently selected as the source (or `nil`) - `~copyTrackButtonPressed.(name)`
+reassigns this on every click (even re-clicking the already-selected track, which just
+re-arms a fresh recording) rather than each button tracking independent state, which
+is what actually enforces "only one source at a time." `~copyArmedSource` is non-nil
+from the click until the scheduled next-bar callback actually starts the tape - both
+that waiting period and an in-progress recording display as the same orange "copying"
+button color (`~copyButtonStateFor.(name)` - `\idle`/`\copying`/`\ready`, i.e.
+grey/orange/green - checks `~copyButtonLabelFor` first to know which of the two roles'
+own state to read); there's no separate visual for "waiting to start" vs. "actively
+taping," nor for "waiting for a Playback choice" vs. "choice made, start scheduled but
+not yet arrived" on the Play Copy side - each pair collapses to the same orange.
+`~copyPlayStartArmed[name]` is what the "Play Copy" role's own orange/green state
+reads, true from the button click all the way through until `~copyTStartPlayback`
+actually fires. Both `~copyBeatsUntilNextBar` and `~copyBeatsUntilNextRowCol.(source)`
+compute a one-shot delay in TempoClock beats from right now, scheduled via a single
+`t.sched` call rather than any new persistent per-beat checker - `~copyBeatsUntilNextBar`
+reuses `~chordBarBeatCount`/`~numBeats` (`CT8harmonySelect.scd`'s own bar-boundary
+counter, already exactly the row-scan bar length every track shares) instead of
+tracking a second, separate bar counter; `~copyBeatsUntilNextRowCol` finds the next
+`\rowStart`/`\columnStart` index in `~rowPattern`/`~colPattern` after the current beat
+position, wrapping to the following bar's first start if the current bar has none
+left - each array index already IS a beat offset (one event per beat), so no `\dur`
+summing is needed. `~copyPlaybackMenuAction.(destName, source, choice)` is the
+Playback dropdown's own `.action_` - it only actually computes a delay and schedules
+anything if `~copyPlayStartArmed[destName]` is ALREADY true (the button was clicked
+first); picking a menu item before that just posts a warning, since there's nothing
+yet to schedule a start for. `source` is that destination's own
+`~monoSource[destName]` at the moment of selection, not re-read later, so the delay
+computed then and whatever `~copyBeatsUntilNextRowCol` actually waits for always agree
+even if Source changes again before the scheduled moment arrives.
+`~copyStopPlaybackPressed.(name)` either raises `~copyStopRequested[name]` (if already
+looping - checked only at the next loop-wrap, inside `~makeCopyAwarePair`, so the
+current pass always finishes cleanly) or cancels a still-pending
+`~copyPlayStartArmed[name]` outright (if the scheduled start hasn't fired yet, there's
+no loop in progress to let finish).
 `~refreshAllCopyButtons` calls every registered `~copyButtonRefreshers[name]` closure
 (each track's own redraw function, set when its block is built) so a change to this
 shared state redraws every track's widgets at once, even across the two different

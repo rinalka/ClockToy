@@ -835,20 +835,26 @@
         });
         updateVolumeRangeReadout.value;
 
-// COPY TRACK ROW - per feedback: one "Copy Track" button per track
-// (~copyTrackButtonPressed, CT8tracks.scd) that claims the source role and
-// turns the other three off; a Playback dropdown + Stop Playback button
-// for whichever three tracks AREN'T currently the source. copyButton
-// itself is never disabled - any track can claim the source role at any
-// time, including re-claiming its own (to re-arm a fresh recording).
+// COPY TRACK ROW - per feedback, one SHARED, dual-purpose button per
+// track (~copyButtonLabelFor, CT8tracks.scd, decides which role is
+// active): "Copy Track" claims the source role
+// (~copyTrackButtonPressed) and turns the other three off; "Play Copy"
+// (shown instead, once a completed ~copyBuffer exists, for every track
+// that ISN'T the source) just arms this track and waits
+// (~copyPlayButtonPressed) - it's the SEPARATE Playback dropdown choice,
+// made afterward, that actually schedules the start
+// (~copyPlaybackMenuAction). copyButton itself is never disabled - either
+// role is always clickable, including re-claiming your own source role to
+// re-arm a fresh recording.
         rightPane.decorator.nextLine;
         copyButton = Button(rightPane, 85@24)
-            .states_([
-                ["Copy Track", Color.black, Color.grey(0.6)],
-                ["Copy Track", Color.black, Color.new(1.0, 0.55, 0.0)],
-                ["Copy Track", Color.black, Color.green]
-            ])
-            .action_({ ~copyTrackButtonPressed.(name) });
+            .action_({
+                if(~copyButtonLabelFor.(name) == "Copy Track") {
+                    ~copyTrackButtonPressed.(name);
+                } {
+                    ~copyPlayButtonPressed.(name);
+                };
+            });
         StaticText(rightPane, 54@22).string_("Playback").stringColor_(labelColor);
         copyMenu = PopUpMenu(rightPane, 90@22)
             .items_(copyMenuLabelsFor.(~monoSource[name]))
@@ -864,16 +870,29 @@
 // from anywhere, including a click on a DIFFERENT track's button (even
 // one in the other window, MT1/MT2's own copy of this same block,
 // CT8guiHarmonyMelodyGenerator.scd) or a scheduled record/playback
-// start/stop firing from inside a Pbind's own Pfunc. copyMenu disabled
-// while this track IS the current source (can't play back into itself at
-// the same time it's being recorded) or while there's no completed
-// recording yet to play; copyStopButton stays independent of either,
-// since a leftover loop from an earlier recording can still be mid-flight
-// on this track even after a DIFFERENT track has since become the source.
+// start/stop firing from inside a Pbind's own Pfunc. copyButton's own
+// .states_ is rebuilt every time, not just .value_ - its LABEL changes
+// with its role (~copyButtonLabelFor), not just its color
+// (~copyButtonStateFor), so the three state-entries' text has to be
+// redone along with picking which one is current. copyMenu is only
+// enabled once this track has actually been armed via "Play Copy"
+// (~copyPlayStartArmed[name]) - picking a timing before that would have
+// nothing to schedule a start for (~copyPlaybackMenuAction, CT8tracks.scd,
+// already guards against it directly too, so this is belt-and-suspenders
+// rather than the only thing stopping it). copyStopButton stays
+// independent of either, since a leftover loop from an earlier recording
+// can still be mid-flight on this track even after a DIFFERENT track has
+// since become the source.
         refreshCopyUi = {
+            var label = ~copyButtonLabelFor.(name);
             var state = ~copyButtonStateFor.(name);
+            copyButton.states_([
+                [label, Color.black, Color.grey(0.6)],
+                [label, Color.black, Color.new(1.0, 0.55, 0.0)],
+                [label, Color.black, Color.green]
+            ]);
             copyButton.value_(switch(state, \idle, { 0 }, \copying, { 1 }, \ready, { 2 }));
-            copyMenu.enabled_((~copySourceTrack != name) and: { ~copyBuffer.notEmpty });
+            copyMenu.enabled_(~copyPlayStartArmed[name]);
             copyStopButton.enabled_(~copyPlaying[name] or: { ~copyPlayStartArmed[name] });
         };
         ~copyButtonRefreshers[name] = refreshCopyUi;

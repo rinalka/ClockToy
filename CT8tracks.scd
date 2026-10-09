@@ -817,22 +817,29 @@
 // scalar, \midinote) and PT1-4's pitch is Hz, not MIDI - neither fits
 // this scheme without a redesign this feature doesn't attempt.
 //
-// Now has a real GUI (the Copy Track button/Playback menu/Stop Playback
-// button in each of ~copyGuiTracks' own blocks, CT8guiPercGenerator.scd/
-// CT8guiHarmonyMelodyGenerator.scd - see ~copyTrackButtonPressed/
-// ~copyPlaybackMenuAction/~copyStopPlaybackPressed, below, for what each
-// one does), on top of the original GUI-less ~copyTStartRecord/
-// ~copyTStartPlayback pair, which those three build on rather than
-// replace. Per feedback, three behaviors changed along with the GUI's
-// arrival: (1) a GUI-triggered recording always starts on the source's
-// own next bar boundary, never immediately on click, and always tapes
-// exactly one bar (~numBeats beats) - ~copyTStartRecord itself is
+// Now has a real GUI - ONE shared, dual-purpose button per
+// ~copyGuiTracks track (reads "Copy Track" or "Play Copy" depending on
+// role - ~copyButtonLabelFor, below), plus a Playback timing menu and a
+// Stop Playback button, in each track's own block
+// (CT8guiPercGenerator.scd/CT8guiHarmonyMelodyGenerator.scd - see
+// ~copyTrackButtonPressed/~copyPlayButtonPressed/~copyPlaybackMenuAction/
+// ~copyStopPlaybackPressed, below, for what each does), on top of the
+// original GUI-less ~copyTStartRecord/~copyTStartPlayback pair, which
+// those four build on rather than replace. Per feedback, several
+// behaviors changed along with the GUI's arrival, on both the recording
+// and playback sides: (1) a GUI-triggered recording always starts on the
+// source's own next bar boundary, never immediately on click, and always
+// tapes exactly one bar (~numBeats beats) - ~copyTStartRecord itself is
 // unchanged and still starts immediately for any `beats` count if called
-// directly; (2) GUI-triggered playback can be scheduled to start on the
-// destination's next bar, next row/col start, or next beat, rather than
-// always immediately; (3) GUI-triggered playback LOOPS the copied bar
-// indefinitely rather than playing it once - Stop Playback ends the loop,
-// but only once the CURRENT pass finishes, never mid-buffer. Still one
+// directly; (2) GUI-triggered playback is a two-step arm-then-choose
+// flow, per feedback correcting an earlier one-step design: clicking the
+// button (now showing "Play Copy" for this role) just arms the track and
+// waits - it's the SEPARATE Playback dropdown choice, made afterward,
+// that actually computes a delay and schedules the start, on the
+// destination's next bar, next row/col start, or next beat; (3)
+// GUI-triggered playback LOOPS the copied bar indefinitely rather than
+// playing it once - Stop Playback ends the loop, but only once the
+// CURRENT pass finishes, never mid-buffer. Still one
 // active recorder/one active copy-SOURCE at a time (per feedback, "I will
 // want to be able to copy only 1 track at a time") - ~copySourceTrack,
 // below, is what the GUI enforces that through - but any number of
@@ -945,19 +952,53 @@
     ~copyButtonRefreshers.keysValuesDo { |name, fn| if(fn.notNil) { fn.value } };
 };
 
-// ~copyButtonStateFor.(name) - \idle (not the selected source), \copying
+// ~copyButtonLabelFor.(name) - the ONE shared button each ~copyGuiTracks
+// track has is dual-purpose, per feedback: it reads "Copy Track" for
+// whichever track either IS the current source, or could become one (no
+// completed recording exists yet at all, so every track is still a
+// candidate); it switches to "Play Copy" for every OTHER track, but only
+// once a completed ~copyBuffer actually exists to play - before that,
+// every track still reads "Copy Track," since there's nothing yet for
+// anyone to play. This is what the button's own .action_ (both
+// ~copyTrackButtonPressed and ~copyPlayButtonPressed, below) dispatches
+// on, and what refreshCopyUi (CT8guiPercGenerator.scd/
+// CT8guiHarmonyMelodyGenerator.scd) rebuilds the button's .states_ text
+// from every time.
+~copyButtonLabelFor = { |name|
+    if(name == ~copySourceTrack) {
+        "Copy Track";
+    } {
+        if(~copyBuffer.notEmpty) { "Play Copy" } { "Copy Track" };
+    };
+};
+
+// ~copyButtonStateFor.(name) - the button's COLOR, which depends on
+// whichever of the two roles ~copyButtonLabelFor says is currently active:
+// for the "Copy Track" role, \idle (not the selected source), \copying
 // (selected, but either still waiting for the next bar or actively taping
 // it - both look the same, orange), or \ready (selected, and the one-bar
-// recording has completed - green). Pure function of the shared globals
-// above; called by each track's own refresher to decide its button color.
+// recording has completed - green); for the "Play Copy" role, \idle (not
+// yet armed), \copying (armed via ~copyPlayButtonPressed, waiting on a
+// Playback menu choice, or that choice made and a start scheduled but not
+// yet arrived - again, both look the same, orange), or \ready (actually
+// looping - green). Pure function of the shared globals above; called by
+// each track's own refresher to decide its button color.
 ~copyButtonStateFor = { |name|
-    if(~copySourceTrack != name) {
-        \idle;
-    } {
-        if(~copyArmedSource == name or: { ~copyRecording and: { ~copyRecordSource == name } }) {
-            \copying;
+    if(~copyButtonLabelFor.(name) == "Copy Track") {
+        if(~copySourceTrack != name) {
+            \idle;
         } {
+            if(~copyArmedSource == name or: { ~copyRecording and: { ~copyRecordSource == name } }) {
+                \copying;
+            } {
+                \ready;
+            };
+        };
+    } {
+        if(~copyPlaying[name]) {
             \ready;
+        } {
+            if(~copyPlayStartArmed[name]) { \copying } { \idle };
         };
     };
 };
@@ -1022,6 +1063,18 @@
     });
 };
 
+// ~copyPlayButtonPressed.(name) - the SAME shared button's .action_ when
+// it's currently showing "Play Copy" (~copyButtonLabelFor, above) rather
+// than "Copy Track." Per feedback: clicking it just arms this track
+// (orange) and waits for a choice from the Playback dropdown - it doesn't
+// schedule anything by itself. ~copyPlaybackMenuAction, below, is what
+// actually computes the delay and calls t.sched, and only does so once
+// this flag is already true.
+~copyPlayButtonPressed = { |name|
+    ~copyPlayStartArmed[name] = true;
+    ~refreshAllCopyButtons.value;
+};
+
 // ~copyPlaybackMenuAction.(destName, source, choice) - the Playback timing
 // dropdown's own .action_ for one of the three non-source tracks; `source`
 // is that track's OWN current ~monoSource[destName] (\row or \col),
@@ -1029,24 +1082,30 @@
 // now and whatever ~copyBeatsUntilNextRowCol actually waits for always
 // agree even if the Source menu is changed again before the scheduled
 // moment arrives. `choice` is \nextBar/\nextRowCol/\nextBeat. Per
-// feedback, selecting a menu item IS the start trigger - no separate
-// Start Playback button.
+// feedback, correcting an earlier design where selecting a menu item was
+// itself the start trigger: the dropdown only does anything once
+// ~copyPlayStartArmed[destName] is ALREADY true, i.e. ~copyPlayButtonPressed
+// (the "Play Copy" button, above) has already been clicked first - picking
+// a menu item before that is a no-op (just a warning in the post window),
+// since there's nothing yet to schedule a start for.
 ~copyPlaybackMenuAction = { |destName, source, choice|
-    var delay = switch(choice,
-        \nextBar, { ~copyBeatsUntilNextBar.value },
-        \nextRowCol, { ~copyBeatsUntilNextRowCol.(source) },
-        \nextBeat, { 1 }
-    );
-    ~copyPlayStartArmed[destName] = true;
-    ~refreshAllCopyButtons.value;
-    t.sched(delay, {
-        if(~copyPlayStartArmed[destName]) {
-            ~copyPlayStartArmed[destName] = false;
-            ~copyTStartPlayback.(destName);
-            { ~refreshAllCopyButtons.value }.defer;
-        };
-        nil;
-    });
+    if(~copyPlayStartArmed[destName].not) {
+        ("Copy: click Play Copy on % first, then pick a timing.".format(destName)).warn;
+    } {
+        var delay = switch(choice,
+            \nextBar, { ~copyBeatsUntilNextBar.value },
+            \nextRowCol, { ~copyBeatsUntilNextRowCol.(source) },
+            \nextBeat, { 1 }
+        );
+        t.sched(delay, {
+            if(~copyPlayStartArmed[destName]) {
+                ~copyPlayStartArmed[destName] = false;
+                ~copyTStartPlayback.(destName);
+                { ~refreshAllCopyButtons.value }.defer;
+            };
+            nil;
+        });
+    };
 };
 
 // ~copyStopPlaybackPressed.(name) - the Stop Playback button's own
