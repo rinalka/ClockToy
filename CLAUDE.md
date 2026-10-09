@@ -557,7 +557,9 @@ their own bullets below for exactly where the line falls:
   chord was current at THAT moment forever, never updating per note; `~buildPolyPattern`
   is what reads `~currentChord` live and feeds it in as these four args instead, fresh
   every row event. `amp`/`attack`/`sustain`/`release` defaults were tuned per feedback
-  (0.4/0.012/0.12/5 - was "very soft and slow" before); `wet`/`level` are its own tiny
+  across two passes (`attack`/`sustain`/`release` to 0.012/0.12/5 - was "very soft and
+  slow" before; `amp` doubled twice, 0.2 -> 0.4 -> 0.8, still "too low" after the
+  first); `wet`/`level` are its own tiny
   built-in `~allpassWash` tail, same convention as every other instrument's, defaulting
   to a no-op like always. The legacy/unused
   `\bassDrum`/`\shortWhistle`/`\clockVerb` that used to live here too have been deleted
@@ -833,10 +835,15 @@ the SynthDef's own envelope times are wall-clock seconds, not TempoClock beats; 
 ~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) })`, 4 independent
 tone-and-octave picks within `~currentRange[\HT1]` (60-96 by default, three octaves
 above middle C); or `\droneChord` (`CT8synths.scd`'s own bullet has the SynthDef side) -
-its four `\note1`-`\note4` keys are each a `Pfunc` reading `~currentChord` fresh every
-row event, wrapped with `% notes.size` so a 3- or 5-note chord still fills all four
-slots (a 3-note chord's root repeats in `\note4`, the same "double the root" idea
-`~chordArpIntervals` already uses for a 3-note chord's own arpeggio, `CT8harmonySelect.scd`).
+its four `\note1`-`\note4` keys each independently call the exact same
+`~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1])` the
+`\fm` path's own `\midinote` uses, just spread across 4 Pbind keys instead of one
+Array-valued one - so, per feedback ("should be picking notes each time it plays from
+the current chord inside its pit pat range sliders"), every note is a fresh, independent
+chord-tone-and-octave pick, constrained to HT1's own Pitch range sliders exactly like
+`\fm`'s notes already were - replacing an earlier version that read `~currentChord`'s
+own written notes directly (wrapped with `% notes.size` so a 3- or 5-note chord still
+filled all four slots), which ignored the range sliders entirely.
 `\plucking` is still listed in the Instrument menu but unwired - picking it falls
 through to the `\fm` branch, same as before this change, since a single-note bass
 synth and a 4-voice chord pad need different handling that hasn't been designed yet.

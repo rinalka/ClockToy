@@ -772,18 +772,23 @@
 // before this change, since a 4-voice chord pad and a single-note plucked
 // bass synth need genuinely different handling that hasn't been designed
 // yet). \droneChord's own note1-4 args (CT8synths.scd) are fed live from
-// ~currentChord here, read fresh every row event - wrapping with `% notes.size`
-// so a 3- or 5-note chord still fills all four slots (a 3-note chord's
-// root repeats in note4, the same "double the root" idea
-// ~chordArpIntervals already uses elsewhere for a 3-note chord's arpeggio).
+// ~currentChord here, read fresh every row event via ~chordNoteInRange -
+// the exact same chord-tone-in-range picker the \fm path below already
+// uses for its own \midinote, just spread across 4 Pbind keys instead of
+// one Array-valued one - so each of the four notes is an independent
+// random chord tone, octave and all, constrained to HT1's own Pitch range
+// sliders (~currentRange[\HT1]), per feedback ("should be picking notes
+// each time it plays from the current chord inside its pit pat range
+// sliders") - replacing an earlier version that read ~currentChord's own
+// written notes directly, ignoring the range sliders entirely.
         ~trackPatterns[\HT1] = if(~polyInstrument[\HT1] == \droneChord) {
             Pbind(
                 \instrument, \droneChord,
                 \dur, Pseq(rowDurs, inf),
-                \note1, Pfunc { var c = ~currentChord; c[0 % c.size] },
-                \note2, Pfunc { var c = ~currentChord; c[1 % c.size] },
-                \note3, Pfunc { var c = ~currentChord; c[2 % c.size] },
-                \note4, Pfunc { var c = ~currentChord; c[3 % c.size] },
+                \note1, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
+                \note2, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
+                \note3, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
+                \note4, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
                 \out, 0
             );
         } {

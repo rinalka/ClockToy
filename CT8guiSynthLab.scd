@@ -267,18 +267,20 @@
     ]);
 // Defaults match the real SynthDef's own (CT8synths.scd), per feedback -
 // amp/attack/sustain/release used to lag behind a tuning pass there (was
-// 0.2/5/30/10 here vs. the real synth's 0.4/0.012/0.12/5), so auditioning
-// here started from a different sound than the live composition actually
-// makes. amp's own upper bound raised to 1 (was 0.5) to leave room above
-// the new, louder default. \wet/\level were missing here entirely, even
-// though the real SynthDef has had that tail since this same tuning pass -
-// added to match every other instrument's own spec entry.
+// 0.2/5/30/10 here vs. the real synth's own values), so auditioning here
+// started from a different sound than the live composition actually
+// makes. amp doubled twice now (0.2 -> 0.4 -> 0.8, still "too low" after
+// the first) - its own upper bound raised to 2 this time (was 0/1) to
+// leave real headroom above the new default rather than needing a third
+// round. \wet/\level were missing here entirely, even though the real
+// SynthDef has had that tail since this same tuning pass - added to
+// match every other instrument's own spec entry.
     specs.put(\droneChord, [
             [\note1, 48, 0, 127, \lin],
             [\note2, 52, 0, 127, \lin],
             [\note3, 55, 0, 127, \lin],
             [\note4, 60, 0, 127, \lin],
-            [\amp, 0.4, 0, 1, \lin],
+            [\amp, 0.8, 0, 2, \lin],
             [\attack, 0.012, 0.01, 60, \exp],
             [\sustain, 0.12, 0.1, 300, \exp],
             [\release, 5, 0.01, 120, \exp],
