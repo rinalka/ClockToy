@@ -59,7 +59,17 @@
 ~makeSynthLabWindow = {
     var specs, names, selected = \drone, values, controls, menu, panel;
     var revBus, sourceGroup, fxGroup, reverb, active = List.new;
-    var status, rebuild, trigger, makeSlider, synthNames, currentSynth, currentInstrument, revWet = 0.4, revLevel = 0.6;
+// revWet defaults to 0 now (was 0.4), per feedback - every note played here
+// routes through this private reverb Synth unconditionally (it's the ONLY
+// path to output, not a parallel send - see `trigger`'s own \out arg,
+// below), so a nonzero default here was colouring EVERY instrument's sound
+// unconditionally, on top of whatever that instrument's own \wet/\level
+// tail (if it has one) was separately set to - "that issue with the
+// reverb" that made \droneChord (and anything else) not sound like its own
+// true, dry self. Matches the project's universal wet=0/level=1 no-op
+// convention everywhere else now; the Wet/dry and Output level sliders,
+// below, still exist and still work live if you want to turn it back on.
+    var status, rebuild, trigger, makeSlider, synthNames, currentSynth, currentInstrument, revWet = 0, revLevel = 1;
 // Loop: repeatedly retriggers the selected instrument so there's continuous
 // sound to tune against - short/percussive synths (hat/cym/baseD/kick) free
 // themselves almost instantly, too fast to hear a slider move while one
@@ -255,16 +265,26 @@
             [\wet, 0, 0, 1, \lin],
             [\level, 1, 0, 1, \lin]
     ]);
+// Defaults match the real SynthDef's own (CT8synths.scd), per feedback -
+// amp/attack/sustain/release used to lag behind a tuning pass there (was
+// 0.2/5/30/10 here vs. the real synth's 0.4/0.012/0.12/5), so auditioning
+// here started from a different sound than the live composition actually
+// makes. amp's own upper bound raised to 1 (was 0.5) to leave room above
+// the new, louder default. \wet/\level were missing here entirely, even
+// though the real SynthDef has had that tail since this same tuning pass -
+// added to match every other instrument's own spec entry.
     specs.put(\droneChord, [
             [\note1, 48, 0, 127, \lin],
             [\note2, 52, 0, 127, \lin],
             [\note3, 55, 0, 127, \lin],
             [\note4, 60, 0, 127, \lin],
-            [\amp, 0.2, 0, 0.5, \lin],
-            [\attack, 5, 0.01, 60, \exp],
-            [\sustain, 30, 0.1, 300, \exp],
-            [\release, 10, 0.01, 120, \exp],
-            [\detune, 1, 0, 1, \lin]
+            [\amp, 0.4, 0, 1, \lin],
+            [\attack, 0.012, 0.01, 60, \exp],
+            [\sustain, 0.12, 0.1, 300, \exp],
+            [\release, 5, 0.01, 120, \exp],
+            [\detune, 1, 0, 1, \lin],
+            [\wet, 0, 0, 1, \lin],
+            [\level, 1, 0, 1, \lin]
     ]);
     names = [\drone, \lead, \seq, \noise, \kick, \plucking, \hat, \cym, \baseD, \fm, \droneChord];
 

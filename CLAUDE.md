@@ -323,7 +323,24 @@ their own bullets below for exactly where the line falls:
   retriggering or the window itself. Entirely self-contained: its own private stereo bus/
   Groups/`\allpassReverb` instance (`revBus`/`sourceGroup`/`fxGroup`/`reverb`, all local
   vars), completely separate from the project's shared `~revBus`/`~clockRev` - nothing
-  played here reaches or affects the live clock composition. `~synthLabWindow` and
+  played here reaches or affects the live clock composition. Every note here routes to
+  `revBus` as its OWN `\out` arg (`trigger`'s own code), which `reverb` then sends on to
+  hardware `out: 0` - this bus is the ONLY path to output, not a parallel dry+wet send,
+  so whatever `revWet`/`revLevel` (its own Wet/dry and Output level sliders) are set to
+  colours EVERY instrument unconditionally, on top of whatever that instrument's own
+  `\wet`/`\level` tail (if it has one) is separately set to. `revWet`/`revLevel` now
+  default to `0`/`1` (were `0.4`/`0.6`) - per feedback ("there is that issue with the
+  reverb, so turn the synthlab reverb off"), matching the project's universal
+  wet=0/level=1 no-op convention everywhere else, since the old nonzero default was
+  colouring every instrument's sound here unconditionally, independent of (and
+  compounding with) its own tail - this was making `\droneChord` in particular not
+  sound like its own true, dry self when auditioned here. The two sliders still exist
+  and still work live if a reverb tail is wanted while tuning. `\droneChord`'s own
+  `specs` entry (below) is kept in sync with the real SynthDef's defaults for the same
+  reason - it had drifted (amp/attack/sustain/release still read the synth's OLD
+  defaults after a tuning pass changed them, and `\wet`/`\level` weren't in this entry
+  at all), so auditioning here started from a different sound than the live composition
+  actually makes. `~synthLabWindow` and
   `~stopSynthLab` (the only two globals this file needs) follow the same close-on-CmdPeriod
   convention as `~adjustWindow`/`~percGeneratorWindow`, except `~stopSynthLab` also frees the
   private Groups/Bus, not just the window - `CT8main.scd`'s `~closeWindowsOnCmdPeriod`
