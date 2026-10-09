@@ -528,8 +528,21 @@ their own bullets below for exactly where the line falls:
 
 - **`CT8synths.scd`** — owns everything sound-*generating*: SynthDefs (`\plucking`,
   `\hat`, `\baseD`, `\cym`, `\fm`, `\ELIreverb`, `\drone`/`\lead`/`\seq`/`\noise`/`\kick`/
-  `\droneChord`/`\allpassReverb` - incorporated from the user's Sound Lab file, not yet
-  used by any track, auditioned via `CT8guiSynthLab.scd` for now; the legacy/unused
+  `\droneChord`/`\allpassReverb` - incorporated from the user's Sound Lab file; every one
+  but `\droneChord` is still only auditioned via `CT8guiSynthLab.scd`, not used by any
+  track. `\droneChord` (four simultaneous MIDI notes, `note1`-`note4`, eight slightly
+  detuned sine oscillators each - `detune=1` is in tune, `detune=0` allows up to +/- one
+  semitone per voice) is now also HT1's own second selectable Instrument (alongside
+  `\fm`, via `~polyInstrument[\HT1]` - see `~buildPolyPattern`'s own bullet,
+  `CT8tracks.scd`), per feedback. `note1`-`note4` are plain control args, not read from
+  `~currentChord` inside the SynthDef body - a UGen graph function runs once in sclang,
+  at `.add` time, so a direct `~currentChord` reference in there would freeze whatever
+  chord was current at THAT moment forever, never updating per note; `~buildPolyPattern`
+  is what reads `~currentChord` live and feeds it in as these four args instead, fresh
+  every row event. `amp`/`attack`/`sustain`/`release` defaults were tuned per feedback
+  (0.4/0.012/0.12/5 - was "very soft and slow" before); `wet`/`level` are its own tiny
+  built-in `~allpassWash` tail, same convention as every other instrument's, defaulting
+  to a no-op like always. The legacy/unused
   `\bassDrum`/`\shortWhistle`/`\clockVerb` that used to live here too have been deleted
   outright, not just left unused, since nothing referenced them), `~allpassWash` (a plain
   helper function, not a SynthDef - a chain of 10 `AllpassN` filters crossfaded against
@@ -783,23 +796,36 @@ All four are purely musical - `\type` goes to `\rest` when `~trackEnabled[name]`
 them drive the clock-face
 flash; that's a fully independent process (`~buildRowFlashPattern`/`~buildColFlashPattern`,
 `CT8guiClock.scd` - see below), tied only to `PT1`/`PT2`'s roles regardless of whether
-those tracks are enabled, built, or even exist. `HT1`/`MT1` are both `\fm`-based, with
-their params hardcoded directly in each builder rather than read from any shared table,
-and both read the one shared `~currentChord` global (`CT8harmonySelect.scd`)
+those tracks are enabled, built, or even exist. `HT1`/`MT1` both read the one shared
+`~currentChord` global (`CT8harmonySelect.scd`)
 live - not snapshotted into a local var, so a chord change is heard on whichever track's
 very next hit comes after it, regardless of which of them is enabled/playing. `HT1` is
 derived from `~rowPattern`: it plays one new chord at every `\rowStart` in the current
 scan, holding for exactly that row's span in beats (computed fresh each rebuild from
 `~rowPattern`, same grid `PT1` plays on) - so it changes chord in lockstep with `PT1`'s
-row boundaries rather than on a fixed schedule of its own; its `\atk`/`\rel` are computed
-per-event from that beat span converted to real seconds via `t.tempo`, since the SynthDef's
-own envelope times are wall-clock seconds, not TempoClock beats. Its `\midinote` used to
-be a fixed 3-chord `Pseq`; now it's a `Pfunc` - `Array.fill(4, { ~chordNoteInRange.(
+row boundaries rather than on a fixed schedule of its own, regardless of which of its
+two instruments plays it (below). `~buildPolyPattern` dispatches on
+`~polyInstrument[\HT1]` (`makePolyTrackSection`'s own Instrument menu,
+`CT8guiHarmonyMelodyGenerator.scd` - every other menu in that section still just posts
+"not yet wired to playback" and changes nothing, but Instrument is now real, per
+feedback) between two fully separate `Pbind`s, both driven by the same `rowDurs`:
+`\fm` (hardcoded params, not read from any shared table) - its `\atk`/`\rel` are
+computed per-event from that beat span converted to real seconds via `t.tempo`, since
+the SynthDef's own envelope times are wall-clock seconds, not TempoClock beats; its
+`\midinote` is a `Pfunc` - `Array.fill(4, { ~chordNoteInRange.(
 ~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) })`, 4 independent
 tone-and-octave picks within `~currentRange[\HT1]` (60-96 by default, three octaves
-above middle C) - but still fires exactly once per row event either way, so the
-"one new chord per row-start" cadence is unchanged, only where the notes come from
-differs. `MT1` used to mirror `HT1`'s structure from `~colPattern`/`\columnStart`
+above middle C); or `\droneChord` (`CT8synths.scd`'s own bullet has the SynthDef side) -
+its four `\note1`-`\note4` keys are each a `Pfunc` reading `~currentChord` fresh every
+row event, wrapped with `% notes.size` so a 3- or 5-note chord still fills all four
+slots (a 3-note chord's root repeats in `\note4`, the same "double the root" idea
+`~chordArpIntervals` already uses for a 3-note chord's own arpeggio, `CT8harmonySelect.scd`).
+`\plucking` is still listed in the Instrument menu but unwired - picking it falls
+through to the `\fm` branch, same as before this change, since a single-note bass
+synth and a 4-voice chord pad need different handling that hasn't been designed yet.
+Either way, the "one new chord per row-start" cadence is unchanged - only which
+instrument plays it, and where its notes come from, differs.
+`MT1` used to mirror `HT1`'s structure from `~colPattern`/`\columnStart`
 through its own bespoke builder, `~buildMelodyPattern` - that builder is gone now,
 along with the whole idea of "melody tracks" as their own family; `MT1`/`MT2` are driven
 by `~buildMonoTrackPattern` instead, exactly like `BT1`/`BT2` - see that paragraph,

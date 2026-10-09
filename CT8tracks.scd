@@ -763,30 +763,55 @@
             nextIdx - idx
         };
 
-        ~trackPatterns[\HT1] = Pbind(
-            \instrument, \fm,
-            \dur, Pseq(rowDurs, inf),
-            \midinote, Pfunc { Array.fill(4, {
-                ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1])
-            }) },
-            \mRatio, 1,
-            \index, 1.5,
-            \iScale, Pseq([2, 4], inf),
-            \atk, 0.05,
+// HT1's own Instrument menu (makePolyTrackSection, CT8guiHarmonyMelodyGenerator.scd)
+// used to be pure decoration - every change there posted "not yet wired to
+// playback" and ~polyInstrument[\HT1] was never actually read here. Per
+// feedback, \droneChord is now a real second choice alongside the
+// original \fm path (\plucking is still unwired - it falls through to the
+// \fm branch below like everything other than \droneChord does, same as
+// before this change, since a 4-voice chord pad and a single-note plucked
+// bass synth need genuinely different handling that hasn't been designed
+// yet). \droneChord's own note1-4 args (CT8synths.scd) are fed live from
+// ~currentChord here, read fresh every row event - wrapping with `% notes.size`
+// so a 3- or 5-note chord still fills all four slots (a 3-note chord's
+// root repeats in note4, the same "double the root" idea
+// ~chordArpIntervals already uses elsewhere for a 3-note chord's arpeggio).
+        ~trackPatterns[\HT1] = if(~polyInstrument[\HT1] == \droneChord) {
+            Pbind(
+                \instrument, \droneChord,
+                \dur, Pseq(rowDurs, inf),
+                \note1, Pfunc { var c = ~currentChord; c[0 % c.size] },
+                \note2, Pfunc { var c = ~currentChord; c[1 % c.size] },
+                \note3, Pfunc { var c = ~currentChord; c[2 % c.size] },
+                \note4, Pfunc { var c = ~currentChord; c[3 % c.size] },
+                \out, 0
+            );
+        } {
+            Pbind(
+                \instrument, \fm,
+                \dur, Pseq(rowDurs, inf),
+                \midinote, Pfunc { Array.fill(4, {
+                    ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1])
+                }) },
+                \mRatio, 1,
+                \index, 1.5,
+                \iScale, Pseq([2, 4], inf),
+                \atk, 0.05,
 // Real seconds, not beats - EnvGen's env times inside \fm are wall-clock
 // seconds regardless of TempoClock tempo, so this converts this event's
 // \dur (already resolved above, read back here) via t.tempo (beats/sec).
-            \rel, Pfunc { |ev|
-                var rowSecs = ev[\dur] / t.tempo;
-                (rowSecs - 0.05).max(0.05)
-            },
-            \cAtk, 0,
-            \cRel, 0,
-            \amp, 0.027,
-            \out, 0,
-            \fx, Pfunc { ~revBus },
-            \fxsend, -10
-        );
+                \rel, Pfunc { |ev|
+                    var rowSecs = ev[\dur] / t.tempo;
+                    (rowSecs - 0.05).max(0.05)
+                },
+                \cAtk, 0,
+                \cRel, 0,
+                \amp, 0.027,
+                \out, 0,
+                \fx, Pfunc { ~revBus },
+                \fxsend, -10
+            );
+        };
     };
 };
 

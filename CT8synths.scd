@@ -465,8 +465,19 @@ SynthDef(\kick, { |out=0, pan=0, amp=0.5, curve=(-4),
 // oscillators each. detune=1 is in tune; detune=0 allows up to +/- one
 // semitone per voice (named the same way as, but unrelated in code to, the
 // separately-reviewed ~droneCluster idea - that one hasn't been added).
+// note1-4 are plain control args, not read from ~currentChord in here - a
+// UGen graph function runs once in sclang, at .add time, so `~currentChord`
+// referenced directly in this body would freeze whatever chord happened to
+// be current at THAT moment forever, never updating per note (this is what
+// broke "always play the notes from currentChord" - the fix lives in
+// ~buildPolyPattern, CT8tracks.scd, which reads ~currentChord fresh every
+// event and passes it in live as these four args instead). wet/level are
+// this synth's own tiny built-in ~allpassWash tail (CT8synths.scd's own
+// bullet - same convention as every other instrument's), defaulting to a
+// no-op like always; attack/sustain/release/amp defaults per feedback
+// (was too soft and slow).
 SynthDef(\droneChord, { |out=0, note1=48, note2=52, note3=55, note4=60,
-    amp=0.2, attack=5, sustain=30, release=10, detune=1|
+    amp=0.4, attack=0.012, sustain=0.12, release=5, detune=1, wet=0, level=1|
     var notes, voices, sig, env, spread;
 
     spread = 1 - detune.clip(0, 1);
@@ -485,7 +496,9 @@ SynthDef(\droneChord, { |out=0, note1=48, note2=52, note3=55, note4=60,
     sig = Mix.new(voices) * 0.25;
     env = EnvGen.kr(Env.linen(attack, sustain, release, 1, \sine),
         doneAction: 2);
-    Out.ar(out, sig * env * amp);
+    sig = sig * env * amp;
+    sig = ~allpassWash.(sig, wet, level);
+    Out.ar(out, sig);
 }).add;
 
 // Allpass reverb: a second, simpler reverb option alongside \ELIreverb - a
