@@ -56,13 +56,13 @@ To make a live edit take effect:
   stay audible long enough to hear a slider move, including each one's own `\wet`/
   `\level` sliders - it is deliberately standalone, not connected to the live
   composition at all; its purpose is to audition/tune settings before dialing the same
-  values into the Percussion + Bass Generator by hand. **Temporarily not auto-opened**
-  at boot, along with the Fake Data window (`CT8fakeData.scd`), while the Percussion +
-  Bass Generator's own per-track layout is being reworked - both files' functions are
-  still loaded and untouched, just not auto-called (`~makeSynthLabWindow.value`/
-  `~makeFakeDataWindow.value`, commented out in `CT8main.scd`/at the bottom of
-  `CT8fakeData.scd` respectively); evaluate either call by hand if you need that window
-  meanwhile.
+  values into the Percussion + Bass Generator by hand. Re-enabled per feedback -
+  `~makeSynthLabWindow.value` is back in `CT8main.scd`'s boot sequence, auto-opening it
+  alongside every other window again. The Fake Data window (`CT8fakeData.scd`) is
+  still **not auto-opened** at boot, while the Percussion + Bass Generator's own
+  per-track layout is being reworked - its own function is still loaded and untouched,
+  just not auto-called (`~makeFakeDataWindow.value`, commented out at the bottom of
+  `CT8fakeData.scd`); evaluate it by hand if you need that window meanwhile.
 
 `CT8main.scd` hardcodes the audio device as `"ASIO : Focusrite USB ASIO"` — on a machine
 without that interface, `s.boot` will fail; change `s.options.device` accordingly.

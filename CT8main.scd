@@ -197,11 +197,7 @@ s.waitForBoot({
    
      ~makeHarmonyMelodyGeneratorWindow.value;// Construct the HT1-4/MT1-2 skeleton control window (not yet wired to playback).
      ~makePercGeneratorWindow.value;// Construct the PT1-PT4/BT1-BT2 instrument/pattern/pitch/volume control window.
-// Temporarily not displayed while the Percussion + Bass Generator's own
-// per-track layout is being reworked - ~makeSynthLabWindow itself is
-// untouched, just not auto-opened here; evaluate it by hand
-// (~makeSynthLabWindow.value) if you need it meanwhile.
-//     ~makeSynthLabWindow.value;// Construct the standalone sound-experiment/audition window (own private reverb bus, unrelated to ~revBus).
+     ~makeSynthLabWindow.value;// Construct the standalone sound-experiment/audition window (own private reverb bus, unrelated to ~revBus). Re-enabled per feedback - was temporarily disabled while the Percussion + Bass Generator's own per-track layout was being reworked.
      ~displayClock.value;// Draw the initial four digits using ~hours and ~minutes.
      ~getLineSegOrder.value; // Scan the lit seven-segment cells and create the ordered ~clockEvents Array.
      ~getColumnSegOrder.value; // Build track two's independent by-column event stream.
