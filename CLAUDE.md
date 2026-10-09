@@ -644,11 +644,21 @@ their own bullets below for exactly where the line falls:
   can take effect, since the server is already running by the time any `~makeXWindow`
   (including the Sound Lab's) gets called.
 
-Every track starts disabled by default now, per feedback ("set things to start with all
-tracks off") - previously `PT1`/`PT2`/`PT3`/`MT1` defaulted on via `CT8tracks.scd`'s own
-`~trackEnabled` guard, and `CT8main.scd` separately forced `HT1`/`MT1`/`BT1`/`MT2` on too,
-every run; both of those are gone now, leaving `CT8tracks.scd`'s single `?? false` guard
-(TRACK REGISTRY block) as the only place a default is set, for every one of the 13
+Every track starts disabled on every run now, per feedback - first "set things to start
+with all tracks off," then, once it turned out that alone didn't actually hold
+(`~trackEnabled` is an interpreter global, so a GUI click earlier in the same sclang
+session - or an earlier run that session - survives a later `CT8main.scd` re-evaluation
+by design, the same `?`-based convention every other per-track setting in this project
+deliberately uses so GUI tuning isn't lost on a hot reload), "i would like all tracks to
+start off. no matter what the last thing i did was!" `CT8tracks.scd`'s own
+`~trackEnabled[name] = ~trackEnabled[name] ? false` guard (TRACK REGISTRY block) only
+ever fills in a default the FIRST time a track's entry is set, so it's not what actually
+guarantees this - `CT8main.scd`'s own RUNTIME PARAMETERS section does, with an
+UNCONDITIONAL `~trackNames.do { |name| ~trackEnabled[name] = false }` that overwrites
+every entry on every run regardless of GUI state, replacing both the old default-on
+guard (`PT1`/`PT2`/`PT3`/`MT1` used to default on this way) and the old separate
+`HT1`/`MT1`/`BT1`/`MT2` force-on block `CT8main.scd` used to run every time - for every
+one of the 13
 planned tracks (4 percussion `PT1-4`, 2 bass `BT1-2`, 4 rhythm/harmony `HT1-4`, 4 melody
 `MT1-4`) for a planned generative "Daily Piece" mode uniformly. Every track that HAS a
 real builder can still be switched on by hand, either in the Percussion + Bass Generator

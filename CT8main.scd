@@ -110,10 +110,20 @@ CmdPeriod.add(~closeWindowsOnCmdPeriod);
 // ---------------------------------------------------------------------------
 // 3. RUNTIME PARAMETERS
 
-// Every track starts OFF, per feedback - CT8tracks.scd's own ~trackEnabled
-// default guard (TRACK REGISTRY section) already sets every track to
-// false; nothing here overrides it any more. All thirteen can still be
-// switched on by hand once the windows are up.
+// Every track is forced OFF here, unconditionally, on EVERY run - per
+// feedback, "i would like all tracks to start off. no matter what the
+// last thing i did was!" CT8tracks.scd's own ~trackEnabled default guard
+// (TRACK REGISTRY section, `~trackEnabled[name] = ~trackEnabled[name] ?
+// false`) only fills in a default the FIRST time a track's entry is ever
+// set, same `?`-based convention every other per-track setting in this
+// project deliberately uses so GUI tuning survives a hot reload - but
+// ~trackEnabled[name] already holds whatever a previous GUI click (or an
+// earlier run this same sclang session) left it at by the time THIS line
+// would run, so that guard alone was silently doing nothing on a second
+// run. This overwrites every track's entry regardless, every time,
+// right after CT8tracks.scd has defined ~trackNames. All thirteen can
+// still be switched on by hand once the windows are up.
+~trackNames.do { |name| ~trackEnabled[name] = false };
 
 ~twelveHourClock = true;  // false makes it a 24-hour clock
 ~runningRealTime = true;  // false starts the clock at a fixed time and advances it using ~fakeSecond
