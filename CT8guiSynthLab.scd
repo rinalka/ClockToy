@@ -70,6 +70,7 @@
 // convention everywhere else now; the Wet/dry and Output level sliders,
 // below, still exist and still work live if you want to turn it back on.
     var status, rebuild, trigger, makeSlider, synthNames, currentSynth, currentInstrument, revWet = 0, revLevel = 1;
+    var populateLiveOverrides;
 // Loop: repeatedly retriggers the selected instrument so there's continuous
 // sound to tune against - short/percussive synths (hat/cym/baseD/kick) free
 // themselves almost instantly, too fast to hear a slider move while one
@@ -436,10 +437,17 @@
 // a dragged note1-4 slider used to land on fractional MIDI values (e.g.
 // 48.237), which is a real, just slightly-out-of-tune, pitch once
 // .midicps'd, not a clean semitone the way picking a note should be.
-    makeSlider = { |parent, label, val, min, max, curve, callback|
+// isLive (default false, so the Reverb sliders' own two calls below don't
+// need updating) - per feedback ("set the text color to red... for any
+// controls that are being controlled by clocktoy when it is running"):
+// red instead of white for this label when true, i.e. whenever this
+// param is one of the ones ~labLiveOverrides is currently pushing into
+// the live composition (rebuild's own call, below, is what decides
+// that per param).
+    makeSlider = { |parent, label, val, min, max, curve, callback, isLive = false|
         var row = CompositeView(parent, 600@29);
         var lbl = StaticText(row, Rect(0, 2, 145, 23)).string_(label.asString)
-            .stringColor_(Color.white);
+            .stringColor_(if(isLive) { Color.red } { Color.white });
         var slider = Slider(row, Rect(150, 3, 325, 21));
         var number = NumberBox(row, Rect(485, 2, 100, 24));
         var isMidi = (curve == \midi);
@@ -488,6 +496,7 @@
         controls.bounds = Rect(0, 0, 605, (fields.size * 34 + 15).max(475));
         controls.decorator = FlowLayout(controls.bounds, 4@5, 4@5);
         fields.do { |sp|
+            var isLive = ~labLiveOverrides[selected].notNil and: { ~labLiveOverrides[selected][sp[0]].notNil };
             makeSlider.value(controls, sp[0], values[selected][sp[0]],
                 sp[2], sp[3], sp[4], { |v|
                     values[selected][sp[0]] = v;
@@ -507,7 +516,7 @@
                     if(~labLiveOverrides[selected].notNil and: { ~labLiveOverrides[selected][sp[0]].notNil }) {
                         ~labLiveOverrides[selected][sp[0]] = v;
                     };
-                });
+                }, isLive);
         };
     };
     trigger = {
@@ -531,9 +540,6 @@
         });
         status.string = "Played " ++ selected.asString;
     };
-    menu.action = {
-        selected = names.at(menu.value.asInteger);
-        rebuild.value;
 // Per feedback ("I need a way to tune the presets so lets connect the
 // lab to the running synths... I will only run one track with that
 // synth in it, will tune it using synthLab, and will record what i
@@ -546,7 +552,16 @@
 // CT8guiHarmonyMelodyGenerator.scd's own Mix/Vol sliders) and any
 // \noteN key (pitch is its own separate, chord-aware mechanism this
 // isn't meant to second-guess) - every other param in this instrument's
-// own specs table gets tracked.
+// own specs table gets tracked. Shared by menu.action AND the initial
+// build at the bottom, below, so the default-selected instrument
+// (\drone) gets the exact same treatment as one picked by hand - called
+// BEFORE rebuild.value either time, not after, since rebuild's own
+// isLive check (per feedback, "set the text color to red... for any
+// controls that are being controlled by clocktoy") needs this already
+// populated for the CURRENT instrument, or every slider's colour would
+// still reflect whichever instrument was selected before (or nothing,
+// on the very first build).
+    populateLiveOverrides = {
         ~labLiveOverrides = ();
         ~labLiveOverrides[selected] = ();
         specs[selected].do { |sp|
@@ -558,9 +573,15 @@
                 ~labLiveOverrides[selected][key] = values[selected][key];
             };
         };
+    };
+    menu.action = {
+        selected = names.at(menu.value.asInteger);
+        populateLiveOverrides.value;
+        rebuild.value;
         status.string = "Tuning " ++ selected.asString ++ " live - "
             ++ ~labLiveOverrides[selected].size ++ " param(s) pushed to the running composition.";
     };
+    populateLiveOverrides.value;
     rebuild.value;
 
     ~synthLabWindow.onClose = { ~stopSynthLab.value };

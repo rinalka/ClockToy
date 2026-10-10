@@ -325,13 +325,24 @@ their own bullets below for exactly where the line falls:
   fractional MIDI note (e.g. `48.237`) is a real but out-of-tune pitch once `.midicps`'d,
   not the clean semitone picking a note should land on); some params (not envelope
   segment timings or the pluck excitation) update the currently-sounding note live via
-  `currentSynth.set`. Per feedback, selecting an instrument here (`menu.action`) also
+  `currentSynth.set`. Per feedback, selecting an instrument here (`populateLiveOverrides`,
+  called from both `menu.action` and once at the window's own initial build, so the
+  default-selected instrument gets identical treatment to one picked by hand) also
   populates `~labLiveOverrides` (`CT8tracks.scd`'s own SYNTH LAB LIVE OVERRIDES bullet
   has the full mechanism) with every one of that instrument's own tunable params
   (`\wet`/`\level`/any `\noteN` excluded), clearing whatever a previously-selected
   instrument had been pushing - every slider's own callback both updates
   `currentSynth` (if one's still playing) and writes into `~labLiveOverrides`, so
   whichever live track is currently using that same instrument follows the slider too.
+  Per feedback ("set the text color to red... for any controls that are being
+  controlled by clocktoy when it is running"), `makeSlider`'s own label text turns red
+  instead of white for exactly the params `~labLiveOverrides` is currently tracking for
+  whichever instrument is selected (an `isLive` flag `rebuild` computes per slider,
+  checking `~labLiveOverrides[selected][sp[0]]`) - `populateLiveOverrides` has to run
+  BEFORE `rebuild`, not after, so this check sees the CURRENT instrument's own set, not
+  a stale one from whatever was selected before. The two top-level Reverb sliders
+  (Wet/dry, Output level - this lab's own private reverb, unrelated to any live track)
+  never pass `isLive`, so they stay white always.
   A LOOP toggle + interval number box repeatedly re-fires the
   currently-selected instrument on an `AppClock`-scheduled self-reschedule (same
   keep-going/return-nil-to-stop idiom as `~checkForNewMinute`/`~tempoChange`) so
