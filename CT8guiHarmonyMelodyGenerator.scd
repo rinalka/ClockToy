@@ -10,16 +10,21 @@
 // at a time - for the "Note" tracks (BT1/BT2/MT1/MT2), and poly - a chord
 // at a time - for the Harmony tracks (HT1-4):
 //
-// HT1-4 (makePolyTrackSection) are still the original skeleton - deliberately
-// NOT yet wired into ~buildPolyPattern (CT8tracks.scd; HT1 is still its
-// own bespoke, chord-based builder, untouched by this file). Every control
-// here besides on/off reads and writes a placeholder global (~polyX, below)
-// that doesn't affect playback yet - this part of the window's job for now
-// is just to exist with the right shape. The on/off button IS real,
-// though: same ~trackEnabled[name]/~syncTrackPlayer every other window's
-// on/off button already uses, and shows orange (not red/green, same
-// convention CT8guiAdjust.scd's own buttons use) for all four of HT1-4,
-// which have no builder yet.
+// HT1/HT2 (makePolyTrackSection) are now real, wired-up chord-pad tracks,
+// per feedback ("going to change the rules for HT1 and HT2") - restricted
+// to the two chord-voicing instruments (\droneChord/\shimmerPad), three Dur
+// Pat choices, four Pit Pat choices, and no Accents/Volume at all (see
+// ~buildPolyPattern's own header comment, CT8tracks.scd, for the full
+// design). HT3/HT4 are deliberately untouched ("HT3 and HT4 should be
+// ignored for now") - still the original skeleton, still no builder, still
+// every control besides on/off reading and writing a placeholder global
+// that doesn't affect playback. makePolyTrackSection's own `isRestricted`
+// flag (true for HT1/HT2 only) is what the two halves of this split, below.
+// The on/off button IS real for all four, regardless: same
+// ~trackEnabled[name]/~syncTrackPlayer every other window's on/off button
+// already uses, green/red once a track has a builder (now true for HT1/
+// HT2, same convention CT8guiAdjust.scd's own buttons use), still orange
+// for HT3/HT4.
 //
 // MT1/MT2 (makeMonoTrackSection) are real, full Note tracks now - no
 // longer a melody-specific builder of their own (~buildMelodyPattern is
@@ -63,13 +68,30 @@
 // HT1-4 default to Row scan - the same identity ~buildPolyPattern (HT1)
 // already has today, even though this Source menu doesn't drive it yet.
 ~polySourceDefaults = (HT1: \row, HT2: \row, HT3: \row, HT4: \row);
-// \fm for every one of these four, matching HT1's real instrument today.
-~polyInstrumentDefaults = (HT1: \fm, HT2: \fm, HT3: \fm, HT4: \fm);
+// HT1/HT2 default to \droneChord now - restricted to \droneChord/
+// \shimmerPad only, per feedback (~buildPolyPattern, CT8tracks.scd); HT3/
+// HT4 keep \fm, the original skeleton's own default, since they're
+// untouched.
+~polyInstrumentDefaults = (HT1: \droneChord, HT2: \droneChord, HT3: \fm, HT4: \fm);
 ~polyTrackNames.do { |name|
+    var isRestricted = #[\HT1, \HT2].includes(name);
     ~polySource[name] = ~polySource[name] ? ~polySourceDefaults[name];
     ~polyInstrument[name] = ~polyInstrument[name] ? ~polyInstrumentDefaults[name];
-    ~polyPattern[name] = ~polyPattern[name] ? \everyBeat;
+// Migrates a value left over from before this split (e.g. HT1 still set to
+// \fm from an earlier session) back onto a valid restricted choice, rather
+// than silently feeding \fm a Pbind shaped for \droneChord/\shimmerPad's
+// note1-N args - same reasoning for Pattern/Pitch below.
+    if(isRestricted and: { #[\droneChord, \shimmerPad].includes(~polyInstrument[name]).not }) {
+        ~polyInstrument[name] = ~polyInstrumentDefaults[name];
+    };
+    ~polyPattern[name] = ~polyPattern[name] ? (if(isRestricted) { \firstBeat } { \everyBeat });
+    if(isRestricted and: { #[\firstBeat, \halfway, \startOnly].includes(~polyPattern[name]).not }) {
+        ~polyPattern[name] = \firstBeat;
+    };
     ~polyPitchMode[name] = ~polyPitchMode[name] ? \fixed;
+    if(isRestricted and: { #[\fixed, \random, \rising, \falling].includes(~polyPitchMode[name]).not }) {
+        ~polyPitchMode[name] = \fixed;
+    };
     ~polyVolumeMode[name] = ~polyVolumeMode[name] ? \fixed;
     ~polyVolumeLevels[name] = ~polyVolumeLevels[name] ? [0.2, 0.2];
     ~polyWet[name] = ~polyWet[name] ? 0;
@@ -79,11 +101,13 @@
 
 // Forcibly resets one track's whole config back to these same original
 // defaults - mirrors ~resetPercConfig/~resetMonoConfig (CT8tracks.scd),
-// same reason (see either one's own comment).
+// same reason (see either one's own comment). isRestricted-aware for
+// Pattern, same as the init loop above.
 ~resetPolyConfig = { |name|
+    var isRestricted = #[\HT1, \HT2].includes(name);
     ~polySource[name] = ~polySourceDefaults[name];
     ~polyInstrument[name] = ~polyInstrumentDefaults[name];
-    ~polyPattern[name] = \everyBeat;
+    ~polyPattern[name] = if(isRestricted) { \firstBeat } { \everyBeat };
     ~polyPitchMode[name] = \fixed;
     ~polyVolumeMode[name] = \fixed;
     ~polyVolumeLevels[name] = [0.2, 0.2];
@@ -156,33 +180,56 @@
         var pitchRangeSlider, pitchRangeReadout, updatePitchRangeReadout;
         var volumeRangeSlider, volumeRangeReadout, updateVolumeRangeReadout;
         var isBuilt = ~trackBuilders[name].notNil;
+// HT1/HT2 only - the new, restricted chord-pad rules (~buildPolyPattern's
+// own header comment, CT8tracks.scd, has the full design). HT3/HT4 fall
+// through to every branch below unchanged from the original skeleton.
+        var isRestricted = #[\HT1, \HT2].includes(name);
         var unbuiltColor = Color.new255(255, 165, 0);
-        var patternSymbols = [
-            \firstBeat, \everyBeat, \startOnly,
-            \random8thPercent, \random8thLastBar, \random8thLastRowCol,
-            \random3rdPercent, \random3rdLastBar, \random3rdLastRowCol,
-            \random4to3Percent, \random4to3LastBar, \random4to3LastRowCol,
-            \randomSkip
-        ];
-// "Random" dropped from every label - mirrors CT8guiPercGenerator.scd's own
-// patternLabelsFor (kept in sync even though this window isn't wired to
-// playback yet).
-        var patternLabelsFor = { |source|
+// "Changed." for HT1/HT2 (these controls are real now); the original
+// "not yet wired to playback" wording stays for HT3/HT4.
+        var changedMsg = if(isRestricted) { "Changed." } { "Changed (not yet wired to playback)." };
+        var patternSymbols = if(isRestricted) {
+            [\firstBeat, \halfway, \startOnly]
+        } {
             [
-                "First beat only", "Every beat",
-                "Start of " ++ (if(source == \row) { "Row" } { "Col" }),
-                "1/8th %", "1/8th (last of bar)", "1/8th (last of row/col)",
-                "1/3 %", "1/3 (last of bar)", "1/3 (last of row/col)",
-                "4/3 %", "4/3 (last of bar)", "4/3 (last of row/col)",
-                "Skip %"
+                \firstBeat, \everyBeat, \startOnly,
+                \random8thPercent, \random8thLastBar, \random8thLastRowCol,
+                \random3rdPercent, \random3rdLastBar, \random3rdLastRowCol,
+                \random4to3Percent, \random4to3LastBar, \random4to3LastRowCol,
+                \randomSkip
             ]
         };
+// "Random" dropped from every label - mirrors CT8guiPercGenerator.scd's own
+// patternLabelsFor (kept in sync even though HT3/HT4's own list isn't wired
+// to playback yet).
+        var patternLabelsFor = { |source|
+            if(isRestricted) {
+                ["First beat only", "Half way", "First of " ++ (if(source == \row) { "Row" } { "Col" })]
+            } {
+                [
+                    "First beat only", "Every beat",
+                    "Start of " ++ (if(source == \row) { "Row" } { "Col" }),
+                    "1/8th %", "1/8th (last of bar)", "1/8th (last of row/col)",
+                    "1/3 %", "1/3 (last of bar)", "1/3 (last of row/col)",
+                    "4/3 %", "4/3 (last of bar)", "4/3 (last of row/col)",
+                    "Skip %"
+                ]
+            }
+        };
+// \fm/\plucking dropped as choices for HT1/HT2 - restricted to the two
+// instruments that actually manage a chord voicing as one unit.
+        var instrumentSymbols = if(isRestricted) { [\droneChord, \shimmerPad] } { [\fm, \plucking, \droneChord, \shimmerPad] };
+        var instrumentLabels = if(isRestricted) { ["droneChord", "shimmerPad"] } { ["fm", "plucking", "droneChord", "shimmerPad"] };
+        var pitchSymbols = if(isRestricted) { [\fixed, \random, \rising, \falling] } { [\fixed, \random, \rising] };
+        var pitchLabels = if(isRestricted) { ["Fixed", "Random", "Rising", "Falling"] } { ["Fixed", "Random", "Rising"] };
 
         trackColor = Color.rand(0.7);
 // Shrunk from 190 along with leftPane/rightPane and the Mix/Vol/Dry/Rev
 // sliders below (130 -> 90, ~30% shorter, per feedback) - mirrors
 // CT8guiPercGenerator.scd's own identical change. 140 -> 172, for the new
-// Send A/Send B target row (below, "mixer phase" per feedback).
+// Send A/Send B target row (below, "mixer phase" per feedback). Kept at
+// 172 for HT1/HT2 even though they lose the Accents column/row 3 widget -
+// just leaves blank space there, simpler than a second height to track.
         trackContainer = CompositeView(~hmGeneratorWindow, 600@172).background_(trackColor);
         ~hmGeneratorWindow.view.decorator.nextLine;
 
@@ -268,82 +315,94 @@
             .action_({ |m|
                 ~polySource[name] = [\row, \col][m.value];
                 patternMenu.items_(patternLabelsFor.(~polySource[name]));
-                patternMenu.value_(patternSymbols.indexOf(~polyPattern[name]) ? 1);
-                statusText.string_("Changed (not yet wired to playback).");
+                patternMenu.value_(patternSymbols.indexOf(~polyPattern[name]) ? 0);
+                statusText.string_(changedMsg);
             });
         StaticText(rightPane, 30@22).string_("Inst").stringColor_(labelColor);
-// \droneChord/\shimmerPad are real, wired-up choices for HT1 now, per
+// \droneChord/\shimmerPad are real, wired-up choices for HT1/HT2 now, per
 // feedback (~buildPolyPattern, CT8tracks.scd, dispatches on
-// ~polyInstrument[\HT1]) - \plucking stays unwired (falls through to the
-// \fm path, same as before), since a single-note bass synth needs
-// different handling than a chord pad that hasn't been designed yet.
+// ~polyInstrument[name]) - \fm/\plucking dropped entirely for these two
+// (restricted to chord-voicing instruments only); HT3/HT4 keep the
+// original four-item list, still unwired.
         instrumentMenu = PopUpMenu(rightPane, 80@22)
-            .items_(["fm", "plucking", "droneChord", "shimmerPad"])
-            .value_([\fm, \plucking, \droneChord, \shimmerPad].indexOf(~polyInstrument[name]) ? 0)
+            .items_(instrumentLabels)
+            .value_(instrumentSymbols.indexOf(~polyInstrument[name]) ? 0)
             .action_({ |m|
-                ~polyInstrument[name] = [\fm, \plucking, \droneChord, \shimmerPad][m.value];
-                statusText.string_("Changed - not yet applied.");
+                ~polyInstrument[name] = instrumentSymbols[m.value];
+                statusText.string_(if(isRestricted) { "Changed - applies at next rebuild or Apply now." } { "Changed - not yet applied." });
             });
         rightPane.decorator.nextLine;
 
-// Column headers, directly above Pattern/Pitch/Volume below.
+// Column headers, directly above Pattern/Pitch/(Volume) below - no Accents
+// column at all for HT1/HT2 ("we can remove accents," per feedback).
         StaticText(rightPane, 120@16).string_("Dur Pat").stringColor_(labelColor);
         StaticText(rightPane, 120@16).string_("Pit Pat").stringColor_(labelColor);
-        StaticText(rightPane, 120@16).string_("Accents").stringColor_(labelColor);
+        if(isRestricted.not) {
+            StaticText(rightPane, 120@16).string_("Accents").stringColor_(labelColor);
+        };
         rightPane.decorator.nextLine;
 
-// ROW 2: Pattern/Pitch/Volume, all the same width (120).
+// ROW 2: Pattern/Pitch/(Volume), all the same width (120).
         patternMenu = PopUpMenu(rightPane, 120@22)
             .items_(patternLabelsFor.(~polySource[name]))
-            .value_(patternSymbols.indexOf(~polyPattern[name]) ? 1)
+            .value_(patternSymbols.indexOf(~polyPattern[name]) ? 0)
             .action_({ |m|
                 ~polyPattern[name] = patternSymbols[m.value];
-                updatePatternPercentVisibility.value;
-                statusText.string_("Changed (not yet wired to playback).");
+                if(updatePatternPercentVisibility.notNil) { updatePatternPercentVisibility.value };
+                statusText.string_(changedMsg);
             });
         pitchMenu = PopUpMenu(rightPane, 120@22)
-            .items_(["Fixed", "Random", "Rising"])
-            .value_([\fixed, \random, \rising].indexOf(~polyPitchMode[name]) ? 0)
+            .items_(pitchLabels)
+            .value_(pitchSymbols.indexOf(~polyPitchMode[name]) ? 0)
             .action_({ |m|
-                ~polyPitchMode[name] = [\fixed, \random, \rising][m.value];
-                statusText.string_("Changed (not yet wired to playback).");
+                ~polyPitchMode[name] = pitchSymbols[m.value];
+                statusText.string_(changedMsg);
             });
-        volumeMenu = PopUpMenu(rightPane, 120@22)
-            .items_(["Fixed", "Alternate"])
-            .value_([\fixed, \alternate].indexOf(~polyVolumeMode[name]) ? 0)
-            .action_({ |m|
-                ~polyVolumeMode[name] = [\fixed, \alternate][m.value];
-                statusText.string_("Changed (not yet wired to playback).");
-            });
+        if(isRestricted.not) {
+            volumeMenu = PopUpMenu(rightPane, 120@22)
+                .items_(["Fixed", "Alternate"])
+                .value_([\fixed, \alternate].indexOf(~polyVolumeMode[name]) ? 0)
+                .action_({ |m|
+                    ~polyVolumeMode[name] = [\fixed, \alternate][m.value];
+                    statusText.string_(changedMsg);
+                });
+        };
         rightPane.decorator.nextLine;
 
 // ROW 3: one fixed-width (120), no-decorator sub-view per menu above - see
 // CT8guiPercGenerator.scd's own ROW 3 comment for why (RangeSlider needs
 // an explicit Rect, not a bare width@height Point, to position/size
-// itself correctly inside a parent's auto-layout).
+// itself correctly inside a parent's auto-layout). No Percent sub-control
+// for HT1/HT2 at all - none of their three Dur Pat choices are
+// percent-driven, unlike HT3/HT4's full thirteen-entry list. No Volume
+// sub-view either, for the same reason as the Accents column above.
         patternSubView = CompositeView(rightPane, 120@40).background_(trackColor);
         pitchSubView = CompositeView(rightPane, 120@40).background_(trackColor);
-        volumeSubView = CompositeView(rightPane, 120@40).background_(trackColor);
-
-        percentSlider = Slider(patternSubView, Rect(2, 2, 116, 18))
-            .value_(~polySplitPercent[name] / 100)
-            .action_({ |sl|
-                var v = (sl.value * 100).round(1);
-                ~polySplitPercent[name] = v;
-                percentReadout.string_(v.asString ++ "%");
-                statusText.string_("Changed (not yet wired to playback).");
-            });
-        percentReadout = StaticText(patternSubView, Rect(2, 21, 116, 16))
-            .string_(~polySplitPercent[name].round(1).asString ++ "%").stringColor_(labelColor);
-        updatePatternPercentVisibility = {
-            var pattern = ~polyPattern[name];
-            var isPercentPattern = #[
-                \random8thPercent, \random3rdPercent, \random4to3Percent, \randomSkip
-            ].includes(pattern);
-            percentSlider.visible_(isPercentPattern);
-            percentReadout.visible_(isPercentPattern);
+        if(isRestricted.not) {
+            volumeSubView = CompositeView(rightPane, 120@40).background_(trackColor);
         };
-        updatePatternPercentVisibility.value;
+
+        if(isRestricted.not) {
+            percentSlider = Slider(patternSubView, Rect(2, 2, 116, 18))
+                .value_(~polySplitPercent[name] / 100)
+                .action_({ |sl|
+                    var v = (sl.value * 100).round(1);
+                    ~polySplitPercent[name] = v;
+                    percentReadout.string_(v.asString ++ "%");
+                    statusText.string_(changedMsg);
+                });
+            percentReadout = StaticText(patternSubView, Rect(2, 21, 116, 16))
+                .string_(~polySplitPercent[name].round(1).asString ++ "%").stringColor_(labelColor);
+            updatePatternPercentVisibility = {
+                var pattern = ~polyPattern[name];
+                var isPercentPattern = #[
+                    \random8thPercent, \random3rdPercent, \random4to3Percent, \randomSkip
+                ].includes(pattern);
+                percentSlider.visible_(isPercentPattern);
+                percentReadout.visible_(isPercentPattern);
+            };
+            updatePatternPercentVisibility.value;
+        };
 
 // Pitch range, in plain MIDI notes (0-127) - writes straight into
 // ~currentRange[name] (CT8harmonySelect.scd) now, same as bass's own
@@ -353,7 +412,9 @@
 // own mod-12 matching need whole-number bounds, same reason bass's own
 // slider was fixed to round (see CT8tracks.scd/~resetMonoConfig's own
 // comment for what happens if it doesn't: Random/Rising silently go
-// permanently silent).
+// permanently silent). Kept for both restricted/unrestricted - every Pit
+// Pat choice on either side needs it (Rising/Falling's own range-boundary
+// wrap included, for HT1/HT2).
         pitchRangeSlider = RangeSlider(pitchSubView, Rect(2, 2, 116, 18))
             .lo_(~currentRange[name][0].linlin(0, 127, 0, 1))
             .hi_(~currentRange[name][1].linlin(0, 127, 0, 1));
@@ -368,25 +429,27 @@
                 rs.lo.linlin(0, 1, 0, 127).round, rs.hi.linlin(0, 1, 0, 127).round
             ];
             updatePitchRangeReadout.value;
-            statusText.string_("Changed (not yet wired to playback).");
+            statusText.string_(changedMsg);
         });
         updatePitchRangeReadout.value;
 
-        volumeRangeSlider = RangeSlider(volumeSubView, Rect(2, 2, 116, 18))
-            .lo_(~polyVolumeLevels[name][0].linlin(0, 4, 0, 1))
-            .hi_(~polyVolumeLevels[name][1].linlin(0, 4, 0, 1));
-        volumeRangeReadout = StaticText(volumeSubView, Rect(2, 21, 116, 16)).stringColor_(labelColor);
-        updateVolumeRangeReadout = {
-            volumeRangeReadout.string_(
-                ~polyVolumeLevels[name][0].round(0.01).asString ++ " - " ++ ~polyVolumeLevels[name][1].round(0.01).asString
-            );
-        };
-        volumeRangeSlider.action_({ |rs|
-            ~polyVolumeLevels[name] = [rs.lo.linlin(0, 1, 0, 4), rs.hi.linlin(0, 1, 0, 4)];
+        if(isRestricted.not) {
+            volumeRangeSlider = RangeSlider(volumeSubView, Rect(2, 2, 116, 18))
+                .lo_(~polyVolumeLevels[name][0].linlin(0, 4, 0, 1))
+                .hi_(~polyVolumeLevels[name][1].linlin(0, 4, 0, 1));
+            volumeRangeReadout = StaticText(volumeSubView, Rect(2, 21, 116, 16)).stringColor_(labelColor);
+            updateVolumeRangeReadout = {
+                volumeRangeReadout.string_(
+                    ~polyVolumeLevels[name][0].round(0.01).asString ++ " - " ++ ~polyVolumeLevels[name][1].round(0.01).asString
+                );
+            };
+            volumeRangeSlider.action_({ |rs|
+                ~polyVolumeLevels[name] = [rs.lo.linlin(0, 1, 0, 4), rs.hi.linlin(0, 1, 0, 4)];
+                updateVolumeRangeReadout.value;
+                statusText.string_(changedMsg);
+            });
             updateVolumeRangeReadout.value;
-            statusText.string_("Changed (not yet wired to playback).");
-        });
-        updateVolumeRangeReadout.value;
+        };
 
 // Send A/Send B's own target-effect menus - see
 // CT8guiPercGenerator.scd's makeTrackSection for the full comment. Real

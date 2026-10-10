@@ -832,117 +832,141 @@
 };
 
 
-// HT1: the first harmony track, from an \fm chord patch the user brought in
-// from a different app/tempo context. Fixed from the original: ~vbus (never
-// defined anywhere in this project) -> ~revBus, wrapped in Pfunc like every
-// other \fx use in this file; \dur/\atk/\rel were fixed 1/6-multiples from
-// that other app's own tempo, meaningless on this project's TempoClock - now
-// \dur is however many ~rowPattern beats the current row actually spans (so
-// a new chord lands exactly on each row-start, same grid PT1 plays on), and
-// \atk/\rel are computed per-event from that same beat count converted to
-// real seconds via t.tempo, so the chord swells in and rings for roughly
-// that row's duration rather than a fixed, tempo-unaware length.
+// ---------------------------------------------------------------------------
+// HT1/HT2: CHORD-PAD HARMONY TRACK, FROM CHORD-PAD GENERATOR CONFIG
+// ---------------------------------------------------------------------------
+// Per feedback ("going to change the rules for HT1 and HT2... HT3 and HT4
+// should be ignored for now"): HT1/HT2 now share one parameterized builder,
+// replacing HT1's old bespoke one (a fixed \fm chord patch brought in from a
+// different app/tempo context) and giving HT2 a real builder for the first
+// time. Both are now restricted to instruments that actually play a chord
+// as one managed voicing (\droneChord/\shimmerPad - \fm's own "chord" was
+// really 4 independently-triggered Synths via array expansion, and
+// \plucking has no chord concept at all, so neither fits this redesign);
+// HT3/HT4 are untouched - still no builder, still the original ~fm-based
+// skeleton (see makePolyTrackSection's own isRestricted branch,
+// CT8guiHarmonyMelodyGenerator.scd, for the GUI side of this split).
 //
-// \midinote used to be a fixed 3-chord Pseq (chordGroups); now picks 4
-// notes from ~currentChord (CT8harmonySelect.scd) instead, within
-// ~currentRange[\HT1] (that file's own global, not hardcoded here any
-// more) via ~chordNoteInRange - a Pfunc rather than a Pseq, but fires
-// exactly once per row event either way, so the "one new chord at every
-// row-start, held for that row's span" cadence is unchanged; only where
-// the 4 notes come from differs.
-~buildPolyPattern = {
-    var events = ~rowPattern ? [];
+// Dur Pat narrows to exactly three choices (~polyPattern[name]): \firstBeat
+// (one trigger per bar, beat 0 - unchanged meaning), \halfway (one trigger
+// per bar, at beat (~numBeats/2).floor - new), \startOnly (one trigger per
+// row/column span, same as every other track's "start of row/col"). Pit Pat
+// narrows to \fixed/\random (unchanged meaning - an independently-random,
+// sorted voicing) plus two new ones, \rising/\falling (see
+// ~makeChordVoiceGen's own comment, CT8harmonySelect.scd, for exactly how
+// those evolve the voicing note to note). Accents (Volume) is gone
+// entirely, per feedback - no \amp key at all below, so every chord just
+// plays at its instrument's own SynthDef-default amp.
+//
+// THE BIG CHANGE, per feedback: the envelope is recalculated fresh for
+// every chord played, from the number of beats until the NEXT chord -
+// computed the same nextIdx-idx way every other builder in this file
+// already computes a span, generalized here to wrap to the FIRST trigger of
+// the NEXT bar (baseSlotIdx[0] beats into it) rather than just the end of
+// the array, since \halfway's one trigger isn't at index 0 the way every
+// other pattern's first trigger always is. Total envelope time is that gap
+// plus 2 beats - deliberately longer than the gap itself, so consecutive
+// chords' envelopes always overlap somewhat - converted to real seconds via
+// t.tempo (both SynthDefs' own envelopes are wall-clock, same conversion
+// every other builder here already uses). attack/sustain/release split
+// 15%/45%/40% of that total (sums to 100%, per feedback correcting the
+// originally-stated 15/45/15); both SynthDefs' own envelope curve
+// (CT8synths.scd) is exponential now, to match. \droneChord takes this as
+// \attack/\sustain/\release, \shimmerPad as \atk/\sus/\rel (its own
+// hardcoded-local-vars-turned-control-args - see CT8synths.scd) - excluded
+// from this lab's own live-override tracking for exactly this reason (see
+// CT8guiSynthLab.scd's populateLiveOverrides).
+~buildPolyPattern = { |name|
+    var fromRow = (~polySource[name] == \row);
+    var events = if(fromRow) { ~rowPattern ? [] } { ~colPattern ? [] };
+    var startRole = if(fromRow) { \rowStart } { \columnStart };
+
     if(events.isEmpty) {
-        "No active clock cells to play.".warn;
-        ~trackPatterns[\HT1] = Pbind(\dur, 1, \type, \rest);
+        ("No active clock cells to play (" ++ name ++ ").").warn;
+        ~trackPatterns[name] = Pbind(\dur, 1, \type, \rest);
     } {
-// Index of every \rowStart event in this cycle - by construction (the scan
-// that builds ~rowPattern/~clockEvents always marks a row's first lit cell
-// \rowStart) there is always at least one, since the empty-events case above
-// already handled the only way there could be zero.
-        var rowStartIdx, rowDurs;
+        var startIdx = [];
+        var baseSlotIdx, durs;
+        var instrument = ~polyInstrument[name];
+        var pattern = ~polyPattern[name];
+        var pitchMode = ~polyPitchMode[name];
+        var numVoices = if(instrument == \shimmerPad) { 5 } { 4 };
+        var lo = ~currentRange[name][0];
+        var hi = ~currentRange[name][1];
+        var fixedVoicing, voiceGen, voicingFor, currentVoicing, noteArgs;
+        var envKeys = if(instrument == \shimmerPad) { [\atk, \sus, \rel] } { [\attack, \sustain, \release] };
 
-        rowStartIdx = [];
-        events.do { |ev, i| if(ev[\role] == \rowStart) { rowStartIdx = rowStartIdx.add(i) } };
+// By construction (same as every other builder here) there is always at
+// least one start event, since the empty-events case above already handled
+// the only way there could be zero.
+        events.do { |ev, i| if(ev[\role] == startRole) { startIdx = startIdx.add(i) } };
 
-// Each row's \dur is its span in ~rowPattern beats - the gap to the next
-// row-start, or to the end of the array for the last row - so a new chord
-// triggers exactly at every row boundary and holds for that row's length.
-        rowDurs = rowStartIdx.collect { |idx, i|
-            var nextIdx = if((i + 1) < rowStartIdx.size) { rowStartIdx[i + 1] } { events.size };
+        baseSlotIdx = switch(pattern,
+            \firstBeat, { [0] },
+            \halfway, { [(events.size / 2).floor] },
+            { startIdx }
+        );
+
+// Generalizes every other builder's own nextIdx-idx gap computation: the
+// LAST trigger's gap wraps to the FIRST trigger of the NEXT cycle
+// (baseSlotIdx[0] beats into that next bar), not just to the end of this
+// bar's array - the two only coincide when baseSlotIdx[0] is 0, true for
+// every pattern except \halfway.
+        durs = baseSlotIdx.collect { |idx, i|
+            var nextIdx = if((i + 1) < baseSlotIdx.size) {
+                baseSlotIdx[i + 1]
+            } {
+                events.size + baseSlotIdx[0]
+            };
             nextIdx - idx
         };
 
-// HT1's own Instrument menu (makePolyTrackSection, CT8guiHarmonyMelodyGenerator.scd)
-// used to be pure decoration - every change there posted "not yet wired to
-// playback" and ~polyInstrument[\HT1] was never actually read here. Per
-// feedback, \droneChord and \shimmerPad are now real choices alongside the
-// original \fm path (\plucking is still unwired - it falls through to the
-// \fm branch below like everything other than those two does, since a
-// single-note plucked bass synth needs different handling than a chord pad
-// that hasn't been designed yet). Both \droneChord's own note1-4 and
-// \shimmerPad's own note1-5 args (CT8synths.scd) are fed live from
-// ~currentChord here, read fresh every row event via ~chordNoteInRange -
-// the exact same chord-tone-in-range picker the \fm path below already
-// uses for its own \midinote, just spread across individual Pbind keys
-// instead of one Array-valued one - so each note is an independent random
-// chord tone, octave and all, constrained to HT1's own Pitch range sliders
-// (~currentRange[\HT1]), per feedback ("should be picking notes each time
-// it plays from the current chord inside its pit pat range sliders").
-        ~trackPatterns[\HT1] = switch(~polyInstrument[\HT1],
-            \droneChord, {
-                Pbind(
-                    \instrument, \droneChord,
-                    \dur, Pseq(rowDurs, inf),
-                    \note1, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
-                    \note2, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
-                    \note3, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
-                    \note4, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
-                    \out, 0,
-                    *(~auxSendPbindArgs.(\HT1) ++ ~labOverrideArgs.(\droneChord))
-                );
-            },
-            \shimmerPad, {
-                Pbind(
-                    \instrument, \shimmerPad,
-                    \dur, Pseq(rowDurs, inf),
-                    \note1, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
-                    \note2, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
-                    \note3, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
-                    \note4, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
-                    \note5, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
-                    \out, 0,
-                    *(~auxSendPbindArgs.(\HT1) ++ ~labOverrideArgs.(\shimmerPad))
-                );
-            },
-            {
-                Pbind(
-                    \instrument, \fm,
-                    \dur, Pseq(rowDurs, inf),
-                    \midinote, Pfunc { Array.fill(4, {
-                        ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1])
-                    }) },
-                    \mRatio, 1,
-                    \index, 1.5,
-                    \iScale, Pseq([2, 4], inf),
-                    \atk, 0.05,
-// Real seconds, not beats - EnvGen's env times inside \fm are wall-clock
-// seconds regardless of TempoClock tempo, so this converts this event's
-// \dur (already resolved above, read back here) via t.tempo (beats/sec).
-                    \rel, Pfunc { |ev|
-                        var rowSecs = ev[\dur] / t.tempo;
-                        (rowSecs - 0.05).max(0.05)
-                    },
-                    \cAtk, 0,
-                    \cRel, 0,
-                    \amp, 0.027,
-                    \out, 0,
-                    \fx, Pfunc { ~revBus },
-                    \fxsend, -10,
-                    *(~auxSendPbindArgs.(\HT1) ++ ~labOverrideArgs.(\fm))
-                );
-            }
-        );
+// Pitch generator setup, once per rebuild - same "stateful generator built
+// once, called once per trigger" convention as ~makeRisingPitchGen/
+// ~makeFallingPitchGen (CT8harmonySelect.scd) elsewhere in this file.
+// \fixed resolves its one voicing right here (deterministic for the whole
+// bar, recomputing it per trigger would just waste a random pick for the
+// same answer); \random re-rolls a fresh independent voicing every
+// trigger instead, inside voicingFor below.
+        if(pitchMode == \fixed) {
+            fixedVoicing = Array.fill(numVoices, { ~chordNoteInRange.(~currentChord, lo, hi) }).sort;
+        };
+        if(pitchMode == \rising) {
+            voiceGen = ~makeChordVoiceGen.(~currentChord, ~currentKey, numVoices, lo, hi, 1);
+        };
+        if(pitchMode == \falling) {
+            voiceGen = ~makeChordVoiceGen.(~currentChord, ~currentKey, numVoices, lo, hi, -1);
+        };
+        voicingFor = {
+            switch(pitchMode,
+                \fixed, { fixedVoicing },
+                \rising, { voiceGen.value },
+                \falling, { voiceGen.value },
+                { Array.fill(numVoices, { ~chordNoteInRange.(~currentChord, lo, hi) }).sort }
+            )
+        };
+
+// \note1's Pfunc computes (or advances) the WHOLE voicing once per trigger
+// and caches it in currentVoicing; \note2 onward just index into that same
+// cached array rather than each calling voicingFor independently (which
+// would advance/re-roll it once per note instead of once per trigger) -
+// safe because Pbind evaluates one event's keys in the order they're given
+// here, so \note1 always runs first for a given event, before \note2 etc
+// for that SAME event.
+        noteArgs = [\note1, Pfunc { currentVoicing = voicingFor.value; currentVoicing[0] }]
+            ++ (2..numVoices).collect { |n|
+                [("note" ++ n).asSymbol, Pfunc { currentVoicing[n - 1] }]
+            }.flatten;
+
+        ~trackPatterns[name] = Pbind(*([
+            \instrument, instrument,
+            \dur, Pseq(durs, inf)
+        ] ++ noteArgs ++ [
+            envKeys[0], Pfunc { |ev| ((ev[\dur] + 2) / t.tempo) * 0.15 },
+            envKeys[1], Pfunc { |ev| ((ev[\dur] + 2) / t.tempo) * 0.45 },
+            envKeys[2], Pfunc { |ev| ((ev[\dur] + 2) / t.tempo) * 0.40 },
+            \out, 0
+        ] ++ ~auxSendPbindArgs.(name) ++ ~labOverrideArgs.(instrument)));
     };
 };
 
@@ -1799,7 +1823,8 @@
 ~trackBuilders[\PT2] = { ~buildPercPattern.(\PT2) };
 ~trackBuilders[\PT3] = { ~buildPercPattern.(\PT3) };
 ~trackBuilders[\PT4] = { ~buildPercPattern.(\PT4) };
-~trackBuilders[\HT1] = ~buildPolyPattern;
+~trackBuilders[\HT1] = { ~buildPolyPattern.(\HT1) };
+~trackBuilders[\HT2] = { ~buildPolyPattern.(\HT2) };
 ~trackBuilders[\BT1] = { ~buildMonoTrackPattern.(\BT1) };
 ~trackBuilders[\BT2] = { ~buildMonoTrackPattern.(\BT2) };
 ~trackBuilders[\MT1] = { ~buildMonoTrackPattern.(\MT1) };

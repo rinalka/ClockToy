@@ -131,32 +131,15 @@
 ];
 
 ~scales = [
-    // 1. C Major - 3 note chords
-    [0, 2, 4, 5, 7, 9, 11],
-
-    // 2. C Natural Minor - 3 note chords
-    [0, 2, 3, 5, 7, 8, 10],
-
-    // 3. C Major - 4 note chords
-    [0, 2, 4, 5, 7, 9, 11],
-
-    // 4. C Natural Minor - 4 note chords
-    [0, 2, 3, 5, 7, 8, 10],
-
-    // 5. C Harmonic Minor - 4 note chords
-    [0, 2, 3, 5, 7, 8, 11],
-
-    // 6. C Melodic Minor - 4 note chords
-    [0, 2, 3, 5, 7, 9, 11],
-
-    // 7. C Major - 5 note chords
-    [0, 2, 4, 5, 7, 9, 11],
-
-    // 8. C Harmonic Minor - 5 note chords
-    [0, 2, 3, 5, 7, 8, 11],
-
-    // 9. C Melodic Minor - 5 note chords
-    [0, 2, 3, 5, 7, 9, 11]
+    [0, 2, 4, 5, 7, 9, 11], // 1. C Major - 3 note chords
+    [0, 2, 3, 5, 7, 8, 10], // 2. C Natural Minor - 3 note chords
+    [0, 2, 4, 5, 7, 9, 11], // 3. C Major - 4 note chords
+    [0, 2, 3, 5, 7, 8, 10], // 4. C Natural Minor - 4 note chords
+    [0, 2, 3, 5, 7, 8, 11], // 5. C Harmonic Minor - 4 note chords
+    [0, 2, 3, 5, 7, 9, 11], // 6. C Melodic Minor - 4 note chords
+    [0, 2, 4, 5, 7, 9, 11], // 7. C Major - 5 note chords
+     [0, 2, 3, 5, 7, 8, 11], // 8. C Harmonic Minor - 5 note chords
+    [0, 2, 3, 5, 7, 9, 11] // 9. C Melodic Minor - 5 note chords
 ];
 
 // Same [set][chordIndex] shape as ~chords, holding the chord-name strings
@@ -455,6 +438,50 @@
         semitoneCandidate;
     } {
         note;
+    };
+};
+
+// ~makeChordVoiceGen.(chord, key, numVoices, lo, hi, dir) - the stateful
+// generator behind HT1/HT2's Rising/Falling Pit Pat modes (~buildPolyPattern,
+// CT8tracks.scd), per feedback. Unlike every other Rising/Falling generator
+// in this project (~makeRisingPitchGen/~makeFallingPitchGen), which advance
+// ONE note through a scale/arpeggio, this one EVOLVES A WHOLE VOICING of
+// `numVoices` notes at once: each call drops the voicing's lowest note
+// (dir=1, rising) or highest note (dir=-1, falling) and adds a new one a
+// chord tone-or-semitone step beyond the OTHER end (~chordStepTone, above -
+// same tone-else-semitone-else-repeat fallback the mono tracks' own Arp
+// sub-variants already use), so the chord's "center of mass" climbs or
+// descends one step at a time rather than jumping to an entirely fresh
+// voicing. Starts from a plain independently-random voicing (same
+// Array.fill+~chordNoteInRange+sort the Fixed/Random Pit Pat modes use) -
+// there's no single obvious "starting voicing" the way a single note has a
+// root. Once the new note would land outside [lo, hi] in the direction
+// being walked, the whole voicing reseeds fresh (another independently-
+// random pick) rather than clamping - each direction wraps at its own end
+// (rising at hi, falling at lo), not a shared boundary. Always returns the
+// voicing sorted ascending, so the caller can assign note1..noteN in a
+// consistent low-to-high order regardless of which note just got replaced.
+~makeChordVoiceGen = { |chord, key, numVoices, lo, hi, dir|
+    var seed = { Array.fill(numVoices, { ~chordNoteInRange.(chord, lo, hi) }).sort };
+    var voicing = seed.value;
+    {
+        var newNote;
+        if(dir > 0) {
+            newNote = ~chordStepTone.(chord, key, voicing.last, 1);
+            if(newNote > hi) {
+                voicing = seed.value;
+            } {
+                voicing = (voicing.drop(1) ++ [newNote]).sort;
+            };
+        } {
+            newNote = ~chordStepTone.(chord, key, voicing.first, -1);
+            if(newNote < lo) {
+                voicing = seed.value;
+            } {
+                voicing = ([newNote] ++ voicing.drop(-1)).sort;
+            };
+        };
+        voicing;
     };
 };
 

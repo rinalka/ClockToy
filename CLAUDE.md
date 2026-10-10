@@ -584,22 +584,28 @@ their own bullets below for exactly where the line falls:
   hand-edit's redesign; it used to be a 0-1 normalized spread instead, `1` fully in tune,
   `0` up to +/- a semitone), plus a slow `LFNoise2`-driven wobble on top
   (`driftRate`/`driftDepth`, in Hz/cents - new in that same edit), summed in cents and
-  converted to a frequency ratio via `2 ** (cents / 1200)`) is now also HT1's own second
-  selectable Instrument (alongside
-  `\fm`, via `~polyInstrument[\HT1]` - see `~buildPolyPattern`'s own bullet,
-  `CT8tracks.scd`), per feedback. `note1`-`note4` are plain control args, not read from
+  converted to a frequency ratio via `2 ** (cents / 1200)`) is one of HT1/HT2's own two
+  selectable Instruments now (alongside `\shimmerPad` - `\fm`/`\plucking` dropped as
+  choices for these two specifically, per feedback restricting them to instruments that
+  manage a chord as one voicing - see `~buildPolyPattern`'s own bullet, `CT8tracks.scd`,
+  for the full redesign). `note1`-`note4` are plain control args, not read from
   `~currentChord` inside the SynthDef body - a UGen graph function runs once in sclang,
   at `.add` time, so a direct `~currentChord` reference in there would freeze whatever
   chord was current at THAT moment forever, never updating per note; `~buildPolyPattern`
   is what reads `~currentChord` live and feeds it in as these four args instead, fresh
-  every row event. `amp`/`attack`/`sustain`/`release` defaults were tuned per feedback
+  every trigger. `amp`/`attack`/`sustain`/`release` defaults were tuned per feedback
   across two passes (`attack`/`sustain`/`release` to 0.012/0.12/5 - was "very soft and
   slow" before; `amp` doubled twice, 0.2 -> 0.4 -> 0.8, still "too low" after the
-  first); `wet`/`level` are its own tiny
+  first) - `attack`/`sustain`/`release` are themselves now fed live per chord by
+  `~buildPolyPattern`'s own per-chord envelope calculation for HT1/HT2 (see that
+  bullet), so these SynthDef-level defaults only actually apply when something else
+  plays `\droneChord` directly (the Synth Lab). The envelope's own curve changed from
+  `\sine` to `\exp` (`Env.linen`'s own curve arg) to match that redesign's "the curve
+  should be exponential." `wet`/`level` are its own tiny
   built-in `~allpassWash` tail, same convention as every other instrument's, defaulting
   to a no-op like always (`level`'s own default is `2` now, from the same hand-edit as
   the detune redesign). `\shimmerPad` (the user's own SynthDef, brought in and then
-  reworked here) is HT1's third selectable Instrument, alongside `\fm`/`\droneChord` -
+  reworked here) is HT1/HT2's other selectable Instrument -
   a 5-voice `DynKlank` resonator bank (one resonance per chord tone) excited by
   `PinkNoise`, each voice's own small Hz-domain frequency jitter, ring/decay time, and
   `LFNoise2`-driven amplitude wobble independently randomized. `note1`-`note5` are
@@ -614,7 +620,13 @@ their own bullets below for exactly where the line falls:
   `DynKlank`'s input argument was a typo (`ssig`, undeclared) instead of `sig`; `wet`/
   `level` were used but never declared as args; and two separate `Out.ar(out, ...)`
   calls summed together on the same bus rather than one replacing the other, collapsed
-  into one. Every other random element (per-voice jitter/ring time/`LFNoise2` rate) was
+  into one. `atk`/`sus`/`rel` used to be hardcoded local vars (`2.0`/`1.0`/`5.0`) inside
+  the SynthDef body; now real control args with those same defaults, same reason as
+  `\droneChord`'s own `attack`/`sustain`/`release` above - `~buildPolyPattern` feeds
+  them live per chord for HT1/HT2. The envelope's own curve changed from
+  `[\sin, \lin, -4]` to `[\exp, \exp, \exp]` to match, same "the curve should be
+  exponential" instruction. Every other random element (per-voice jitter/ring time/
+  `LFNoise2` rate) was
   also switched from plain-language methods (`.rand2`/`exprand`/`.choose`) to UGen-rate
   ones (`Rand`/`ExpRand`) - the plain-language ones only ever evaluate once, in sclang,
   at `.add` time (the same freezing issue as a direct `~currentChord` read, just easier
@@ -795,15 +807,19 @@ of config globals (`~monoX[name]`, `CT8tracks.scd`'s MONO TRACK CONFIG section -
 renamed from `~bassX`/BASS GENERATOR CONFIG by this same reconception), differing only
 in which options each one is currently set to - `MT1`/`MT2` used to have their own
 bespoke builder (`~buildMelodyPattern`, with
-hand-tuned FM voicing, now gone entirely) before this change. `PT4`, `BT2`, and `HT1` (a
-chord-per-row harmony pad) also have real builders (`PT4` shares `~buildPercPattern`;
-`BT2` shares `~buildMonoTrackPattern`; `HT1` keeps its own bespoke one) and are fully
+hand-tuned FM voicing, now gone entirely) before this change. `PT4`, `BT2`, and `HT1`/
+`HT2` (both chord-pad harmony tracks, restricted to `\droneChord`/`\shimmerPad`) also
+have real builders (`PT4` shares `~buildPercPattern`; `BT2` shares
+`~buildMonoTrackPattern`; `HT1`/`HT2` share their own `~buildPolyPattern` - `HT2` newly
+registered, per feedback) and are fully
 playable - just disabled by default like every other track now (see this section's own
 opening paragraph, above) until toggled on in the Percussion + Bass Generator window
 (`PT4`/`BT2`, beside each one's name) or the Harmony + Melody Generator/Clock Toy
-Adjust windows (`HT1`); `HT2-4`/`MT3-4` are still registered but inert (no builder exists
+Adjust windows (`HT1`/`HT2`); `HT3`/`HT4`/`MT3`/`MT4` are still registered but inert (no
+builder exists
 for them
-yet). See the TRACK REGISTRY block in `CT8tracks.scd`:
+yet - `HT3`/`HT4` explicitly "ignored for now," per feedback, not forgotten). See the
+TRACK REGISTRY block in `CT8tracks.scd`:
 - **`~trackNames`** — all 13 track name symbols.
 - **`~trackPatterns[name]`** / **`~trackPlayers[name]`** / **`~trackEnabled[name]`** — that
   track's built Pbind, its playing `EventStreamPlayer`, and whether the user wants its
@@ -811,12 +827,15 @@ yet). See the TRACK REGISTRY block in `CT8tracks.scd`:
 - **`~syncTrackPlayer.(name)`** — stops a track's current player, then restarts it if
   `~trackEnabled[name]` and a pattern exist; used for any future per-track on/off UI.
 - **`~trackBuilders[name]`** — the function that (re)builds `~trackPatterns[name]`;
-  currently `PT1`/`PT2`/`PT3`/`PT4`/`BT1`/`BT2`/`MT1`/`MT2`/`HT1` have one registered.
+  currently `PT1`/`PT2`/`PT3`/`PT4`/`BT1`/`BT2`/`MT1`/`MT2`/`HT1`/`HT2` have one
+  registered (`HT2` newly, per feedback - see `~buildPolyPattern`'s own bullet, below).
   `PT1`-`PT4` each get a small wrapper closure (`{ ~buildPercPattern.(\PT1) }`, etc.)
   around the one shared `~buildPercPattern` function; `BT1`/`BT2`/`MT1`/`MT2` all mirror
   that with their own shared `~buildMonoTrackPattern` (the four Note tracks -
-  see the paragraph above); `HT1` keeps its own bespoke builder
-  (`~buildPolyPattern`). Registering a builder
+  see the paragraph above); `HT1`/`HT2` mirror that too, with their own shared
+  `~buildPolyPattern` (`{ ~buildPolyPattern.(\HT1) }`/`{ ~buildPolyPattern.(\HT2) }`) -
+  `HT3`/`HT4` are deliberately left unregistered, per feedback ("should be ignored for
+  now"). Registering a builder
   for a new track name is the only step needed to bring it under the existing
   `~setStartPbinds`/`~stopPbinds`/`~updatePbinds`/`~restartPbinds` machinery, which all
   loop generically over `~trackNames` rather than hardcoding specific tracks.
@@ -937,41 +956,63 @@ All four are purely musical - `\type` goes to `\rest` when `~trackEnabled[name]`
 them drive the clock-face
 flash; that's a fully independent process (`~buildRowFlashPattern`/`~buildColFlashPattern`,
 `CT8guiClock.scd` - see below), tied only to `PT1`/`PT2`'s roles regardless of whether
-those tracks are enabled, built, or even exist. `HT1`/`MT1` both read the one shared
-`~currentChord` global (`CT8harmonySelect.scd`)
-live - not snapshotted into a local var, so a chord change is heard on whichever track's
-very next hit comes after it, regardless of which of them is enabled/playing. `HT1` is
-derived from `~rowPattern`: it plays one new chord at every `\rowStart` in the current
-scan, holding for exactly that row's span in beats (computed fresh each rebuild from
-`~rowPattern`, same grid `PT1` plays on) - so it changes chord in lockstep with `PT1`'s
-row boundaries rather than on a fixed schedule of its own, regardless of which of its
-three instruments plays it (below). `~buildPolyPattern` dispatches on
-`~polyInstrument[\HT1]` (`makePolyTrackSection`'s own Instrument menu,
-`CT8guiHarmonyMelodyGenerator.scd` - every other menu in that section still just posts
-"not yet wired to playback" and changes nothing, but Instrument is now real, per
-feedback) via a `switch`, between three fully separate `Pbind`s, all driven by the
-same `rowDurs`:
-`\fm` (hardcoded params, not read from any shared table, the `switch`'s own default/
-fallback case) - its `\atk`/`\rel` are
-computed per-event from that beat span converted to real seconds via `t.tempo`, since
-the SynthDef's own envelope times are wall-clock seconds, not TempoClock beats; its
-`\midinote` is a `Pfunc` - `Array.fill(4, { ~chordNoteInRange.(
-~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) })`, 4 independent
-tone-and-octave picks within `~currentRange[\HT1]` (60-96 by default, three octaves
-above middle C); `\droneChord` (`CT8synths.scd`'s own bullet has the SynthDef side) -
-its four `\note1`-`\note4` keys each independently call the exact same
-`~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1])` the
-`\fm` path's own `\midinote` uses, just spread across 4 Pbind keys instead of one
-Array-valued one; or `\shimmerPad` (`CT8synths.scd`'s own bullet again) - the exact
-same idea spread across 5 `\note1`-`\note5` keys instead (one more voice than
-`\droneChord`'s own four). So, per feedback ("should be picking notes each time it
-plays from
-the current chord inside its pit pat range sliders"), every note on either chord-pad
-path is a fresh, independent
-chord-tone-and-octave pick, constrained to HT1's own Pitch range sliders exactly like
-`\fm`'s notes already were - `\droneChord`'s own notes used to read `~currentChord`'s
-own written notes directly instead (wrapped with `% notes.size` so a 3- or 5-note chord
-still filled all four slots), which ignored the range sliders entirely.
+those tracks are enabled, built, or even exist. `HT1`/`HT2`/`MT1` all read the one
+shared `~currentChord` global (`CT8harmonySelect.scd`)
+live or once-per-rebuild respectively - see each one's own paragraph for which.
+
+`HT1`/`HT2` are "going to change the rules," per feedback - no longer HT1's old bespoke
+`\fm`-chord builder, now one shared, parameterized `~buildPolyPattern.(name)`, giving
+`HT2` a real builder for the first time (`HT3`/`HT4` are explicitly untouched - "should
+be ignored for now" - still no builder, still the original skeleton). Restricted to the
+two instruments that manage a chord as one voicing - `\droneChord`/`\shimmerPad`
+(`~polyInstrument[name]`) - `\fm`'s own "chord" was really 4 independently-triggered
+Synths via array expansion and `\plucking` has no chord concept at all, so neither fits
+here any more. `~polySource[name]` (Row/Col) is unchanged, feeding `events`/`startRole`
+exactly like `PT1`-`4`'s own `~buildPercPattern`. Dur Pat (`~polyPattern[name]`) narrows
+to exactly three: `\firstBeat` (one trigger per bar, beat 0), `\halfway` (one trigger
+per bar, at beat `(events.size / 2).floor` - new), `\startOnly` (one trigger per
+row/column span). Each trigger's `\dur` (the gap to the NEXT trigger, in beats) is the
+same `nextIdx - idx` technique every other builder in this file already uses to compute
+a span, generalized to wrap the LAST trigger to `events.size + baseSlotIdx[0]` rather
+than just `events.size` - the two only coincide when the pattern's first trigger is at
+index 0, true for `\firstBeat`/`\startOnly` but not `\halfway`, whose one trigger point
+sits mid-array. Pit Pat (`~polyPitchMode[name]`) narrows to `\fixed`/`\random`
+(unchanged meaning - an independently-random, sorted voicing of `~chordNoteInRange`
+picks, 4 notes for `\droneChord` or 5 for `\shimmerPad`, within `~currentRange[name]`)
+plus two new ones, `\rising`/`\falling`: per feedback, these don't re-pick a fresh
+voicing each trigger the way Fixed/Random do - they EVOLVE the existing one, dropping
+the lowest (Rising) or highest (Falling) note and adding a new one a chord
+tone-or-semitone step beyond the OTHER end (`~chordStepTone`, `CT8harmonySelect.scd` -
+the same tone-else-semitone-else-repeat fallback the mono tracks' own Arp sub-variants
+already use), reseeding a fresh random voicing once stepping further would leave
+`~currentRange[name]` - Rising wraps at the top, Falling at the bottom, each at its own
+end rather than a shared boundary. `~makeChordVoiceGen` (`CT8harmonySelect.scd`) is the
+stateful generator behind this, one fresh instance per rebuild like every other
+Rising/Falling generator in this project; a `Pfunc` on `\note1` alone calls it (or the
+plain `~chordNoteInRange` picker for Fixed/Random) once per trigger and caches the
+result, with `\note2` onward just indexing into that cached array - safe because Pbind
+evaluates one event's keys in the order they're given, so `\note1`'s Pfunc always runs
+before `\note2`'s for the same event. Accents (Volume) is gone entirely, per feedback -
+no `\amp` key at all, so every chord just plays at its instrument's own SynthDef-default
+amp.
+
+THE BIG CHANGE, per feedback: the envelope is recalculated fresh for every chord played,
+from the beats-until-the-next-chord `\dur` value above, plus 2 beats (deliberately
+longer than the gap itself, so consecutive chords' envelopes always overlap somewhat),
+converted to real seconds via `t.tempo` (both SynthDefs' envelopes are wall-clock, same
+conversion `\fm`'s own old `\rel` already used). attack/sustain/release split
+15%/45%/40% of that total (sums to 100% - feedback corrected the originally-stated
+15/45/15, where release was meant to be 40% not 15%) - `\droneChord` takes this as
+`\attack`/`\sustain`/`\release`, `\shimmerPad` as `\atk`/`\sus`/`\rel` (its own
+hardcoded-local-vars-turned-control-args, `CT8synths.scd`'s own bullet); both
+SynthDefs' own envelope curve is exponential now too, to match ("the curve should be
+exponential"). These three keys are excluded from the Synth Lab's own live-override
+tracking for `\droneChord`/`\shimmerPad` specifically (`CT8guiSynthLab.scd`'s
+`populateLiveOverrides`), for the same reason `\wet`/`\level`/`noteN` already are -
+they now have their own separate live control (this per-chord calculation), so the lab's
+own sliders shouldn't fight it for whichever of HT1/HT2 is currently using that
+instrument; sliding them in the lab still works for standalone auditioning there, same
+as always.
 `\plucking` is still listed in the Instrument menu but unwired - picking it falls
 through to the `\fm` branch, same as before this change, since a single-note bass
 synth needs different handling than a chord pad that hasn't been designed yet.

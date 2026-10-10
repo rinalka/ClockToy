@@ -558,7 +558,7 @@ SynthDef(\droneChord, {
     };
     sig = Mix.new(voices) * 0.25;
     env = EnvGen.kr(
-        Env.linen(attack, sustain, release, 1, \sine),
+        Env.linen(attack, sustain, release, 1, \exp),
         doneAction: 2
     );
     sig = sig * env * amp;
@@ -593,10 +593,10 @@ SynthDef(\droneChord, {
 // block once per voice.
 SynthDef(\shimmerPad, { |out=0, amp=0.125,
     note1=60, note2=63, note3=67, note4=71, note5=72,
+    atk=2.0, sus=1.0, rel=5.0,
     wet=0, level=1,
     auxBusA=0, auxAmtA=0, auxBusB=0, auxAmtB=0|
-    var sig, freqs, envs, env, rings, numvoices, notes;
-    var atk=2.0, sus=1.0, rel=5.0, totalTime;
+    var sig, freqs, envs, env, rings, numvoices, notes, totalTime;
 
     numvoices = 5;
     notes = [note1, note2, note3, note4, note5];
@@ -606,7 +606,7 @@ SynthDef(\shimmerPad, { |out=0, amp=0.125,
     envs = Array.fill(numvoices, { LFNoise2.kr(ExpRand(0.8, 3.5)).range(0.05, 1.0) });
     sig = PinkNoise.ar(numvoices.reciprocal ! 2);
     sig = DynKlank.ar(`[freqs, envs, rings], sig);
-    env = EnvGen.kr(Env.new([0, 1, 1, 0], [atk, sus, rel], [\sin, \lin, -4]), doneAction: 2);
+    env = EnvGen.kr(Env.new([0, 1, 1, 0], [atk, sus, rel], [\exp, \exp, \exp]), doneAction: 2);
     sig = sig * env * amp;
     sig = ~allpassWash.(sig, wet, level);
     ~auxSend.(sig, auxBusA, auxAmtA, auxBusB, auxAmtB);

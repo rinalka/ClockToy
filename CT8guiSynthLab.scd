@@ -312,6 +312,15 @@
             [\note5, 72, 0, 127, \midi],
 // amp halved per feedback (0.25 -> 0.125).
             [\amp, 0.125, 0, 1, \lin],
+// atk/sus/rel used to be hardcoded local vars inside the SynthDef; now real
+// control args (CT8synths.scd) so HT1/HT2's own per-chord envelope
+// calculation (~buildPolyPattern, CT8tracks.scd) can drive them - these
+// three are excluded from this lab's own live-override tracking for
+// exactly that reason (see populateLiveOverrides' own comment, above), so
+// sliding them here only affects standalone auditioning, same as before.
+            [\atk, 2.0, 0.01, 10, \exp],
+            [\sus, 1.0, 0.01, 10, \exp],
+            [\rel, 5.0, 0.01, 20, \exp],
             [\wet, 0, 0, 1, \lin],
             [\level, 1, 0, 1, \lin]
     ]);
@@ -568,6 +577,17 @@
             var key = sp[0];
             var isExcluded = #[\wet, \level].includes(key) or: {
                 key.asString.beginsWith("note")
+            } or: {
+// droneChord/shimmerPad's own attack/sustain/release (or atk/sus/rel) are
+// now computed fresh per chord by ~buildPolyPattern (HT1/HT2,
+// CT8tracks.scd - "the big change," per feedback) from the beats-until-
+// next-chord math, same reasoning as the \wet/\level/noteN exclusions
+// above: these already have their own separate live control, so this
+// lab's own sliders shouldn't fight it for whichever of HT1/HT2 is
+// currently using this instrument.
+                #[\droneChord, \shimmerPad].includes(selected) and: {
+                    #[\attack, \sustain, \release, \atk, \sus, \rel].includes(key)
+                }
             };
             if(isExcluded.not) {
                 ~labLiveOverrides[selected][key] = values[selected][key];
