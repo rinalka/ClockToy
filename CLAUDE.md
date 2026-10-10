@@ -351,8 +351,9 @@ their own bullets below for exactly where the line falls:
   convention as `~adjustWindow`/`~percGeneratorWindow`, except `~stopSynthLab` also frees the
   private Groups/Bus, not just the window - `CT8main.scd`'s `~closeWindowsOnCmdPeriod`
   calls it accordingly. Plays `\drone`/`\lead`/`\seq`/`\noise`/`\kick`/`\droneChord`/
-  `\baseD` directly from `CT8synths.scd` (`\baseD` already uses a single `out` arg with no
-  hardcoded extra reverb-send line, so it's directly compatible with this lab's bus
+  `\shimmerPad`/`\baseD` directly from `CT8synths.scd` (`\baseD`/`\shimmerPad` already use
+  a single `out` arg with no
+  hardcoded extra reverb-send line, so they're directly compatible with this lab's bus
   convention), but keeps its own `\labPlucking`/`\labHat`/`\labCym` variants defined
   locally (bug-fixed, single-`out`-bus versions of this project's `\plucking`/`\hat`/
   `\cym` - `\plucking` specifically needed replumbing away from the real one's two-output
@@ -551,8 +552,9 @@ their own bullets below for exactly where the line falls:
 
 - **`CT8synths.scd`** — owns everything sound-*generating*: SynthDefs (`\plucking`,
   `\hat`, `\baseD`, `\cym`, `\fm`, `\ELIreverb`, `\drone`/`\lead`/`\seq`/`\noise`/`\kick`/
-  `\droneChord`/`\allpassReverb` - incorporated from the user's Sound Lab file; every one
-  but `\droneChord` is still only auditioned via `CT8guiSynthLab.scd`, not used by any
+  `\droneChord`/`\shimmerPad`/`\allpassReverb` - incorporated from the user's Sound Lab
+  file; every one but `\droneChord`/`\shimmerPad` is still only auditioned via
+  `CT8guiSynthLab.scd`, not used by any
   track. `\droneChord` (four simultaneous MIDI notes, `note1`-`note4`, eight sine
   oscillators per note, each detuned in cents: a static per-oscillator offset,
   `Rand(-1, 1) * detune` (`detune` is now a plain +/- cents amount, default 10 - a later
@@ -573,7 +575,32 @@ their own bullets below for exactly where the line falls:
   first); `wet`/`level` are its own tiny
   built-in `~allpassWash` tail, same convention as every other instrument's, defaulting
   to a no-op like always (`level`'s own default is `2` now, from the same hand-edit as
-  the detune redesign). The legacy/unused
+  the detune redesign). `\shimmerPad` (the user's own SynthDef, brought in and then
+  reworked here) is HT1's third selectable Instrument, alongside `\fm`/`\droneChord` -
+  a 5-voice `DynKlank` resonator bank (one resonance per chord tone) excited by
+  `PinkNoise`, each voice's own small Hz-domain frequency jitter, ring/decay time, and
+  `LFNoise2`-driven amplitude wobble independently randomized. `note1`-`note5` are
+  plain control args, fed live from `~currentChord` by `~buildPolyPattern` exactly like
+  `\droneChord`'s own `note1`-`note4` - the original version read a hardcoded `myChord`
+  array directly inside the SynthDef body instead, the same frozen-forever mistake
+  `\droneChord` made before its own fix. The original also had several further bugs,
+  all fixed in the same pass: `{...}.dup(numvoices)` duplicates the UNEVALUATED
+  function `numvoices` times, not `numvoices` independent results, so `.midicps`/`+`
+  ended up being called on an array of `Function`s rather than numbers - replaced with
+  `Array.fill(numvoices, {...})`, which actually calls the block once per voice;
+  `DynKlank`'s input argument was a typo (`ssig`, undeclared) instead of `sig`; `wet`/
+  `level` were used but never declared as args; and two separate `Out.ar(out, ...)`
+  calls summed together on the same bus rather than one replacing the other, collapsed
+  into one. Every other random element (per-voice jitter/ring time/`LFNoise2` rate) was
+  also switched from plain-language methods (`.rand2`/`exprand`/`.choose`) to UGen-rate
+  ones (`Rand`/`ExpRand`) - the plain-language ones only ever evaluate once, in sclang,
+  at `.add` time (the same freezing issue as a direct `~currentChord` read, just easier
+  to miss), so the shimmer texture would otherwise have been fixed forever rather than
+  re-rolling fresh each time a new note plays. The original's own per-voice octave
+  randomization (`[-12, 0, 12].choose`) was dropped rather than fixed in place, since
+  `~chordNoteInRange` (via `~buildPolyPattern`) already picks a random octave within
+  HT1's own Pitch range per note - stacking another independent octave shift inside the
+  SynthDef on top of that could push a note back outside that range. The legacy/unused
   `\bassDrum`/`\shortWhistle`/`\clockVerb` that used to live here too have been deleted
   outright, not just left unused, since nothing referenced them), `~allpassWash` (a plain
   helper function, not a SynthDef - a chain of 10 `AllpassN` filters crossfaded against
@@ -835,30 +862,36 @@ derived from `~rowPattern`: it plays one new chord at every `\rowStart` in the c
 scan, holding for exactly that row's span in beats (computed fresh each rebuild from
 `~rowPattern`, same grid `PT1` plays on) - so it changes chord in lockstep with `PT1`'s
 row boundaries rather than on a fixed schedule of its own, regardless of which of its
-two instruments plays it (below). `~buildPolyPattern` dispatches on
+three instruments plays it (below). `~buildPolyPattern` dispatches on
 `~polyInstrument[\HT1]` (`makePolyTrackSection`'s own Instrument menu,
 `CT8guiHarmonyMelodyGenerator.scd` - every other menu in that section still just posts
 "not yet wired to playback" and changes nothing, but Instrument is now real, per
-feedback) between two fully separate `Pbind`s, both driven by the same `rowDurs`:
-`\fm` (hardcoded params, not read from any shared table) - its `\atk`/`\rel` are
+feedback) via a `switch`, between three fully separate `Pbind`s, all driven by the
+same `rowDurs`:
+`\fm` (hardcoded params, not read from any shared table, the `switch`'s own default/
+fallback case) - its `\atk`/`\rel` are
 computed per-event from that beat span converted to real seconds via `t.tempo`, since
 the SynthDef's own envelope times are wall-clock seconds, not TempoClock beats; its
 `\midinote` is a `Pfunc` - `Array.fill(4, { ~chordNoteInRange.(
 ~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) })`, 4 independent
 tone-and-octave picks within `~currentRange[\HT1]` (60-96 by default, three octaves
-above middle C); or `\droneChord` (`CT8synths.scd`'s own bullet has the SynthDef side) -
+above middle C); `\droneChord` (`CT8synths.scd`'s own bullet has the SynthDef side) -
 its four `\note1`-`\note4` keys each independently call the exact same
 `~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1])` the
 `\fm` path's own `\midinote` uses, just spread across 4 Pbind keys instead of one
-Array-valued one - so, per feedback ("should be picking notes each time it plays from
-the current chord inside its pit pat range sliders"), every note is a fresh, independent
+Array-valued one; or `\shimmerPad` (`CT8synths.scd`'s own bullet again) - the exact
+same idea spread across 5 `\note1`-`\note5` keys instead (one more voice than
+`\droneChord`'s own four). So, per feedback ("should be picking notes each time it
+plays from
+the current chord inside its pit pat range sliders"), every note on either chord-pad
+path is a fresh, independent
 chord-tone-and-octave pick, constrained to HT1's own Pitch range sliders exactly like
-`\fm`'s notes already were - replacing an earlier version that read `~currentChord`'s
-own written notes directly (wrapped with `% notes.size` so a 3- or 5-note chord still
-filled all four slots), which ignored the range sliders entirely.
+`\fm`'s notes already were - `\droneChord`'s own notes used to read `~currentChord`'s
+own written notes directly instead (wrapped with `% notes.size` so a 3- or 5-note chord
+still filled all four slots), which ignored the range sliders entirely.
 `\plucking` is still listed in the Instrument menu but unwired - picking it falls
 through to the `\fm` branch, same as before this change, since a single-note bass
-synth and a 4-voice chord pad need different handling that hasn't been designed yet.
+synth needs different handling than a chord pad that hasn't been designed yet.
 Either way, the "one new chord per row-start" cadence is unchanged - only which
 instrument plays it, and where its notes come from, differs.
 `MT1` used to mirror `HT1`'s structure from `~colPattern`/`\columnStart`

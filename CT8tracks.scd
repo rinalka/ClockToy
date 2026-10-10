@@ -766,57 +766,70 @@
 // HT1's own Instrument menu (makePolyTrackSection, CT8guiHarmonyMelodyGenerator.scd)
 // used to be pure decoration - every change there posted "not yet wired to
 // playback" and ~polyInstrument[\HT1] was never actually read here. Per
-// feedback, \droneChord is now a real second choice alongside the
+// feedback, \droneChord and \shimmerPad are now real choices alongside the
 // original \fm path (\plucking is still unwired - it falls through to the
-// \fm branch below like everything other than \droneChord does, same as
-// before this change, since a 4-voice chord pad and a single-note plucked
-// bass synth need genuinely different handling that hasn't been designed
-// yet). \droneChord's own note1-4 args (CT8synths.scd) are fed live from
+// \fm branch below like everything other than those two does, since a
+// single-note plucked bass synth needs different handling than a chord pad
+// that hasn't been designed yet). Both \droneChord's own note1-4 and
+// \shimmerPad's own note1-5 args (CT8synths.scd) are fed live from
 // ~currentChord here, read fresh every row event via ~chordNoteInRange -
 // the exact same chord-tone-in-range picker the \fm path below already
-// uses for its own \midinote, just spread across 4 Pbind keys instead of
-// one Array-valued one - so each of the four notes is an independent
-// random chord tone, octave and all, constrained to HT1's own Pitch range
-// sliders (~currentRange[\HT1]), per feedback ("should be picking notes
-// each time it plays from the current chord inside its pit pat range
-// sliders") - replacing an earlier version that read ~currentChord's own
-// written notes directly, ignoring the range sliders entirely.
-        ~trackPatterns[\HT1] = if(~polyInstrument[\HT1] == \droneChord) {
-            Pbind(
-                \instrument, \droneChord,
-                \dur, Pseq(rowDurs, inf),
-                \note1, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
-                \note2, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
-                \note3, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
-                \note4, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
-                \out, 0
-            );
-        } {
-            Pbind(
-                \instrument, \fm,
-                \dur, Pseq(rowDurs, inf),
-                \midinote, Pfunc { Array.fill(4, {
-                    ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1])
-                }) },
-                \mRatio, 1,
-                \index, 1.5,
-                \iScale, Pseq([2, 4], inf),
-                \atk, 0.05,
+// uses for its own \midinote, just spread across individual Pbind keys
+// instead of one Array-valued one - so each note is an independent random
+// chord tone, octave and all, constrained to HT1's own Pitch range sliders
+// (~currentRange[\HT1]), per feedback ("should be picking notes each time
+// it plays from the current chord inside its pit pat range sliders").
+        ~trackPatterns[\HT1] = switch(~polyInstrument[\HT1],
+            \droneChord, {
+                Pbind(
+                    \instrument, \droneChord,
+                    \dur, Pseq(rowDurs, inf),
+                    \note1, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
+                    \note2, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
+                    \note3, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
+                    \note4, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
+                    \out, 0
+                );
+            },
+            \shimmerPad, {
+                Pbind(
+                    \instrument, \shimmerPad,
+                    \dur, Pseq(rowDurs, inf),
+                    \note1, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
+                    \note2, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
+                    \note3, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
+                    \note4, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
+                    \note5, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
+                    \out, 0
+                );
+            },
+            {
+                Pbind(
+                    \instrument, \fm,
+                    \dur, Pseq(rowDurs, inf),
+                    \midinote, Pfunc { Array.fill(4, {
+                        ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1])
+                    }) },
+                    \mRatio, 1,
+                    \index, 1.5,
+                    \iScale, Pseq([2, 4], inf),
+                    \atk, 0.05,
 // Real seconds, not beats - EnvGen's env times inside \fm are wall-clock
 // seconds regardless of TempoClock tempo, so this converts this event's
 // \dur (already resolved above, read back here) via t.tempo (beats/sec).
-                \rel, Pfunc { |ev|
-                    var rowSecs = ev[\dur] / t.tempo;
-                    (rowSecs - 0.05).max(0.05)
-                },
-                \cAtk, 0,
-                \cRel, 0,
-                \amp, 0.027,
-                \out, 0,
-                \fx, Pfunc { ~revBus },
-                \fxsend, -10
-            );
-        };
+                    \rel, Pfunc { |ev|
+                        var rowSecs = ev[\dur] / t.tempo;
+                        (rowSecs - 0.05).max(0.05)
+                    },
+                    \cAtk, 0,
+                    \cRel, 0,
+                    \amp, 0.027,
+                    \out, 0,
+                    \fx, Pfunc { ~revBus },
+                    \fxsend, -10
+                );
+            }
+        );
     };
 };
 

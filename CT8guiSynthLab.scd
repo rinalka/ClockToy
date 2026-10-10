@@ -300,7 +300,20 @@
 // rather than topping out below it.
             [\level, 2, 0, 3, \lin]
     ]);
-    names = [\drone, \lead, \seq, \noise, \kick, \plucking, \hat, \cym, \baseD, \fm, \droneChord];
+// note1-5 are \midi-curve (see makeSlider's own comment, above) for the
+// same reason as \droneChord's own note1-4 - a dragged slider should land
+// on a clean MIDI note, not a fractional/out-of-tune one.
+    specs.put(\shimmerPad, [
+            [\note1, 60, 0, 127, \midi],
+            [\note2, 63, 0, 127, \midi],
+            [\note3, 67, 0, 127, \midi],
+            [\note4, 71, 0, 127, \midi],
+            [\note5, 72, 0, 127, \midi],
+            [\amp, 0.25, 0, 1, \lin],
+            [\wet, 0, 0, 1, \lin],
+            [\level, 1, 0, 1, \lin]
+    ]);
+    names = [\drone, \lead, \seq, \noise, \kick, \plucking, \hat, \cym, \baseD, \fm, \droneChord, \shimmerPad];
 
 // Maps each entry in `names` to the SynthDef that actually plays it -
 // \drone/\lead/\seq/\noise/\kick/\droneChord/\baseD are the shared synths
@@ -322,6 +335,7 @@
     synthNames.put(\cym, \labCym);
     synthNames.put(\baseD, \baseD);
     synthNames.put(\droneChord, \droneChord);
+    synthNames.put(\shimmerPad, \shimmerPad);
     values = IdentityDictionary.new;
     names.do { |name|
         var d = IdentityDictionary.new;

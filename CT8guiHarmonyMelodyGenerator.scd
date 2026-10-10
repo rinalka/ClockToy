@@ -251,16 +251,16 @@
                 statusText.string_("Changed (not yet wired to playback).");
             });
         StaticText(rightPane, 30@22).string_("Inst").stringColor_(labelColor);
-// \droneChord is a real, wired-up second choice for HT1 now, per feedback
-// (~buildPolyPattern, CT8tracks.scd, dispatches on ~polyInstrument[\HT1]) -
-// \plucking stays unwired (falls through to the \fm path, same as before
-// this change), since a single-note bass synth and a 4-voice chord pad
-// need different handling that hasn't been designed yet.
+// \droneChord/\shimmerPad are real, wired-up choices for HT1 now, per
+// feedback (~buildPolyPattern, CT8tracks.scd, dispatches on
+// ~polyInstrument[\HT1]) - \plucking stays unwired (falls through to the
+// \fm path, same as before), since a single-note bass synth needs
+// different handling than a chord pad that hasn't been designed yet.
         instrumentMenu = PopUpMenu(rightPane, 80@22)
-            .items_(["fm", "plucking", "droneChord"])
-            .value_([\fm, \plucking, \droneChord].indexOf(~polyInstrument[name]) ? 0)
+            .items_(["fm", "plucking", "droneChord", "shimmerPad"])
+            .value_([\fm, \plucking, \droneChord, \shimmerPad].indexOf(~polyInstrument[name]) ? 0)
             .action_({ |m|
-                ~polyInstrument[name] = [\fm, \plucking, \droneChord][m.value];
+                ~polyInstrument[name] = [\fm, \plucking, \droneChord, \shimmerPad][m.value];
                 statusText.string_("Changed - not yet applied.");
             });
         rightPane.decorator.nextLine;

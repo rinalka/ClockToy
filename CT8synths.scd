@@ -515,6 +515,49 @@ SynthDef(\droneChord, {
     Out.ar(out, sig);
 }).add;
 
+// Shimmer pad: PinkNoise excitation through a 5-voice DynKlank resonator
+// bank, one resonance per chord tone. note1-5 are plain control args, not
+// a hardcoded myChord/~currentChord read in here - same reasoning as
+// \droneChord's own note1-4 (see that SynthDef's comment, above): a UGen
+// graph function runs once in sclang, at .add time, so reading
+// ~currentChord directly in this body would freeze whatever chord was
+// current at THAT moment forever. ~buildPolyPattern (CT8tracks.scd) feeds
+// ~currentChord in live instead, one independent ~chordNoteInRange pick
+// per voice - which already picks a random octave within HT1's own Pitch
+// range, so there's no separate octave-randomizing step in here on top of
+// that (an earlier draft had one, via plain-language `.choose` - removed,
+// since stacking another octave shift on top of an already range-picked
+// note could push it back outside that range).
+// Every OTHER random element below is UGen-rate (Rand/ExpRand), not the
+// plain-language `.rand2`/`exprand`/`.choose` an earlier draft used -
+// those only ever evaluate once, in sclang, at .add time (the exact same
+// freezing issue as a direct ~currentChord read, just easier to miss),
+// so every voice's little Hz-domain jitter/ring time/LFNoise2 rate would
+// otherwise have been fixed forever rather than re-rolling fresh each
+// time a new note plays. Array.fill, not `{...}.dup(numvoices)` (another
+// thing an earlier draft used) - .dup on a Function duplicates the
+// UNEVALUATED closure, not its result, so the array ends up full of
+// Function objects instead of numbers; Array.fill actually calls the
+// block once per voice.
+SynthDef(\shimmerPad, { |out=0, amp=0.25,
+    note1=60, note2=63, note3=67, note4=71, note5=72,
+    wet=0, level=1|
+    var sig, freqs, envs, env, rings, numvoices, notes;
+    var atk=2.0, sus=1.0, rel=5.0, totalTime;
+
+    numvoices = 5;
+    notes = [note1, note2, note3, note4, note5];
+    totalTime = atk + sus + rel;
+    freqs = notes.collect(_.midicps) + Array.fill(numvoices, { Rand(-1.5, 1.5) });
+    rings = Array.fill(numvoices, { ExpRand(totalTime * 0.6, totalTime) });
+    envs = Array.fill(numvoices, { LFNoise2.kr(ExpRand(0.8, 3.5)).range(0.05, 1.0) });
+    sig = PinkNoise.ar(numvoices.reciprocal ! 2);
+    sig = DynKlank.ar(`[freqs, envs, rings], sig);
+    env = EnvGen.kr(Env.new([0, 1, 1, 0], [atk, sus, rel], [\sin, \lin, -4]), doneAction: 2);
+    sig = sig * env * amp;
+    sig = ~allpassWash.(sig, wet, level);
+    Out.ar(out, sig);
+}).add;
 // Allpass reverb: a second, simpler reverb option alongside \ELIreverb - a
 // straight dry/wet allpass-chain wash rather than \ELIreverb's comb+allpass
 // design. Renamed from \labReverb (its name in the sound lab) since it's now
