@@ -309,7 +309,8 @@
             [\note3, 67, 0, 127, \midi],
             [\note4, 71, 0, 127, \midi],
             [\note5, 72, 0, 127, \midi],
-            [\amp, 0.25, 0, 1, \lin],
+// amp halved per feedback (0.25 -> 0.125).
+            [\amp, 0.125, 0, 1, \lin],
             [\wet, 0, 0, 1, \lin],
             [\level, 1, 0, 1, \lin]
     ]);

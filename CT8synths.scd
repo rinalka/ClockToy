@@ -539,7 +539,7 @@ SynthDef(\droneChord, {
 // UNEVALUATED closure, not its result, so the array ends up full of
 // Function objects instead of numbers; Array.fill actually calls the
 // block once per voice.
-SynthDef(\shimmerPad, { |out=0, amp=0.25,
+SynthDef(\shimmerPad, { |out=0, amp=0.125,
     note1=60, note2=63, note3=67, note4=71, note5=72,
     wet=0, level=1|
     var sig, freqs, envs, env, rings, numvoices, notes;
