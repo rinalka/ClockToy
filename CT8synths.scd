@@ -476,26 +476,40 @@ SynthDef(\kick, { |out=0, pan=0, amp=0.5, curve=(-4),
 // bullet - same convention as every other instrument's), defaulting to a
 // no-op like always; attack/sustain/release/amp defaults per feedback
 // (was too soft and slow).
-SynthDef(\droneChord, { |out=0, note1=48, note2=52, note3=55, note4=60,
-    amp=0.8, attack=0.012, sustain=0.12, release=5, detune= 0.41, wet=0, level=2|
-    var notes, voices, sig, env, spread;
+SynthDef(\droneChord, {
+    |out=0,
+     note1=48, note2=52, note3=55, note4=60,
+     amp=0.8,
+     attack=0.012, sustain=0.12, release=5,
+     detune=10,
+     driftRate=0.15, driftDepth=5,
+     wet=0, level=2|
 
-    spread = 1 - detune.clip(0, 1);
+    var notes, voices, sig, env;
     notes = [note1, note2, note3, note4];
     voices = notes.collect { |note|
         var frequency = note.midicps;
         Splay.ar(Array.fill(8, {
-            var offset = Rand(-1.0, 1.0);
+            var offset, drift, cents, oscillatorFreq;
+            offset = Rand(-1.0, 1.0) * detune;
+            drift = LFNoise2.kr(
+                Rand(0.5, 1.5) * driftRate
+            ) * driftDepth;
+            cents = offset + drift;
+            // Convert cents to frequency
+            oscillatorFreq = frequency * (2 ** (cents / 1200));
             SinOsc.ar(
-                frequency * (2 ** ((offset * spread) / 12)),
+                oscillatorFreq,
                 Rand(0, 2pi),
                 0.125
             )
         }))
     };
     sig = Mix.new(voices) * 0.25;
-    env = EnvGen.kr(Env.linen(attack, sustain, release, 1, \sine),
-        doneAction: 2);
+    env = EnvGen.kr(
+        Env.linen(attack, sustain, release, 1, \sine),
+        doneAction: 2
+    );
     sig = sig * env * amp;
     sig = ~allpassWash.(sig, wet, level);
     Out.ar(out, sig);

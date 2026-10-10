@@ -553,9 +553,14 @@ their own bullets below for exactly where the line falls:
   `\hat`, `\baseD`, `\cym`, `\fm`, `\ELIreverb`, `\drone`/`\lead`/`\seq`/`\noise`/`\kick`/
   `\droneChord`/`\allpassReverb` - incorporated from the user's Sound Lab file; every one
   but `\droneChord` is still only auditioned via `CT8guiSynthLab.scd`, not used by any
-  track. `\droneChord` (four simultaneous MIDI notes, `note1`-`note4`, eight slightly
-  detuned sine oscillators each - `detune=1` is in tune, `detune=0` allows up to +/- one
-  semitone per voice) is now also HT1's own second selectable Instrument (alongside
+  track. `\droneChord` (four simultaneous MIDI notes, `note1`-`note4`, eight sine
+  oscillators per note, each detuned in cents: a static per-oscillator offset,
+  `Rand(-1, 1) * detune` (`detune` is now a plain +/- cents amount, default 10 - a later
+  hand-edit's redesign; it used to be a 0-1 normalized spread instead, `1` fully in tune,
+  `0` up to +/- a semitone), plus a slow `LFNoise2`-driven wobble on top
+  (`driftRate`/`driftDepth`, in Hz/cents - new in that same edit), summed in cents and
+  converted to a frequency ratio via `2 ** (cents / 1200)`) is now also HT1's own second
+  selectable Instrument (alongside
   `\fm`, via `~polyInstrument[\HT1]` - see `~buildPolyPattern`'s own bullet,
   `CT8tracks.scd`), per feedback. `note1`-`note4` are plain control args, not read from
   `~currentChord` inside the SynthDef body - a UGen graph function runs once in sclang,
@@ -567,7 +572,8 @@ their own bullets below for exactly where the line falls:
   slow" before; `amp` doubled twice, 0.2 -> 0.4 -> 0.8, still "too low" after the
   first); `wet`/`level` are its own tiny
   built-in `~allpassWash` tail, same convention as every other instrument's, defaulting
-  to a no-op like always. The legacy/unused
+  to a no-op like always (`level`'s own default is `2` now, from the same hand-edit as
+  the detune redesign). The legacy/unused
   `\bassDrum`/`\shortWhistle`/`\clockVerb` that used to live here too have been deleted
   outright, not just left unused, since nothing referenced them), `~allpassWash` (a plain
   helper function, not a SynthDef - a chain of 10 `AllpassN` filters crossfaded against

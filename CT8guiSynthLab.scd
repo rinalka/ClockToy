@@ -274,7 +274,13 @@
 // leave real headroom above the new default rather than needing a third
 // round. \wet/\level were missing here entirely, even though the real
 // SynthDef has had that tail since this same tuning pass - added to
-// match every other instrument's own spec entry.
+// match every other instrument's own spec entry. `detune` changed meaning
+// entirely in a later hand-edit - used to be a 0-1 normalized spread
+// (1 = in tune, 0 = up to +/-1 semitone), now a plain +/- cents amount
+// (default 10, so +/-10 cents of static per-oscillator detune) - range
+// updated to match. `driftRate`/`driftDepth` are new in that same edit (a
+// slow LFNoise2 wobble layered on top of the static detune, in Hz and
+// cents respectively) and were missing here entirely until now.
     specs.put(\droneChord, [
             [\note1, 48, 0, 127, \midi],
             [\note2, 52, 0, 127, \midi],
@@ -284,9 +290,15 @@
             [\attack, 0.012, 0.01, 60, \exp],
             [\sustain, 0.12, 0.1, 300, \exp],
             [\release, 5, 0.01, 120, \exp],
-            [\detune, 1, 0, 1, \lin],
+            [\detune, 10, 0, 100, \lin],
+            [\driftRate, 0.15, 0.01, 5, \exp],
+            [\driftDepth, 5, 0, 50, \lin],
             [\wet, 0, 0, 1, \lin],
-            [\level, 1, 0, 1, \lin]
+// level's own default is 2 now (was 1), from the same hand-edit as
+// detune/driftRate/driftDepth above - upper bound raised to 3 so the
+// slider can actually reach and go past the real current default,
+// rather than topping out below it.
+            [\level, 2, 0, 3, \lin]
     ]);
     names = [\drone, \lead, \seq, \noise, \kick, \plucking, \hat, \cym, \baseD, \fm, \droneChord];
 
