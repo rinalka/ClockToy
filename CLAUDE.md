@@ -124,10 +124,14 @@ their own bullets below for exactly where the line falls:
   `~monoLevel[name]` - see `CT8synths.scd`'s bullet; separate from the `~clockRev` send
   every other track uses, read/written live via `Pfunc` so neither needs a rebuild) -
   renamed from the old Wet/Level labels, same globals, same behavior, just moved and
-  relabeled. Send A/Send B are plain `Slider`s with no backing global and no `.action_`
-  - placeholders for a planned future multi-output-channel send feature, not wired to
-  anything yet.
-  `rightPane` has three rows:
+  relabeled. Send A/Send B (relabeled "SdA"/"SdB" - were "Dry"/"Rev") are real now too,
+  per feedback (the "mixer phase" - see `CT8tracks.scd`'s own AUX SENDS bullet for the
+  full mechanism): `~sendAAmt[name]`/`~sendBAmt[name]`, same live-`Pfunc`,
+  no-rebuild-needed convention as Mix/Vol. `rightPane` gained one more row for this too
+  - Send A/Send B's own target-effect menus, picking which of `~auxEffectNames` each
+  one's amount actually feeds - sitting after whichever other rows a given block
+  already had (so last for `makeTrackSection`'s own three rows below; after the COPY
+  TRACK ROW, further down, for `makeMonoTrackSection`'s four).
   Row 1 is the track name + an on/off `Button` (`onOffButton`) + Source + Instrument.
   The on/off button is now a plain red/green square with no label (both `.states_`
   entries are a bare space, `" "`) - the title text beside it already names the track;
@@ -321,7 +325,14 @@ their own bullets below for exactly where the line falls:
   fractional MIDI note (e.g. `48.237`) is a real but out-of-tune pitch once `.midicps`'d,
   not the clean semitone picking a note should land on); some params (not envelope
   segment timings or the pluck excitation) update the currently-sounding note live via
-  `currentSynth.set`. A LOOP toggle + interval number box repeatedly re-fires the
+  `currentSynth.set`. Per feedback, selecting an instrument here (`menu.action`) also
+  populates `~labLiveOverrides` (`CT8tracks.scd`'s own SYNTH LAB LIVE OVERRIDES bullet
+  has the full mechanism) with every one of that instrument's own tunable params
+  (`\wet`/`\level`/any `\noteN` excluded), clearing whatever a previously-selected
+  instrument had been pushing - every slider's own callback both updates
+  `currentSynth` (if one's still playing) and writes into `~labLiveOverrides`, so
+  whichever live track is currently using that same instrument follows the slider too.
+  A LOOP toggle + interval number box repeatedly re-fires the
   currently-selected instrument on an `AppClock`-scheduled self-reschedule (same
   keep-going/return-nil-to-stop idiom as `~checkForNewMinute`/`~tempoChange`) so
   short/percussive synths (`\hat`/`\cym`/`\baseD`/`\kick`, which free themselves almost
@@ -607,9 +618,29 @@ their own bullets below for exactly where the line falls:
   helper function, not a SynthDef - a chain of 10 `AllpassN` filters crossfaded against
   the dry signal by `wet` and scaled by `level`, same algorithm `\allpassReverb` itself
   uses but inline rather than reading from a bus; `level` defaults to 1 here, not
-  `\allpassReverb`'s own 0.6, so `wet=0, level=1` is truly a no-op), and the reverb's own
+  `\allpassReverb`'s own 0.6, so `wet=0, level=1` is truly a no-op), the reverb's own
   live-adjustable `~reverbDec`/`~reverbLpf`/`~reverbMix` (for `~clockRev`, one
-  long-running Synth rather than a per-note one). `\hat`/`\cym`/`\baseD`/`\kick`/`\fm`/
+  long-running Synth rather than a per-note one), and `~auxSend` (another plain helper,
+  same idea as `~allpassWash` - not a SynthDef) - the per-SynthDef half of the "mixer
+  phase" aux-send system, per feedback: writes a copy of this synth's own finished
+  output, scaled by `amtA`/`amtB`, to two destination buses (`busA`/`busB`), in addition
+  to its normal `Out.ar(out, sig)` - a no-op by multiplication wherever a track's sends
+  are still at their default 0, same "silent unless deliberately raised" convention as
+  `~allpassWash`. `~auxEffectNames`/`~auxEffectBuses` are the actual effects registry -
+  two parallel arrays (same convention `CT8guiSynthLab.scd`'s own `names`/`synthNames`
+  already use), built inside `~installSynthDefs` itself (not at this file's own top
+  level) because effect 0, "ELI Reverb," reuses `~revBus` directly - the exact same bus
+  `\fm`/`\plucking`'s own `\fx` send already reaches, rather than standing up a second,
+  redundant reverb instance - which doesn't exist until `CT8main.scd`'s boot sequence
+  creates it, right before `~installSynthDefs` is first called. Adding a second effect
+  (a bandpass filter, an echo - both planned, per feedback) later is just appending one
+  more name and one more bus/Synth here, not a redesign. Every SynthDef a live track can
+  actually select now takes `auxBusA`/`auxAmtA`/`auxBusB`/`auxAmtB` args and calls
+  `~auxSend` on its own finished (post-`~allpassWash`) signal, right before its own
+  final `Out.ar` - `\plucking`/`\hat`/`\cym`/`\baseD`/`\fm`/`\kick`/`\droneChord`/
+  `\shimmerPad`, i.e. every instrument currently reachable from any track's own
+  Instrument menu; `\drone`/`\lead`/`\seq`/`\noise` (Synth-Lab-only, not used by any
+  track yet) don't need it. `\hat`/`\cym`/`\baseD`/`\kick`/`\fm`/
   `\plucking` each call `~allpassWash` on their own output now for a tiny built-in reverb
   tail, defaulting to `wet=0`/`level=1` (a no-op) so it's inaudible wherever nothing sets
   it - this *used* to be `FreeVerb` for the first four, which turned out to be a mistake
@@ -778,6 +809,46 @@ yet). See the TRACK REGISTRY block in `CT8tracks.scd`:
   for a new track name is the only step needed to bring it under the existing
   `~setStartPbinds`/`~stopPbinds`/`~updatePbinds`/`~restartPbinds` machinery, which all
   loop generically over `~trackNames` rather than hardcoding specific tracks.
+
+**AUX SENDS ("mixer phase")** — per feedback, every track in every family (keyed by
+plain track name, not living inside any one family's own `~percX`/`~monoX`/`~polyX`
+config, since all four families share this identically) now has two independently
+assignable aux sends, Send A and Send B - the two previously-unused leftPane sliders
+every track block already had. `~sendAEffect[name]`/`~sendBEffect[name]` are indices
+into `~auxEffectNames`/`~auxEffectBuses` (`CT8synths.scd`'s own bullet has the
+registry side - "ELI Reverb" is the only entry so far), each with its own target-effect
+`PopUpMenu` in every track's block (`CT8guiPercGenerator.scd`/
+`CT8guiHarmonyMelodyGenerator.scd`, one new row per block); `~sendAAmt[name]`/
+`~sendBAmt[name]` are the actual 0-1 send amount, each its own leftPane slider (now
+wired - the labels changed from "Dry"/"Rev" to "SdA"/"SdB" to match), defaulting to 0
+("no-op until deliberately raised," same convention `~percWet[name]`/`~percLevel[name]`
+already use). `~auxSendPbindArgs.(name)` is the one shared helper every builder in this
+file (`~buildPercPattern`/`~buildMonoTrackPattern`/all three of `~buildPolyPattern`'s
+branches) appends (via `++`) to its own Pbind argument array - four extra keys
+(`\auxBusA`/`\auxAmtA`/`\auxBusB`/`\auxAmtB`), each a `Pfunc` (same reasoning as `\fm`'s
+own `\fx` key - a live `Bus` reference sitting directly in a Pbind pair is suspect) read
+fresh every event, so dragging a Send slider or re-assigning its target effect takes
+effect immediately, no rebuild needed, exactly like Wet/Level. HT1's own Send A/Send B
+are real and working even though that window's separate Mix/Vol controls still aren't
+("not yet wired to playback") - aux sends are keyed by track name, not by whether
+anything else in that section has been connected to actual playback yet.
+
+**SYNTH LAB LIVE OVERRIDES** — per feedback ("I need a way to tune the presets so
+lets connect the lab to the running synths"): `~labLiveOverrides[instrumentSym]` is an
+Event of `{param: value}` for whichever ONE instrument is currently selected in the
+Synth Lab (`CT8guiSynthLab.scd`'s own `menu.action` populates it fresh, clearing every
+OTHER instrument's entry at the same time - the intended workflow is "run only one
+track with that synth in it, tune it live," not several at once). Deliberately
+excludes `\wet`/`\level` and any `\noteN` key, since those already have their own,
+separate live controls this isn't meant to second-guess.
+`~labOverrideArgs.(instrumentSym)` is the shared helper every builder appends the same
+way `~auxSendPbindArgs` is - a flat array of `[key, Pfunc {...}, ...]` pairs, one per
+currently-live-tuned param, read fresh every event like every other `Pfunc`-driven
+control here. The SET of keys is only resolved at BUILD time, same as everything else a
+Pbind's own argument array decides once - a param the Synth Lab hasn't started tracking
+yet for an instrument won't appear on a live track until that track's next rebuild,
+same "structure fixed at rebuild, values can be live" rule the rest of this file
+already follows.
 
 `PT1`/`PT2`/`PT3`/`PT4` are now all driven identically by the Percussion Generator window
 (`CT8guiPercGenerator.scd`) through one shared, parameterized builder,

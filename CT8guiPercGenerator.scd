@@ -117,8 +117,12 @@
 // screen still can't show all of it at once. 1360 -> 1060: each block
 // shrank by 50px (190 -> 140, from the Mix/Vol/Dry/Rev sliders going 130
 // -> 90) - 50 * 6 blocks = 300px saved overall. 1060 -> 1124: BT1/BT2's
-// two blocks each grew by 32px (140 -> 172) for the new COPY TRACK ROW.
-    var percGenHeight = 1124;
+// two blocks each grew by 32px (140 -> 172) for the COPY TRACK ROW.
+// 1124 -> 1316: all six blocks grew by one more Send A/Send B
+// target-effect row - PT1-4's own four blocks by 32px each (140 -> 172),
+// BT1/BT2's own two by 32px each on top of their already-172 height
+// (172 -> 204) - "mixer phase" per feedback.
+    var percGenHeight = 1316;
 // Fixed top-left position rather than derived from ~adjustWindow's bounds
 // (as this used to be) - at this height, inheriting ~adjustWindow's
 // vertical position (itself already offset above the main clock window,
@@ -171,6 +175,7 @@
         var trackContainer, trackColor, labelColor = Color.black;
         var leftPane, rightPane;
         var mixSlider, volSlider, sendASlider, sendBSlider;
+        var sendAEffectMenu, sendBEffectMenu;
         var onOffButton, sourceMenu, instrumentMenu, patternMenu, pitchMenu, volumeMenu;
         var patternSubView, pitchSubView, volumeSubView;
         var percentSlider, percentReadout, updatePatternPercentVisibility;
@@ -217,8 +222,9 @@
 // Shrunk from 190 along with leftPane/rightPane and the Mix/Vol/Dry/Rev
 // sliders below (130 -> 90, ~30% shorter, per feedback) - the freed-up
 // height let every one of the six track blocks (and so the window itself)
-// get considerably shorter too.
-        trackContainer = CompositeView(~percGeneratorWindow, 600@140).background_(trackColor);
+// get considerably shorter too. 140 -> 172, to fit the new Send A/Send B
+// target row (below, "mixer phase" per feedback).
+        trackContainer = CompositeView(~percGeneratorWindow, 600@172).background_(trackColor);
 // No decorator on trackContainer itself any more - leftPane/rightPane,
 // below, get explicit Rects instead of a bare width@height Point, same
 // fix RangeSlider needed: letting trackContainer's own FlowLayout
@@ -251,15 +257,15 @@
 // component-wise rather than `trackColor * 0.8`, which crashes (Color has
 // no `*` operator for a plain number) and was taking down the whole
 // window build the instant it ran, on literally the first track.
-        leftPane = CompositeView(trackContainer, Rect(484, 6, 110, 128)).background_(
+        leftPane = CompositeView(trackContainer, Rect(484, 6, 110, 160)).background_(
             Color.new(trackColor.red * 0.8, trackColor.green * 0.8, trackColor.blue * 0.8, trackColor.alpha)
         );
         leftPane.decorator = FlowLayout(leftPane.bounds, 4@4, 4@4);
 
         StaticText(leftPane, 20@14).string_("Mix").stringColor_(labelColor);
         StaticText(leftPane, 20@14).string_("Vol").stringColor_(labelColor);
-        StaticText(leftPane, 20@14).string_("Dry").stringColor_(labelColor);
-        StaticText(leftPane, 20@14).string_("Rev").stringColor_(labelColor);
+        StaticText(leftPane, 20@14).string_("SdA").stringColor_(labelColor);
+        StaticText(leftPane, 20@14).string_("SdB").stringColor_(labelColor);
         leftPane.decorator.nextLine;
 
         mixSlider = Slider(leftPane, 20@90)
@@ -274,15 +280,32 @@
                 ~percLevel[name] = sl.value;
                 statusText.string_("Vol updated (live, no rebuild needed).");
             });
-        sendASlider = Slider(leftPane, 20@90);
-        sendBSlider = Slider(leftPane, 20@90);
+// Send A/Send B - per feedback, now the per-track amount half of the
+// "mixer phase": each independently sends this track's own finished
+// output into whichever effect its own target menu (rightPane, below)
+// currently points at (~sendAEffect[name]/~sendBEffect[name]), 0-1, live
+// via Pfunc like Mix/Vol - see ~auxSendPbindArgs, CT8tracks.scd.
+        sendASlider = Slider(leftPane, 20@90)
+            .value_(~sendAAmt[name])
+            .action_({ |sl|
+                ~sendAAmt[name] = sl.value;
+                statusText.string_("Send A updated (live, no rebuild needed).");
+            });
+        sendBSlider = Slider(leftPane, 20@90)
+            .value_(~sendBAmt[name])
+            .action_({ |sl|
+                ~sendBAmt[name] = sl.value;
+                statusText.string_("Send B updated (live, no rebuild needed).");
+            });
 
 // RIGHT PANE (~470 of the block's 600 width): title/on-off/Source/Instrument on
-// row 1, Pattern/Pitch/Volume menus together on row 2, and each menu's own
-// sub-control in a matching-width column on row 3.
+// row 1, Pattern/Pitch/Volume menus together on row 2, each menu's own
+// sub-control in a matching-width column on row 3, and Send A/Send B's own
+// target-effect menus on row 4 (new, per feedback).
 // x=6, not 124 - the mirror image of leftPane's own x, for the same
-// reason - see leftPane's comment, just above.
-        rightPane = CompositeView(trackContainer, Rect(6, 6, 470, 128)).background_(trackColor);
+// reason - see leftPane's comment, just above. Height 160, not 128, to
+// fit that fourth row.
+        rightPane = CompositeView(trackContainer, Rect(6, 6, 470, 160)).background_(trackColor);
         rightPane.decorator = FlowLayout(rightPane.bounds, 6@6, 4@4);
 
 // ROW 1: on/off is a plain red/green square now - no label inside it any
@@ -467,6 +490,32 @@
             statusText.string_("Changed - not yet applied.");
         });
         updateVolumeRangeReadout.value;
+
+// ROW 4: Send A/Send B's own target-effect menus - "mixer phase" per
+// feedback. ~auxEffectNames (CT8synths.scd, built once ~revBus exists -
+// "ELI Reverb" is the first and, for now, only entry) is both windows'
+// shared source for this list, so adding a second effect later (a
+// bandpass filter, an echo - both planned) shows up here automatically,
+// no GUI change needed. The actual send AMOUNT is leftPane's own
+// sendASlider/sendBSlider, above - this just picks WHICH of
+// ~auxEffectBuses each one is currently pointed at.
+        rightPane.decorator.nextLine;
+        StaticText(rightPane, 54@22).string_("Snd A ->").stringColor_(labelColor);
+        sendAEffectMenu = PopUpMenu(rightPane, 100@22)
+            .items_(~auxEffectNames)
+            .value_(~sendAEffect[name] ? 0)
+            .action_({ |m|
+                ~sendAEffect[name] = m.value;
+                statusText.string_("Send A target updated (live, no rebuild needed).");
+            });
+        StaticText(rightPane, 54@22).string_("Snd B ->").stringColor_(labelColor);
+        sendBEffectMenu = PopUpMenu(rightPane, 100@22)
+            .items_(~auxEffectNames)
+            .value_(~sendBEffect[name] ? 0)
+            .action_({ |m|
+                ~sendBEffect[name] = m.value;
+                statusText.string_("Send B target updated (live, no rebuild needed).");
+            });
     };
 
     ~percTrackNames.do(makeTrackSection);
@@ -486,6 +535,7 @@
         var trackContainer, trackColor, labelColor = Color.black;
         var leftPane, rightPane;
         var mixSlider, volSlider, sendASlider, sendBSlider;
+        var sendAEffectMenu, sendBEffectMenu;
         var onOffButton, sourceMenu, instrumentMenu, patternMenu, pitchMenu, volumeMenu;
         var patternSubView, pitchSubView, volumeSubView;
         var percentSlider, percentReadout, updatePatternPercentVisibility;
@@ -620,10 +670,10 @@
 // Shrunk from 190 along with leftPane/rightPane and the Mix/Vol/Dry/Rev
 // sliders below (130 -> 90, ~30% shorter, per feedback) - the freed-up
 // height let every one of the six track blocks (and so the window itself)
-// get considerably shorter too. 140 -> 172 now, to fit the new COPY TRACK
-// ROW (below) as a fourth row in rightPane without crowding the existing
-// three.
-        trackContainer = CompositeView(~percGeneratorWindow, 600@172).background_(trackColor);
+// get considerably shorter too. 140 -> 172, for the COPY TRACK ROW as a
+// fourth row in rightPane; 172 -> 204, for the Send A/Send B target row
+// (below, "mixer phase" per feedback) as a fifth.
+        trackContainer = CompositeView(~percGeneratorWindow, 600@204).background_(trackColor);
 // No decorator on trackContainer itself - see makeTrackSection's own
 // comment for why leftPane/rightPane get explicit Rects instead.
         ~percGeneratorWindow.view.decorator.nextLine;
@@ -642,17 +692,17 @@
 // component-wise rather than `trackColor * 0.8`, which crashes (Color has
 // no `*` operator for a plain number) and was taking down the whole
 // window build the instant it ran, on literally the first track.
-// Height 160, not 128 - matches rightPane's own +32 (below), so the two
+// Height 192 - matches rightPane's own (below), so the two
 // panes still line up edge-to-edge now that the block itself is taller.
-        leftPane = CompositeView(trackContainer, Rect(484, 6, 110, 160)).background_(
+        leftPane = CompositeView(trackContainer, Rect(484, 6, 110, 192)).background_(
             Color.new(trackColor.red * 0.8, trackColor.green * 0.8, trackColor.blue * 0.8, trackColor.alpha)
         );
         leftPane.decorator = FlowLayout(leftPane.bounds, 4@4, 4@4);
 
         StaticText(leftPane, 20@14).string_("Mix").stringColor_(labelColor);
         StaticText(leftPane, 20@14).string_("Vol").stringColor_(labelColor);
-        StaticText(leftPane, 20@14).string_("Dry").stringColor_(labelColor);
-        StaticText(leftPane, 20@14).string_("Rev").stringColor_(labelColor);
+        StaticText(leftPane, 20@14).string_("SdA").stringColor_(labelColor);
+        StaticText(leftPane, 20@14).string_("SdB").stringColor_(labelColor);
         leftPane.decorator.nextLine;
 
         mixSlider = Slider(leftPane, 20@90)
@@ -667,17 +717,28 @@
                 ~monoLevel[name] = sl.value;
                 statusText.string_("Vol updated (live, no rebuild needed).");
             });
-        sendASlider = Slider(leftPane, 20@90);
-        sendBSlider = Slider(leftPane, 20@90);
+        sendASlider = Slider(leftPane, 20@90)
+            .value_(~sendAAmt[name])
+            .action_({ |sl|
+                ~sendAAmt[name] = sl.value;
+                statusText.string_("Send A updated (live, no rebuild needed).");
+            });
+        sendBSlider = Slider(leftPane, 20@90)
+            .value_(~sendBAmt[name])
+            .action_({ |sl|
+                ~sendBAmt[name] = sl.value;
+                statusText.string_("Send B updated (live, no rebuild needed).");
+            });
 
-// RIGHT PANE - same three-row shape as makeTrackSection's own right pane,
-// plus a fourth row for COPY TRACK (below, makeMonoTrackSection only -
-// PT1-4 don't have this, since percussion's pitch isn't a (dur, midinote)
-// pair - see the TRACK COPY section's own header comment, CT8tracks.scd).
-// x=6, not 124 - the mirror image of leftPane's own x, for the same
-// reason - see leftPane's comment, just above. Height 160, not 128, to
-// fit that fourth row.
-        rightPane = CompositeView(trackContainer, Rect(6, 6, 470, 160)).background_(trackColor);
+// RIGHT PANE - same shape as makeTrackSection's own right pane, plus a
+// fourth row for COPY TRACK (makeMonoTrackSection only - PT1-4 don't have
+// this, since percussion's pitch isn't a (dur, midinote) pair - see the
+// TRACK COPY section's own header comment, CT8tracks.scd) and a fifth for
+// Send A/Send B's own target-effect menus (every track family has this
+// one). x=6, not 124 - the mirror image of leftPane's own x, for the same
+// reason - see leftPane's comment, just above. Height 192, to
+// fit those two extra rows.
+        rightPane = CompositeView(trackContainer, Rect(6, 6, 470, 192)).background_(trackColor);
         rightPane.decorator = FlowLayout(rightPane.bounds, 6@6, 4@4);
 
         StaticText(rightPane, 48@22).string_(name.asString)
@@ -914,6 +975,26 @@
         };
         ~copyButtonRefreshers[name] = refreshCopyUi;
         refreshCopyUi.value;
+
+// ROW 5: Send A/Send B's own target-effect menus - see makeTrackSection's
+// own copy of this same row for the full comment.
+        rightPane.decorator.nextLine;
+        StaticText(rightPane, 54@22).string_("Snd A ->").stringColor_(labelColor);
+        sendAEffectMenu = PopUpMenu(rightPane, 100@22)
+            .items_(~auxEffectNames)
+            .value_(~sendAEffect[name] ? 0)
+            .action_({ |m|
+                ~sendAEffect[name] = m.value;
+                statusText.string_("Send A target updated (live, no rebuild needed).");
+            });
+        StaticText(rightPane, 54@22).string_("Snd B ->").stringColor_(labelColor);
+        sendBEffectMenu = PopUpMenu(rightPane, 100@22)
+            .items_(~auxEffectNames)
+            .value_(~sendBEffect[name] ? 0)
+            .action_({ |m|
+                ~sendBEffect[name] = m.value;
+                statusText.string_("Send B target updated (live, no rebuild needed).");
+            });
     };
 
     ~btTrackNames.do(makeMonoTrackSection);

@@ -104,10 +104,14 @@
 // 1360 -> 1060: each block shrank by 50px (190 -> 140, from the
 // Mix/Vol/Dry/Rev sliders going 130 -> 90) - 50 * 6 blocks = 300px saved
 // overall. Mirrors CT8guiPercGenerator.scd's own identical change. 1060 ->
-// 1124: MT1/MT2's two blocks each grew by 32px (140 -> 172) for the new
+// 1124: MT1/MT2's two blocks each grew by 32px (140 -> 172) for the
 // COPY TRACK ROW - same +64px total as CT8guiPercGenerator.scd's own
-// window got from BT1/BT2.
-    var hmGenHeight = 1124;
+// window got from BT1/BT2. 1124 -> 1316: all six blocks grew by one more
+// Send A/Send B target-effect row - HT1-4's own four blocks by 32px each
+// (140 -> 172), MT1/MT2's own two by 32px each on top of their already-172
+// height (172 -> 204) - "mixer phase" per feedback, same +192px total as
+// CT8guiPercGenerator.scd's own window just got.
+    var hmGenHeight = 1316;
     var hmGenBounds = Rect(700, 40, hmGenWidth, hmGenHeight);
 
     if(~hmGeneratorWindow.notNil) { ~hmGeneratorWindow.close };
@@ -145,6 +149,7 @@
         var trackContainer, trackColor, labelColor = Color.black;
         var leftPane, rightPane;
         var mixSlider, volSlider, sendASlider, sendBSlider;
+        var sendAEffectMenu, sendBEffectMenu;
         var onOffButton, sourceMenu, instrumentMenu, patternMenu, pitchMenu, volumeMenu;
         var patternSubView, pitchSubView, volumeSubView;
         var percentSlider, percentReadout, updatePatternPercentVisibility;
@@ -176,29 +181,34 @@
         trackColor = Color.rand(0.7);
 // Shrunk from 190 along with leftPane/rightPane and the Mix/Vol/Dry/Rev
 // sliders below (130 -> 90, ~30% shorter, per feedback) - mirrors
-// CT8guiPercGenerator.scd's own identical change.
-        trackContainer = CompositeView(~hmGeneratorWindow, 600@140).background_(trackColor);
+// CT8guiPercGenerator.scd's own identical change. 140 -> 172, for the new
+// Send A/Send B target row (below, "mixer phase" per feedback).
+        trackContainer = CompositeView(~hmGeneratorWindow, 600@172).background_(trackColor);
         ~hmGeneratorWindow.view.decorator.nextLine;
 
 // LEFT PANE: 4 vertical Sliders. Mix/Vol are a tiny built-in reverb tail,
 // same role as ~percWet/~percLevel (CT8synths.scd's \wet/\level convention)
 // - but not actually connected to any SynthDef yet, since nothing here
-// plays a sound of its own. Dry/Rev (placeholders, do nothing yet) mirror
-// the Percussion + Bass Generator's own.
+// plays a sound of its own. Send A/Send B, unlike Mix/Vol, ARE real now -
+// every track's aux sends are keyed by plain track name
+// (~sendAAmt[name]/~sendBAmt[name], CT8tracks.scd's own AUX SENDS
+// section), not by instrument, so they work for HT1-4 exactly the same
+// as every other track family, regardless of Mix/Vol's own separate,
+// still-unwired status here.
 // x=484, not 6 - see CT8guiPercGenerator.scd's own leftPane comment for
 // why (empirically mirrored child positioning). Slightly darker background
 // than the rest of the block, built component-wise rather than
 // `trackColor * 0.8` - Color has no `*` operator for a plain number, and
 // that crashed the whole window build instantly, on the very first track.
-        leftPane = CompositeView(trackContainer, Rect(484, 6, 110, 128)).background_(
+        leftPane = CompositeView(trackContainer, Rect(484, 6, 110, 160)).background_(
             Color.new(trackColor.red * 0.8, trackColor.green * 0.8, trackColor.blue * 0.8, trackColor.alpha)
         );
         leftPane.decorator = FlowLayout(leftPane.bounds, 4@4, 4@4);
 
         StaticText(leftPane, 20@14).string_("Mix").stringColor_(labelColor);
         StaticText(leftPane, 20@14).string_("Vol").stringColor_(labelColor);
-        StaticText(leftPane, 20@14).string_("Dry").stringColor_(labelColor);
-        StaticText(leftPane, 20@14).string_("Rev").stringColor_(labelColor);
+        StaticText(leftPane, 20@14).string_("SdA").stringColor_(labelColor);
+        StaticText(leftPane, 20@14).string_("SdB").stringColor_(labelColor);
         leftPane.decorator.nextLine;
 
         mixSlider = Slider(leftPane, 20@90)
@@ -213,12 +223,23 @@
                 ~polyLevel[name] = sl.value;
                 statusText.string_("Changed (not yet wired to playback).");
             });
-        sendASlider = Slider(leftPane, 20@90);
-        sendBSlider = Slider(leftPane, 20@90);
+        sendASlider = Slider(leftPane, 20@90)
+            .value_(~sendAAmt[name])
+            .action_({ |sl|
+                ~sendAAmt[name] = sl.value;
+                statusText.string_("Send A updated (live, no rebuild needed).");
+            });
+        sendBSlider = Slider(leftPane, 20@90)
+            .value_(~sendBAmt[name])
+            .action_({ |sl|
+                ~sendBAmt[name] = sl.value;
+                statusText.string_("Send B updated (live, no rebuild needed).");
+            });
 
-// RIGHT PANE.
+// RIGHT PANE. Height 160, not 128, to fit the new Send A/Send B
+// target-effect row (below).
 // x=6, not 124 - mirror image of leftPane's own x, same reason.
-        rightPane = CompositeView(trackContainer, Rect(6, 6, 470, 128)).background_(trackColor);
+        rightPane = CompositeView(trackContainer, Rect(6, 6, 470, 160)).background_(trackColor);
         rightPane.decorator = FlowLayout(rightPane.bounds, 6@6, 4@4);
 
 // ROW 1: on/off IS real - same ~trackEnabled[name]/~syncTrackPlayer every
@@ -366,6 +387,27 @@
             statusText.string_("Changed (not yet wired to playback).");
         });
         updateVolumeRangeReadout.value;
+
+// Send A/Send B's own target-effect menus - see
+// CT8guiPercGenerator.scd's makeTrackSection for the full comment. Real
+// and working, unlike Mix/Vol above - see leftPane's own comment.
+        rightPane.decorator.nextLine;
+        StaticText(rightPane, 54@22).string_("Snd A ->").stringColor_(labelColor);
+        sendAEffectMenu = PopUpMenu(rightPane, 100@22)
+            .items_(~auxEffectNames)
+            .value_(~sendAEffect[name] ? 0)
+            .action_({ |m|
+                ~sendAEffect[name] = m.value;
+                statusText.string_("Send A target updated (live, no rebuild needed).");
+            });
+        StaticText(rightPane, 54@22).string_("Snd B ->").stringColor_(labelColor);
+        sendBEffectMenu = PopUpMenu(rightPane, 100@22)
+            .items_(~auxEffectNames)
+            .value_(~sendBEffect[name] ? 0)
+            .action_({ |m|
+                ~sendBEffect[name] = m.value;
+                statusText.string_("Send B target updated (live, no rebuild needed).");
+            });
     };
 
     ~polyTrackNames.do(makePolyTrackSection);
@@ -379,6 +421,7 @@
         var trackContainer, trackColor, labelColor = Color.black;
         var leftPane, rightPane;
         var mixSlider, volSlider, sendASlider, sendBSlider;
+        var sendAEffectMenu, sendBEffectMenu;
         var onOffButton, sourceMenu, instrumentMenu, patternMenu, pitchMenu, volumeMenu;
         var patternSubView, pitchSubView, volumeSubView;
         var percentSlider, percentReadout, updatePatternPercentVisibility;
@@ -505,21 +548,22 @@
         var updatePitchMenuItems;
 
         trackColor = Color.rand(0.7);
-// 140 -> 172, to fit the new COPY TRACK ROW (below) as a fourth row in
-// rightPane - see CT8guiPercGenerator.scd's own copy of this same block
-// for the full comment.
-        trackContainer = CompositeView(~hmGeneratorWindow, 600@172).background_(trackColor);
+// 140 -> 172, for the COPY TRACK ROW as a fourth row in rightPane; 172 ->
+// 204, for the Send A/Send B target row (below, "mixer phase" per
+// feedback) as a fifth - see CT8guiPercGenerator.scd's own copy of this
+// same block for the full comment.
+        trackContainer = CompositeView(~hmGeneratorWindow, 600@204).background_(trackColor);
         ~hmGeneratorWindow.view.decorator.nextLine;
 
-        leftPane = CompositeView(trackContainer, Rect(484, 6, 110, 160)).background_(
+        leftPane = CompositeView(trackContainer, Rect(484, 6, 110, 192)).background_(
             Color.new(trackColor.red * 0.8, trackColor.green * 0.8, trackColor.blue * 0.8, trackColor.alpha)
         );
         leftPane.decorator = FlowLayout(leftPane.bounds, 4@4, 4@4);
 
         StaticText(leftPane, 20@14).string_("Mix").stringColor_(labelColor);
         StaticText(leftPane, 20@14).string_("Vol").stringColor_(labelColor);
-        StaticText(leftPane, 20@14).string_("Dry").stringColor_(labelColor);
-        StaticText(leftPane, 20@14).string_("Rev").stringColor_(labelColor);
+        StaticText(leftPane, 20@14).string_("SdA").stringColor_(labelColor);
+        StaticText(leftPane, 20@14).string_("SdB").stringColor_(labelColor);
         leftPane.decorator.nextLine;
 
         mixSlider = Slider(leftPane, 20@90)
@@ -534,10 +578,20 @@
                 ~monoLevel[name] = sl.value;
                 statusText.string_("Vol updated (live, no rebuild needed).");
             });
-        sendASlider = Slider(leftPane, 20@90);
-        sendBSlider = Slider(leftPane, 20@90);
+        sendASlider = Slider(leftPane, 20@90)
+            .value_(~sendAAmt[name])
+            .action_({ |sl|
+                ~sendAAmt[name] = sl.value;
+                statusText.string_("Send A updated (live, no rebuild needed).");
+            });
+        sendBSlider = Slider(leftPane, 20@90)
+            .value_(~sendBAmt[name])
+            .action_({ |sl|
+                ~sendBAmt[name] = sl.value;
+                statusText.string_("Send B updated (live, no rebuild needed).");
+            });
 
-        rightPane = CompositeView(trackContainer, Rect(6, 6, 470, 160)).background_(trackColor);
+        rightPane = CompositeView(trackContainer, Rect(6, 6, 470, 192)).background_(trackColor);
         rightPane.decorator = FlowLayout(rightPane.bounds, 6@6, 4@4);
 
         StaticText(rightPane, 48@22).string_(name.asString)
@@ -733,6 +787,26 @@
         };
         ~copyButtonRefreshers[name] = refreshCopyUi;
         refreshCopyUi.value;
+
+// Send A/Send B's own target-effect menus - see
+// CT8guiPercGenerator.scd's makeTrackSection for the full comment.
+        rightPane.decorator.nextLine;
+        StaticText(rightPane, 54@22).string_("Snd A ->").stringColor_(labelColor);
+        sendAEffectMenu = PopUpMenu(rightPane, 100@22)
+            .items_(~auxEffectNames)
+            .value_(~sendAEffect[name] ? 0)
+            .action_({ |m|
+                ~sendAEffect[name] = m.value;
+                statusText.string_("Send A target updated (live, no rebuild needed).");
+            });
+        StaticText(rightPane, 54@22).string_("Snd B ->").stringColor_(labelColor);
+        sendBEffectMenu = PopUpMenu(rightPane, 100@22)
+            .items_(~auxEffectNames)
+            .value_(~sendBEffect[name] ? 0)
+            .action_({ |m|
+                ~sendBEffect[name] = m.value;
+                statusText.string_("Send B target updated (live, no rebuild needed).");
+            });
     };
 
     [\MT1, \MT2].do(makeMonoTrackSection);

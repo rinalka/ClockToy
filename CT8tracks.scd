@@ -381,6 +381,87 @@
 };
 
 // ---------------------------------------------------------------------------
+// AUX SENDS ("mixer phase") - every track's own Send A/Send B
+// ---------------------------------------------------------------------------
+// Per feedback: every track (any family - perc/mono/poly all share this,
+// keyed by plain track name rather than living inside any one family's own
+// ~percX/~monoX/~polyX config) gets two independently-assignable aux
+// sends, each a (which registered effect, how much) pair -
+// ~sendAEffect[name]/~sendBEffect[name] are indices into
+// ~auxEffectNames/~auxEffectBuses (CT8synths.scd's own bullet - built
+// once ~revBus exists, so these default to index 0, "ELI Reverb", safely
+// even though that array doesn't exist yet at THIS point in file-load
+// order); ~sendAAmt[name]/~sendBAmt[name] are the actual send amount,
+// 0-1, defaulting to 0 (silent) - the same "no-op until deliberately
+// raised" convention every other Wet/Level-style control already uses.
+~sendAEffect = ~sendAEffect ? ();
+~sendAAmt = ~sendAAmt ? ();
+~sendBEffect = ~sendBEffect ? ();
+~sendBAmt = ~sendBAmt ? ();
+~trackNames.do { |name|
+    ~sendAEffect[name] = ~sendAEffect[name] ? 0;
+    ~sendAAmt[name] = ~sendAAmt[name] ? 0;
+    ~sendBEffect[name] = ~sendBEffect[name] ? 0;
+    ~sendBAmt[name] = ~sendBAmt[name] ? 0;
+};
+
+// ~auxSendPbindArgs.(name) - the four extra Pbind keys every builder below
+// appends (via ++) to its own Pbind argument array, so every track's two
+// aux sends work regardless of which family builds it. Wrapped in Pfunc,
+// not read as bare values - same reasoning as \fm's own \fx key (a live
+// Bus reference sitting directly in a Pbind pair is suspect) - and all
+// four are read fresh every event, so dragging either Send slider or
+// re-assigning its target effect takes effect immediately, no rebuild
+// needed, exactly like Wet/Level.
+~auxSendPbindArgs = { |name|
+    [
+        \auxBusA, Pfunc { ~auxEffectBuses[~sendAEffect[name]] },
+        \auxAmtA, Pfunc { ~sendAAmt[name] },
+        \auxBusB, Pfunc { ~auxEffectBuses[~sendBEffect[name]] },
+        \auxAmtB, Pfunc { ~sendBAmt[name] }
+    ];
+};
+
+// ---------------------------------------------------------------------------
+// SYNTH LAB LIVE OVERRIDES - tuning presets against the running composition
+// ---------------------------------------------------------------------------
+// Per feedback ("I need a way to tune the presets so lets connect the lab
+// to the running synths"): ~labLiveOverrides[instrumentSym] is an Event of
+// {param: value} for whichever ONE instrument is currently selected in the
+// Synth Lab (CT8guiSynthLab.scd's own `menu.action` populates it fresh -
+// every OTHER instrument's entry gets cleared at the same time, since the
+// intended workflow is "run only one track with that synth in it, tune it
+// live" - not several at once). Deliberately excludes \wet/\level and any
+// \noteN key - those already have their own, separate live controls
+// (each track's own Wet/Level slider; chord-aware pitch picking) that
+// this is not meant to second-guess. ~labOverrideArgs.(instrumentSym),
+// below, is what every builder calls to splice these in, generically,
+// without needing to know any instrument's own param names in advance.
+~labLiveOverrides = ~labLiveOverrides ? ();
+
+// ~labOverrideArgs.(instrumentSym) - a flat array of [key, Pfunc {...},
+// ...] pairs, one per currently-live-tuned param for that instrument (none
+// at all, most of the time - only populated while the Synth Lab has that
+// exact instrument selected). Read fresh every event, like every other
+// Pfunc-driven control here, so a Synth Lab slider drag is audible on
+// whichever live track is currently using that instrument without any
+// rebuild. The SET of keys is only resolved at BUILD time, same as
+// everything else a Pbind's own argument array decides once - a param the
+// Synth Lab hasn't started tracking yet for this instrument won't appear
+// until the next rebuild, same "structure fixed at rebuild, values can be
+// live" rule the rest of this file already follows.
+~labOverrideArgs = { |instrumentSym|
+    var overrides = ~labLiveOverrides[instrumentSym];
+    var args = [];
+    if(overrides.notNil) {
+        overrides.keysValuesDo { |k, v|
+            args = args ++ [k, Pfunc { ~labLiveOverrides[instrumentSym][k] }];
+        };
+    };
+    args;
+};
+
+// ---------------------------------------------------------------------------
 // PLAYER LIFECYCLE HELPERS
 // ---------------------------------------------------------------------------
 // Stop a track's current player (if any), then restart it if it's enabled
@@ -695,7 +776,7 @@
             };
         }.value;
 
-        ~trackPatterns[name] = Pbind(*[
+        ~trackPatterns[name] = Pbind(*([
             \instrument, instrument,
             \dur, Pseq(durs, inf),
 // pitches itself is resolved entirely in MIDI note space (~percBasePitch's
@@ -742,7 +823,11 @@
                 beatIndex = (beatIndex + 1) % restFlags.size;
                 if(isRest) { \rest } { \note }
             }
-        ]);
+// ~auxSendPbindArgs/~labOverrideArgs (the AUX SENDS/SYNTH LAB LIVE
+// OVERRIDES sections, above) splice in every track's two aux sends plus
+// whatever the Synth Lab currently has live-tuned for this instrument -
+// every builder in this file appends both the same way.
+        ] ++ ~auxSendPbindArgs.(name) ++ ~labOverrideArgs.(instrument)));
     };
 };
 
@@ -813,7 +898,8 @@
                     \note2, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
                     \note3, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
                     \note4, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
-                    \out, 0
+                    \out, 0,
+                    *(~auxSendPbindArgs.(\HT1) ++ ~labOverrideArgs.(\droneChord))
                 );
             },
             \shimmerPad, {
@@ -825,7 +911,8 @@
                     \note3, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
                     \note4, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
                     \note5, Pfunc { ~chordNoteInRange.(~currentChord, ~currentRange[\HT1][0], ~currentRange[\HT1][1]) },
-                    \out, 0
+                    \out, 0,
+                    *(~auxSendPbindArgs.(\HT1) ++ ~labOverrideArgs.(\shimmerPad))
                 );
             },
             {
@@ -851,7 +938,8 @@
                     \amp, 0.027,
                     \out, 0,
                     \fx, Pfunc { ~revBus },
-                    \fxsend, -10
+                    \fxsend, -10,
+                    *(~auxSendPbindArgs.(\HT1) ++ ~labOverrideArgs.(\fm))
                 );
             }
         );
@@ -1672,7 +1760,7 @@
             { normalDurStream.next }, { normalMidinoteStream.next }
         );
 
-        ~trackPatterns[name] = Pbind(*[
+        ~trackPatterns[name] = Pbind(*([
             \instrument, instrument,
             \dur, copyPair[0],
             \midinote, copyPair[1],
@@ -1693,7 +1781,9 @@
             },
 // See the TRACK COPY section, above, for ~copyTapFor.
             \copyTap, ~copyTapFor.(name)
-        ]);
+// ~auxSendPbindArgs/~labOverrideArgs (AUX SENDS/SYNTH LAB LIVE OVERRIDES
+// sections, above) - every builder in this file appends both the same way.
+        ] ++ ~auxSendPbindArgs.(name) ++ ~labOverrideArgs.(instrument)));
     };
 };
 

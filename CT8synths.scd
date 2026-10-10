@@ -60,6 +60,25 @@
     XFade2.ar(sig, fx, wet.linlin(0, 1, -1, 1)) * level;
 };
 
+// ---------------------------------------------------------------------------
+// AUX SEND BUS (shared by every track's own two aux sends - "mixer phase")
+// ---------------------------------------------------------------------------
+// ~auxSend is the per-SynthDef half of this: a plain helper (not a SynthDef,
+// same idea as ~allpassWash) that writes a SCALED copy of this synth's own
+// finished output to up to two destination buses, in addition to its normal
+// Out.ar(out, sig). amtA/amtB default to 0, so this is a no-op by
+// multiplication wherever a track's two aux sends haven't been turned up -
+// the same "silent unless deliberately set" convention wet/level already
+// use. busA/busB are plain bus-index Floats/Integers here (Out.ar accepts
+// either) - CT8tracks.scd's own builders are the ones that have to be
+// careful passing a live Bus reference through a Pbind key (see ~buildPercPattern's
+// own \fx comment) rather than this helper, which just receives whatever a
+// SynthDef arg resolves to.
+~auxSend = { |sig, busA = 0, amtA = 0, busB = 0, amtB = 0|
+    Out.ar(busA, sig * amtA);
+    Out.ar(busB, sig * amtB);
+};
+
 
 
 // ---------------------------------------------------------------------------
@@ -68,6 +87,25 @@
 // server has booted and ~revBus exists.  Evaluating this file again while the
 // project is running also installs edited SynthDefs immediately.
 ~installSynthDefs = {
+
+// ~auxEffectNames/~auxEffectBuses are the "mixer phase" effects registry,
+// per feedback - two parallel arrays (same convention CT8guiSynthLab.scd's
+// own names/synthNames already use), index-matched: ~auxEffectNames[i] is
+// the GUI label for the dropdown each track's Send A/Send B gets
+// (CT8guiPercGenerator.scd/CT8guiHarmonyMelodyGenerator.scd), ~auxEffectBuses[i]
+// is the actual Bus every track currently assigned to effect i sends into.
+// Built here, inside ~installSynthDefs, rather than at this file's own
+// top level, because ~revBus (effect 0, "ELI Reverb" - the first entry,
+// per feedback, reusing the SAME bus/Synth \fm/\plucking's own \fx send
+// already reaches, rather than standing up a second, redundant reverb
+// instance) doesn't exist yet until CT8main.scd's boot sequence creates
+// it, right before calling ~installSynthDefs the first time. Adding a
+// second effect (a bandpass filter, an echo - per feedback, both planned)
+// later is just appending one more name and one more bus/Synth here, not
+// a redesign.
+    ~auxEffectNames = ["ELI Reverb"];
+    ~auxEffectBuses = [~revBus];
+
 
 // // PLUCK SYNTH
 // SynthDef(\plucking, {
@@ -125,7 +163,8 @@ SynthDef(\plucking, {
         rel = 0.10,
         wet = 0,
         level = 1,
-        dynamic = 0.25;
+        dynamic = 0.25,
+        auxBusA = 0, auxAmtA = 0, auxBusB = 0, auxAmtB = 0;
 
 
     var env, excitation, snd;
@@ -171,14 +210,17 @@ SynthDef(\plucking, {
 // same shared bus) is loud enough to dominate ~clockRev regardless of this
 // note's own wet/level/amp.
     Out.ar(~revBus, snd * env * dynamic);
-    Out.ar(out, ~allpassWash.(snd * env, wet, level));
+    snd = ~allpassWash.(snd * env, wet, level);
+    ~auxSend.(snd, auxBusA, auxAmtA, auxBusB, auxAmtB);
+    Out.ar(out, snd);
 }).add;
 
 // ---------------------------------------------------------------------------
 // HAT - short metallic cymbal tick
 // ---------------------------------------------------------------------------
 SynthDef(\hat, {
-    |amp = 0.2, pan = 0, out = 0, freq = 4200, noiseFreq = 1000, wet = 0, level = 1|
+    |amp = 0.2, pan = 0, out = 0, freq = 4200, noiseFreq = 1000, wet = 0, level = 1,
+     auxBusA = 0, auxAmtA = 0, auxBusB = 0, auxAmtB = 0|
 
     var env, noise, metal, snd;
 
@@ -212,7 +254,7 @@ SynthDef(\hat, {
 // "simple," not worth the extra complexity of decoupling the free timer
 // from the dry envelope for this.
     snd = ~allpassWash.(snd, wet, level);
-
+    ~auxSend.(snd, auxBusA, auxAmtA, auxBusB, auxAmtB);
     Out.ar(out, snd);
 }).add;
 
@@ -221,7 +263,8 @@ SynthDef(\hat, {
 // ---------------------------------------------------------------------------
 // CYMBAL - classic 6-square-wave metallic cymbal (808/909-style technique)
 // ---------------------------------------------------------------------------
-SynthDef(\cym, {|t_trig = 1, out=0, basefreq = 300, len = 0.25, amp=1, pan = 0, wet = 0, level = 1|
+SynthDef(\cym, {|t_trig = 1, out=0, basefreq = 300, len = 0.25, amp=1, pan = 0, wet = 0, level = 1,
+    auxBusA = 0, auxAmtA = 0, auxBusB = 0, auxAmtB = 0|
 
 // Six inharmonic ratios (an approximation of a bell/cymbal's partials),
 // scaled by basefreq.
@@ -245,6 +288,7 @@ SynthDef(\cym, {|t_trig = 1, out=0, basefreq = 300, len = 0.25, amp=1, pan = 0, 
 // ~allpassWash (see \hat's comment for the general default/caveat every
 // synth with this tail shares) rather than FreeVerb (an earlier mistake).
 	signal = ~allpassWash.(signal, wet, level);
+	~auxSend.(signal, auxBusA, auxAmtA, auxBusB, auxAmtB);
 	Out.ar(out, signal);
 }).add;
 //Synth(\cym, [\basefreq, 1500, \len, 1]);
@@ -253,7 +297,8 @@ SynthDef(\cym, {|t_trig = 1, out=0, basefreq = 300, len = 0.25, amp=1, pan = 0, 
 // ---------------------------------------------------------------------------
 // bass drum better
 // ---------------------------------------------------------------------------
-SynthDef(\baseD, {|t_trig = 1, basefreq = 55, rq = 0.1, overdrive = 2, samplen = 100, amp = 1, pan = 0, out = 0, wet = 0, level = 1|
+SynthDef(\baseD, {|t_trig = 1, basefreq = 55, rq = 0.1, overdrive = 2, samplen = 100, amp = 1, pan = 0, out = 0, wet = 0, level = 1,
+    auxBusA = 0, auxAmtA = 0, auxBusB = 0, auxAmtB = 0|
 	var output, failsafe, safetyTimeout, makeupgain = 3.5;
 
 	output = Trig.ar(t_trig,samplen/SampleRate.ir);
@@ -275,6 +320,7 @@ SynthDef(\baseD, {|t_trig = 1, basefreq = 55, rq = 0.1, overdrive = 2, samplen =
 // identical timing to before when wet=0, since the wash is then a bit-exact
 // no-op.
 	output = ~allpassWash.(output, wet, level);
+	~auxSend.(output, auxBusA, auxAmtA, auxBusB, auxAmtB);
 	DetectSilence.ar(Mix.ar(output), time: 0.1, doneAction: 2);
 	Out.ar(out, output);
 }).add;
@@ -289,7 +335,8 @@ Synth(\baseD, [\basefreq, 180]);
 		arg freq=500, mRatio=1, cRatio=1,
 		index=1, iScale=5, cAtk=4, cRel=(-4),
 		amp=0.2, atk=0.01, rel=3, pan=0,
-		out=0, fx=0, fxsend=(-25), wet=0, level=1;
+		out=0, fx=0, fxsend=(-25), wet=0, level=1,
+		auxBusA=0, auxAmtA=0, auxBusB=0, auxAmtB=0;
 		var car, mod, env, iEnv;
 
 		//index of modulation
@@ -321,6 +368,7 @@ Synth(\baseD, [\basefreq, 180]);
 		//~hat/\cym/\baseD/\kick already use - added for BT1/BT2's Wet/Level
 		//sliders, which need \fm to actually have a wet/level knob to turn.
 		car = ~allpassWash.(car, wet, level);
+		~auxSend.(car, auxBusA, auxAmtA, auxBusB, auxAmtB);
 		Out.ar(out, car);
 	}).add;
 
@@ -437,7 +485,8 @@ SynthDef(\kick, { |out=0, pan=0, amp=0.5, curve=(-4),
     drumSweep=0.02, drumAtt=0.005, drumRel=0.4,
     drumFilter=1000, modIndex=6.5, modFreq=5,
     beaterFreq=500, beaterHarmonic=12, beaterSweep=0.03,
-    beaterAtt=0.01, beaterRel=0.3, wet=0, level=1|
+    beaterAtt=0.01, beaterRel=0.3, wet=0, level=1,
+    auxBusA=0, auxAmtA=0, auxBusB=0, auxAmtB=0|
     var drumEnv, drumContour, drum, beaterContour, beaterEnv, beater, snd;
     drumEnv = Env.perc(drumAtt, drumRel, drumAmp, curve).kr;
     drumContour = Line.kr(drumFreq * drumHarmonic, drumFreq, drumSweep);
@@ -457,6 +506,7 @@ SynthDef(\kick, { |out=0, pan=0, amp=0.5, curve=(-4),
 // no-op - mainly relevant to CT8guiTracksLab.scd/CT8guiSynthLab.scd, the
 // only two places that ever trigger \kick with wet above 0.
     snd = ~allpassWash.(snd, wet, level);
+    ~auxSend.(snd, auxBusA, auxAmtA, auxBusB, auxAmtB);
     DetectSilence.ar(Mix.ar(snd), doneAction: 2);
     Out.ar(out, snd);
 }).add;
@@ -483,7 +533,8 @@ SynthDef(\droneChord, {
      attack=0.012, sustain=0.12, release=5,
      detune=10,
      driftRate=0.15, driftDepth=5,
-     wet=0, level=2|
+     wet=0, level=2,
+     auxBusA=0, auxAmtA=0, auxBusB=0, auxAmtB=0|
 
     var notes, voices, sig, env;
     notes = [note1, note2, note3, note4];
@@ -512,6 +563,7 @@ SynthDef(\droneChord, {
     );
     sig = sig * env * amp;
     sig = ~allpassWash.(sig, wet, level);
+    ~auxSend.(sig, auxBusA, auxAmtA, auxBusB, auxAmtB);
     Out.ar(out, sig);
 }).add;
 
@@ -541,7 +593,8 @@ SynthDef(\droneChord, {
 // block once per voice.
 SynthDef(\shimmerPad, { |out=0, amp=0.125,
     note1=60, note2=63, note3=67, note4=71, note5=72,
-    wet=0, level=1|
+    wet=0, level=1,
+    auxBusA=0, auxAmtA=0, auxBusB=0, auxAmtB=0|
     var sig, freqs, envs, env, rings, numvoices, notes;
     var atk=2.0, sus=1.0, rel=5.0, totalTime;
 
@@ -556,6 +609,7 @@ SynthDef(\shimmerPad, { |out=0, amp=0.125,
     env = EnvGen.kr(Env.new([0, 1, 1, 0], [atk, sus, rel], [\sin, \lin, -4]), doneAction: 2);
     sig = sig * env * amp;
     sig = ~allpassWash.(sig, wet, level);
+    ~auxSend.(sig, auxBusA, auxAmtA, auxBusB, auxAmtB);
     Out.ar(out, sig);
 }).add;
 // Allpass reverb: a second, simpler reverb option alongside \ELIreverb - a

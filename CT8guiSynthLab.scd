@@ -497,6 +497,16 @@
                     if(currentSynth.notNil and: { currentInstrument == selected } and: { currentSynth.isPlaying }) {
                         currentSynth.set(sp[0], v);
                     };
+// Per feedback ("connect the lab to the running synths"): also push into
+// ~labLiveOverrides (CT8tracks.scd's own SYNTH LAB LIVE OVERRIDES
+// section) if this exact param is one of the ones currently being
+// tracked for this instrument - menu.action, below, is what decides
+// that set (never \wet/\level/\noteN - see its own comment). This is
+// what actually makes a live track, if one is currently playing this
+// instrument, audibly follow this slider.
+                    if(~labLiveOverrides[selected].notNil and: { ~labLiveOverrides[selected][sp[0]].notNil }) {
+                        ~labLiveOverrides[selected][sp[0]] = v;
+                    };
                 });
         };
     };
@@ -521,7 +531,36 @@
         });
         status.string = "Played " ++ selected.asString;
     };
-    menu.action = { selected = names.at(menu.value.asInteger); rebuild.value };
+    menu.action = {
+        selected = names.at(menu.value.asInteger);
+        rebuild.value;
+// Per feedback ("I need a way to tune the presets so lets connect the
+// lab to the running synths... I will only run one track with that
+// synth in it, will tune it using synthLab, and will record what i
+// consider to be reasonable values for a preset"): populate
+// ~labLiveOverrides fresh for whichever instrument is now selected,
+// clearing every OTHER instrument's own entry at the same time, since
+// the intended workflow is tuning ONE instrument's one live track at a
+// time, not several at once. Excludes \wet/\level (already their own
+// separate, per-track live control - CT8guiPercGenerator.scd/
+// CT8guiHarmonyMelodyGenerator.scd's own Mix/Vol sliders) and any
+// \noteN key (pitch is its own separate, chord-aware mechanism this
+// isn't meant to second-guess) - every other param in this instrument's
+// own specs table gets tracked.
+        ~labLiveOverrides = ();
+        ~labLiveOverrides[selected] = ();
+        specs[selected].do { |sp|
+            var key = sp[0];
+            var isExcluded = #[\wet, \level].includes(key) or: {
+                key.asString.beginsWith("note")
+            };
+            if(isExcluded.not) {
+                ~labLiveOverrides[selected][key] = values[selected][key];
+            };
+        };
+        status.string = "Tuning " ++ selected.asString ++ " live - "
+            ++ ~labLiveOverrides[selected].size ++ " param(s) pushed to the running composition.";
+    };
     rebuild.value;
 
     ~synthLabWindow.onClose = { ~stopSynthLab.value };
