@@ -312,7 +312,13 @@ their own bullets below for exactly where the line falls:
   a standalone instrument-audition panel, incorporated from a separate file the user
   brought in (originally `Ct8synthLab.scd`). Pick a synth from a menu, hit PLAY NOTE, and
   every one of its params gets a slider with live numeric readout (`makeSlider`, generic
-  over each `specs` entry's `[name, default, lo, hi, curve]`); some params (not envelope
+  over each `specs` entry's `[name, default, lo, hi, curve]` - `curve` is `\lin`/`\exp`
+  for most params, positioning the slider linearly or exponentially across `[lo, hi]`,
+  or `\midi` (added per feedback, for `\droneChord`'s own `note1`-`note4` - below) which
+  positions the slider exactly like `\lin` but rounds every value a drag or a typed
+  number produces to the nearest integer and shows 0 decimals instead of 3, since a
+  fractional MIDI note (e.g. `48.237`) is a real but out-of-tune pitch once `.midicps`'d,
+  not the clean semitone picking a note should land on); some params (not envelope
   segment timings or the pluck excitation) update the currently-sounding note live via
   `currentSynth.set`. A LOOP toggle + interval number box repeatedly re-fires the
   currently-selected instrument on an `AppClock`-scheduled self-reschedule (same

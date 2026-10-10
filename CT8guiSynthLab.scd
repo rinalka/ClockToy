@@ -276,10 +276,10 @@
 // SynthDef has had that tail since this same tuning pass - added to
 // match every other instrument's own spec entry.
     specs.put(\droneChord, [
-            [\note1, 48, 0, 127, \lin],
-            [\note2, 52, 0, 127, \lin],
-            [\note3, 55, 0, 127, \lin],
-            [\note4, 60, 0, 127, \lin],
+            [\note1, 48, 0, 127, \midi],
+            [\note2, 52, 0, 127, \midi],
+            [\note3, 55, 0, 127, \midi],
+            [\note4, 60, 0, 127, \midi],
             [\amp, 0.8, 0, 2, \lin],
             [\attack, 0.012, 0.01, 60, \exp],
             [\sustain, 0.12, 0.1, 300, \exp],
@@ -401,21 +401,32 @@
     StaticText(~synthLabWindow, 620@24).string_("REVERB (applies to every instrument)")
         .font_(Font("Arial", 13, true)).stringColor_(Color.white);
 
-// Generic labelled slider with live numerical readout.
+// Generic labelled slider with live numerical readout. curve == \midi is a
+// third option alongside \lin/\exp, per feedback ("change the sliders for
+// note 1 to 4 to be in midi") - positions the slider exactly like \lin
+// (same toNorm), but rounds every value that comes out of a drag or a
+// typed number to the nearest integer, and shows 0 decimals instead of 3 -
+// a dragged note1-4 slider used to land on fractional MIDI values (e.g.
+// 48.237), which is a real, just slightly-out-of-tune, pitch once
+// .midicps'd, not a clean semitone the way picking a note should be.
     makeSlider = { |parent, label, val, min, max, curve, callback|
         var row = CompositeView(parent, 600@29);
         var lbl = StaticText(row, Rect(0, 2, 145, 23)).string_(label.asString)
             .stringColor_(Color.white);
         var slider = Slider(row, Rect(150, 3, 325, 21));
         var number = NumberBox(row, Rect(485, 2, 100, 24));
-        var toVal = { |x| if(curve == \exp) {
-            min * ((max/min) ** x)
-        } { min + (x * (max-min)) } };
+        var isMidi = (curve == \midi);
+        var toVal = { |x|
+            var v = if(curve == \exp) {
+                min * ((max/min) ** x)
+            } { min + (x * (max-min)) };
+            if(isMidi) { v.round } { v };
+        };
         var toNorm = { |x| if(curve == \exp) {
             (x/min).log / (max/min).log
         } { (x-min)/(max-min) } };
         number.value = val;
-        number.decimals = 3;
+        number.decimals = if(isMidi) { 0 } { 3 };
         slider.value = toNorm.value(val).clip(0, 1);
         slider.action = {
             var v = toVal.value(slider.value);
@@ -424,6 +435,7 @@
         };
         number.action = {
             var v = number.value.clip(min, max);
+            if(isMidi) { v = v.round };
             slider.value = toNorm.value(v);
             number.value = v;
             callback.value(v);

@@ -477,7 +477,7 @@ SynthDef(\kick, { |out=0, pan=0, amp=0.5, curve=(-4),
 // no-op like always; attack/sustain/release/amp defaults per feedback
 // (was too soft and slow).
 SynthDef(\droneChord, { |out=0, note1=48, note2=52, note3=55, note4=60,
-    amp=0.8, attack=0.012, sustain=0.12, release=5, detune=1, wet=0, level=1|
+    amp=0.8, attack=0.012, sustain=0.12, release=5, detune= 0.41, wet=0, level=2|
     var notes, voices, sig, env, spread;
 
     spread = 1 - detune.clip(0, 1);
