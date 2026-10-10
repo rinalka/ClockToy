@@ -186,9 +186,10 @@ their own bullets below for exactly where the line falls:
   its parent scale's degrees). Whenever Dur Pat (same menu, directly to Pitch's own
   left) is one of the three 1/8th patterns (`\random8thPercent`/`\random8thLastBar`/
   `\random8thLastRowCol`) OR one of the three 1/3rd patterns (`\random3rdPercent`/
-  `\random3rdLastBar`/`\random3rdLastRowCol` - the 4/3 family still isn't covered, per
-  feedback "not yet but i will do something very similar for 1/3 and 4/3 options," so
-  4/3 remains a planned separate later step), each of the three Arp modes expands into
+  `\random3rdLastBar`/`\random3rdLastRowCol` - the 4/3 family does NOT get its own set
+  of Arp sub-variants, per feedback - "the 4/3 Dur pat is done there will be no sub
+  variants," settling what an earlier pass had left as "a planned separate later
+  step"), each of the three Arp modes expands into
   its own family of sub-variants in this same menu - a DIFFERENT set of four for 1/3rd
   than the three for 1/8th, per feedback: Up/Down/Ran for 1/8th (Arp Rising Up/Down/Ran,
   Arp Falling Up/Down/Ran, Arp Looping Up/Down/Ran - 9 entries, turning the base 8

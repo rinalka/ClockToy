@@ -148,13 +148,17 @@
 ~percSplitPercent = ~percSplitPercent ? ();
 ~percSourceDefaults = (PT1: \row, PT2: \col, PT3: \row, PT4: \col);
 ~percInstrumentDefaults = (PT1: \kick, PT2: \baseD, PT3: \hat, PT4: \cym);
-// Each instrument's own default pitch-arg value and amp, straight off its
-// SynthDef (CT8synths.scd)/Synth Lab specs table (CT8guiSynthLab.scd) -
-// baseD/cym's \basefreq, hat's \freq, kick's \drumFreq, all at their
-// SynthDef's own default, and amp likewise. Keyed by instrument rather than
+// Each instrument's own default pitch-arg value (as a MIDI note now, not
+// Hz - see ~percBasePitch's own comment just below) and amp. Keyed by
+// instrument rather than
 // by track so ~percBasePitch/~percVolumeLevels' defaults, below, stay
 // correct even if ~percInstrumentDefaults is changed later.
-~percInstrumentPitchDefaults = (baseD: 55, cym: 300, hat: 4200, kick: 50);
+// MIDI equivalents of each instrument's own SynthDef default Hz value
+// (CT8synths.scd), rounded to the nearest note - baseD 55 Hz, cym 300 Hz,
+// hat 4200 Hz, kick 50 Hz - preserving each instrument's default CHARACTER
+// under the new MIDI-note slider (per feedback, below) rather than
+// resetting every track to one arbitrary shared note.
+~percInstrumentPitchDefaults = (baseD: 33, cym: 62, hat: 108, kick: 31);
 ~percInstrumentVolumeDefaults = (baseD: 1, cym: 1, hat: 0.2, kick: 0.5);
 // ~percBasePitch[name]/~percVolumeLevels[name] are both now [lo, hi] pairs -
 // one dual-handle RangeSlider each in the Percussion + Bass Generator window
@@ -457,8 +461,15 @@
             if(pattern == \startOnly) { startIdx } { (0..events.size - 1) }
         };
 
-// ~percBasePitch[name] is [lo, hi] (one dual-handle RangeSlider in the GUI,
-// CT8guiPercGenerator.scd) - \fixed always just reads hi; \random picks
+// ~percBasePitch[name] is [lo, hi] IN MIDI NOTES now, not Hz (one
+// dual-handle RangeSlider in the GUI, CT8guiPercGenerator.scd, mapped
+// 0-127 - "same as piano keyboard" for every instrument for now, per
+// feedback, though each one will get its own range eventually) - every
+// mode below still works entirely in this MIDI-note space; the one and
+// only place this ever gets converted to the Hz each instrument's own
+// pitch arg actually needs is a single `.midicps` on the whole resolved
+// `pitches` array, right before the Pbind gets built, below. \fixed
+// always just reads hi; \random picks
 // anywhere in [lo, hi]; \rising climbs from lo toward hi over the course of
 // a row/column span, in 8 fixed steps (an arbitrary subdivision, not
 // derived from how many slots the span actually has - a span shorter than
@@ -533,18 +544,25 @@
         };
 
 // Next hit's \amp, per ~percVolumeMode[name] - \fixed always reads
-// ~percVolumeLevels[name]'s high end; \alternate flips between its two
+// ~percVolumeLevels[name]'s high end (the loudest/"normal" value, per
+// feedback); \alternate flips between its two
 // ends every actual sounding hit (ampIndex counts hits, not baseline
 // slots, so a slot split into a double hit/triplet below still alternates
-// hit to hit, not just slot to slot), high end first.
+// hit to hit, not just slot to slot), high end (loud) first, then the low
+// end (softer) - checked against feedback describing this exact
+// behavior as the intended design; found it already matches, so left
+// unchanged here. \random, new per feedback, picks anywhere in [lo, hi]
+// fresh every hit (not just every baseline slot), same "whole span,
+// re-rolled every time" idea \percPitchMode[name]'s own \random already
+// uses for pitch.
         nextAmp = {
             var lo = ~percVolumeLevels[name][0];
             var hi = ~percVolumeLevels[name][1];
-            var v = if(~percVolumeMode[name] == \alternate) {
-                if(ampIndex % 2 == 0) { hi } { lo }
-            } {
-                hi
-            };
+            var v = switch(~percVolumeMode[name],
+                \alternate, { if(ampIndex % 2 == 0) { hi } { lo } },
+                \random, { rrand(lo, hi) },
+                { hi }
+            );
             ampIndex = ampIndex + 1;
             v;
         };
@@ -680,7 +698,14 @@
         ~trackPatterns[name] = Pbind(*[
             \instrument, instrument,
             \dur, Pseq(durs, inf),
-            pitchArgName, Pseq(pitches, inf),
+// pitches itself is resolved entirely in MIDI note space (~percBasePitch's
+// own units now, per feedback) by the basePitches block above - .midicps
+// converts the WHOLE array to Hz here, once, rather than touching every
+// individual \fixed/\rising/\falling/\looping/\random branch (or the
+// split/merge points that copy a slot's pitch across several hits) -
+// baseD/cym/hat/kick all still want a plain Hz value in their own pitch
+// arg, same as before this change.
+            pitchArgName, Pseq(pitches.midicps, inf),
 // Replaces the old Synth Controls window's per-synth amp slider (that
 // window is gone - see CLAUDE.md); ~percVolumeMode[name]/~percVolumeLevels[name]
 // (Percussion Generator, this track's own Volume row) are the only amp

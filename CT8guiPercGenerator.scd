@@ -357,11 +357,16 @@
                 ~percPitchMode[name] = [\fixed, \rising, \random, \falling, \looping][m.value];
                 statusText.string_("Changed - not yet applied.");
             });
+// "Random" added per feedback - picks anywhere in [lo, hi] fresh every
+// hit, same idea as Pitch's own Random mode. Fixed/Alternate unchanged -
+// checked against feedback describing Fixed as always the loudest value
+// and Alternate as loud-then-soft; found the existing code already
+// matches that, so nothing to flip there.
         volumeMenu = PopUpMenu(rightPane, 120@22)
-            .items_(["Fixed", "Alternate"])
-            .value_([\fixed, \alternate].indexOf(~percVolumeMode[name]) ? 0)
+            .items_(["Fixed", "Alternate", "Random"])
+            .value_([\fixed, \alternate, \random].indexOf(~percVolumeMode[name]) ? 0)
             .action_({ |m|
-                ~percVolumeMode[name] = [\fixed, \alternate][m.value];
+                ~percVolumeMode[name] = [\fixed, \alternate, \random][m.value];
                 statusText.string_("Changed - not yet applied.");
             });
         rightPane.decorator.nextLine;
@@ -412,11 +417,18 @@
 // it differently (Fixed = hi; Random = anywhere in [lo, hi]; Rising =
 // climbs lo toward hi - see ~buildPercPattern's own comment,
 // CT8tracks.scd), so this ONE slider stays visible across every mode -
-// nothing to show/hide here any more. Mapped 20-8000 Hz, the same hard
-// bounds the old Pitch NumberBoxes' clipLo/clipHi used.
+// nothing to show/hide here any more. Mapped 0-127 MIDI notes now (was
+// 20-8000 Hz, linear - a very awkward unit for a slider, since musical
+// pitch perception is logarithmic, so most of the useful range got
+// crammed into a sliver near the low end), per feedback - "same as piano
+// keyboard" for every percussion instrument for now, though each one will
+// get its own range eventually; ~buildPercPattern converts the resolved
+// MIDI value to Hz via .midicps right before handing it to whichever
+// instrument's own Hz-based pitch arg needs it, same as every chord-aware
+// track already does for its own MIDI-note pitch picks.
         pitchRangeSlider = RangeSlider(pitchSubView, Rect(2, 2, 116, 18))
-            .lo_(~percBasePitch[name][0].linlin(20, 8000, 0, 1))
-            .hi_(~percBasePitch[name][1].linlin(20, 8000, 0, 1));
+            .lo_(~percBasePitch[name][0].linlin(0, 127, 0, 1))
+            .hi_(~percBasePitch[name][1].linlin(0, 127, 0, 1));
         pitchRangeReadout = StaticText(pitchSubView, Rect(2, 21, 116, 16)).stringColor_(labelColor);
         updatePitchRangeReadout = {
             pitchRangeReadout.string_(
@@ -424,7 +436,12 @@
             );
         };
         pitchRangeSlider.action_({ |rs|
-            ~percBasePitch[name] = [rs.lo.linlin(0, 1, 20, 8000), rs.hi.linlin(0, 1, 20, 8000)];
+// .round here, not left as the raw linlin float - MIDI notes are whole
+// numbers, same reasoning as the chord-aware tracks' own Pitch
+// RangeSlider (CT8harmonySelect.scd's ~chordNoteInRange, etc.).
+            ~percBasePitch[name] = [
+                rs.lo.linlin(0, 1, 0, 127).round, rs.hi.linlin(0, 1, 0, 127).round
+            ];
             updatePitchRangeReadout.value;
             statusText.string_("Changed - not yet applied.");
         });
