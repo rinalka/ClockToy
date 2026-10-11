@@ -1027,11 +1027,18 @@ they now have their own separate live control (this per-chord calculation), so t
 own sliders shouldn't fight it for whichever of HT1/HT2 is currently using that
 instrument; sliding them in the lab still works for standalone auditioning there, same
 as always.
-`\plucking` is still listed in the Instrument menu but unwired - picking it falls
-through to the `\fm` branch, same as before this change, since a single-note bass
-synth needs different handling than a chord pad that hasn't been designed yet.
-Either way, the "one new chord per row-start" cadence is unchanged - only which
-instrument plays it, and where its notes come from, differs.
+
+A Pbind's own `\dur` sequence only encodes the GAP between triggers, not which
+absolute beat playback actually started on - so `\halfway`'s one trigger (sitting
+mid-bar, unlike `\firstBeat`/`\startOnly`'s own first trigger, always beat 0) needs a
+one-off `leadIn`-beat rest inserted before the repeating cycle, or it just fires at
+whatever beat the stream happened to start (typically bar-start, indistinguishable
+from `\firstBeat`) - found per feedback ("i don't hear droneChord change at half way -
+it only seems to change at first of beat... confirmed by postln"). `isLeadInEvent`
+marks that one extra event `\rest` (consumed - not re-fired on later cycles) via a
+`\type` key that also, while being added, picked up a missing `~trackEnabled[name]`
+check: HT1/HT2's own on/off toggle had never actually silenced them before this fix,
+since no `\type` key existed in this builder at all until now.
 `MT1` used to mirror `HT1`'s structure from `~colPattern`/`\columnStart`
 through its own bespoke builder, `~buildMelodyPattern` - that builder is gone now,
 along with the whole idea of "melody tracks" as their own family; `MT1`/`MT2` are driven

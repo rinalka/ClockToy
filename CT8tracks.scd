@@ -876,6 +876,17 @@
 // hardcoded-local-vars-turned-control-args - see CT8synths.scd) - excluded
 // from this lab's own live-override tracking for exactly this reason (see
 // CT8guiSynthLab.scd's populateLiveOverrides).
+//
+// `\halfway`'s one trigger needs a `leadIn`-beat rest inserted before the
+// repeating cycle (see `leadIn`'s own comment, below) - a Pbind's `\dur`
+// sequence only encodes gaps between triggers, not which absolute beat
+// playback started on, so without this `\halfway` fired at whatever beat
+// the stream happened to start (indistinguishable from `\firstBeat`) -
+// found per feedback ("i don't hear droneChord change at half way - it
+// only seems to change at first of beat... confirmed by postln"). Also
+// gained a `\type`/`~trackEnabled[name]` check (missing entirely before,
+// so HT1/HT2's own on/off toggle never silenced them) while fixing that,
+// since both touch the same event structure.
 ~buildPolyPattern = { |name|
     var fromRow = (~polySource[name] == \row);
     var events = if(fromRow) { ~rowPattern ? [] } { ~colPattern ? [] };
@@ -886,7 +897,7 @@
         ~trackPatterns[name] = Pbind(\dur, 1, \type, \rest);
     } {
         var startIdx = [];
-        var baseSlotIdx, durs;
+        var baseSlotIdx, durs, leadIn, isLeadInEvent;
         var instrument = ~polyInstrument[name];
         var pattern = ~polyPattern[name];
         var pitchMode = ~polyPitchMode[name];
@@ -921,6 +932,24 @@
             nextIdx - idx
         };
 
+// A Pbind's own \dur sequence only encodes the GAP between triggers - it
+// has no idea what absolute beat the stream actually started on (that's
+// set by .play's own quant, CT8tracks.scd's ~syncTrackPlayer), so `durs`
+// alone would just repeat starting from WHATEVER beat playback happened to
+// begin, not from baseSlotIdx[0] specifically. For \firstBeat/\startOnly
+// that's a no-op (their own first trigger is always beat 0 - the same
+// baseSlotIdx[0]==0 case ~auxSendPbindArgs's own comment, above, already
+// relies on), but \halfway's one trigger sits mid-bar, so without a
+// leading offset it fires at whatever beat the stream started (typically
+// bar-start, i.e. indistinguishable from \firstBeat) instead - confirmed
+// by feedback ("i don't hear droneChord change at half way - it only
+// seems to change at first of beat... confirmed by postln"). `leadIn`
+// beats of silence, inserted once before the repeating cycle, fixes this;
+// `isLeadInEvent` (consumed by \type, below) marks that one extra event as
+// a rest so it doesn't also spawn a synth.
+        leadIn = baseSlotIdx[0];
+        isLeadInEvent = (leadIn > 0);
+
 // Pitch generator setup, once per rebuild - same "stateful generator built
 // once, called once per trigger" convention as ~makeRisingPitchGen/
 // ~makeFallingPitchGen (CT8harmonySelect.scd) elsewhere in this file.
@@ -952,15 +981,22 @@
 // would advance/re-roll it once per note instead of once per trigger) -
 // safe because Pbind evaluates one event's keys in the order they're given
 // here, so \note1 always runs first for a given event, before \note2 etc
-// for that SAME event. Posts the resolved voicing to the console on every
-// trigger (not just when it changes - for \fixed that means the SAME
-// array posts every time, which is itself the useful signal: \fixed only
-// re-picks once per rebuild, not per trigger or per chord change) - a
-// debugging aid, per feedback ("please post the notes in its chord each
-// time they change").
+// for that SAME event. Still computed (and posted) on the lead-in rest
+// event too, rather than skipped - that event's own \note1-N values never
+// actually sound (\type below marks it \rest), and skipping it would leave
+// currentVoicing nil for \note2-N's own Pfuncs to index into. Posts the
+// resolved voicing to the console on every trigger (not just when it
+// changes - for \fixed that means the SAME array posts every time, which
+// is itself the useful signal: \fixed only re-picks once per rebuild, not
+// per trigger or per chord change) - a debugging aid, per feedback
+// ("please post the notes in its chord each time they change"); the
+// lead-in event's own line is labeled as such so it's not mistaken for an
+// actual sounding change.
         noteArgs = [\note1, Pfunc {
             currentVoicing = voicingFor.value;
-            (name.asString ++ " (" ++ pitchMode.asString ++ ") notes: " ++ currentVoicing).postln;
+            (name.asString ++ " (" ++ pitchMode.asString ++ ") notes: " ++ currentVoicing
+                ++ (if(isLeadInEvent) { " [lead-in rest, not played]" } { "" })
+            ).postln;
             currentVoicing[0]
         }]
             ++ (2..numVoices).collect { |n|
@@ -969,12 +1005,28 @@
 
         ~trackPatterns[name] = Pbind(*([
             \instrument, instrument,
-            \dur, Pseq(durs, inf)
+// Leading `leadIn`-beat rest before the repeating cycle, only when needed
+// (see `leadIn`'s own comment, above) - \firstBeat/\startOnly have
+// leadIn==0, so this is unchanged from a plain Pseq(durs, inf) for them.
+            \dur, if(leadIn > 0) { Pseq([leadIn], 1) ++ Pseq(durs, inf) } { Pseq(durs, inf) }
         ] ++ noteArgs ++ [
             envKeys[0], Pfunc { |ev| ((ev[\dur] + 2) / t.tempo) * 0.15 },
             envKeys[1], Pfunc { |ev| ((ev[\dur] + 2) / t.tempo) * 0.45 },
             envKeys[2], Pfunc { |ev| ((ev[\dur] + 2) / t.tempo) * 0.40 },
-            \out, 0
+            \out, 0,
+// \type goes to \rest for the one-off lead-in event above (consumed here,
+// not re-fired on later cycles - isLeadInEvent flips false right after) or
+// whenever ~trackEnabled[name] is off - the standard Event mechanism for
+// "build this event's other keys as normal, but don't spawn a synth for
+// it," same convention ~buildPercPattern/~buildMonoTrackPattern already
+// use. Previously missing entirely here, so HT1/HT2's own on/off toggle
+// never actually silenced them - found and fixed alongside the lead-in
+// bug above since both touch this same event structure.
+            \type, Pfunc {
+                var isRest = isLeadInEvent or: { ~trackEnabled[name].not };
+                isLeadInEvent = false;
+                if(isRest) { \rest } { \note }
+            }
         ] ++ ~auxSendPbindArgs.(name) ++ ~labOverrideArgs.(instrument)));
     };
 };
