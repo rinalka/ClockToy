@@ -122,40 +122,6 @@
     ~currentRange[name] = [60, 96];
 };
 
-// ~copyPolyConfig.(fromName, toName) - per feedback ("lets make HT2 same
-// as HT1"), copies one poly track's ENTIRE config (source/instrument/
-// pattern/pitch mode, pitch range, Mix/Vol, both aux sends, on/off) onto
-// another, byte-for-byte, then rebuilds this window (so its widgets show
-// the copied values) and re-applies every track's pattern immediately -
-// same "copy data, rebuild window, apply" order `~resetPolyConfig`'s own
-// "Reset to defaults" button already uses. Not tied to a GUI button yet -
-// evaluate it directly from the post window (e.g.
-// `~copyPolyConfig.(\HT1, \HT2)`). This is a ONE-TIME snapshot, not an
-// ongoing link - `toName` can be tweaked independently afterward, and a
-// later change to `fromName` is not retroactively applied; call this
-// again if you want to re-sync.
-~copyPolyConfig = { |fromName, toName|
-    ~polySource[toName] = ~polySource[fromName];
-    ~polyInstrument[toName] = ~polyInstrument[fromName];
-    ~polyPattern[toName] = ~polyPattern[fromName];
-    ~polyPitchMode[toName] = ~polyPitchMode[fromName];
-    ~polyVolumeMode[toName] = ~polyVolumeMode[fromName];
-    ~polyVolumeLevels[toName] = ~polyVolumeLevels[fromName].copy;
-    ~polyWet[toName] = ~polyWet[fromName];
-    ~polyLevel[toName] = ~polyLevel[fromName];
-    ~polySplitPercent[toName] = ~polySplitPercent[fromName];
-    ~currentRange[toName] = ~currentRange[fromName].copy;
-    ~sendAEffect[toName] = ~sendAEffect[fromName];
-    ~sendAAmt[toName] = ~sendAAmt[fromName];
-    ~sendBEffect[toName] = ~sendBEffect[fromName];
-    ~sendBAmt[toName] = ~sendBAmt[fromName];
-    ~trackEnabled[toName] = ~trackEnabled[fromName];
-    ~makeHarmonyMelodyGeneratorWindow.value;
-    ~stopPbinds.value;
-    ~updatePbinds.value;
-    ~restartPbinds.value;
-};
-
 ~makeHarmonyMelodyGeneratorWindow = {
     var statusText, applyNow, makePolyTrackSection, makeMonoTrackSection;
     var hmGenWidth = 640;

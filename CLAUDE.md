@@ -1134,17 +1134,6 @@ their on/off buttons in the Percussion + Bass Generator window
 (`CT8guiPercGenerator.scd`), beside each track's name; every other track has its own
 on/off button in the Clock Toy Adjust window (`CT8guiAdjust.scd`) instead.
 
-**`~copyPolyConfig.(fromName, toName)`** (`CT8guiHarmonyMelodyGenerator.scd`, right
-after `~resetPolyConfig`) — a different, simpler kind of copy than "Copy T" below: not
-recorded NOTES, but a whole track's static CONFIG (source/instrument/pattern/pitch
-mode, pitch range, Mix/Vol, both aux sends, on/off), copied byte-for-byte from one
-`HT`/`MT` track onto another, then applied immediately (rebuilds the window, re-runs
-`~stopPbinds`/`~updatePbinds`/`~restartPbinds`). Added per feedback ("lets make HT2
-same as HT1") - no GUI button yet, evaluate it directly from the post window (e.g.
-`~copyPolyConfig.(\HT1, \HT2)`). A one-time snapshot, not an ongoing link - either
-track can be tweaked independently afterward, and it has to be called again to
-re-sync if `fromName` changes later.
-
 **Track Copy ("Copy T")** — `CT8tracks.scd`'s TRACK COPY section, restricted to
 `BT1`/`BT2`/`MT1`-`4` only (not `HT1`-`4`/`PT1`-`4` - the Note tracks are all single-
 note-per-event, so a `(dur, midinote)` pair means the same thing on either side of a
