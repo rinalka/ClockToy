@@ -557,8 +557,17 @@ SynthDef(\droneChord, {
         }))
     };
     sig = Mix.new(voices) * 0.25;
+// Curve -4 (numeric), not the literal \exp symbol - \exp's curve formula is
+// a*(b/a)^phase, which divides by the segment's OWN START level; this
+// envelope's attack segment starts at 0, so \exp here produced NaN on
+// every note, poisoning the shared hardware output bus every other track
+// also sums into and silencing everything, not just this synth (per
+// feedback: "everything works until i try to play a dronechord - then all
+// sound stops"). -4 is SuperCollider's own safe approximation of an
+// exponential shape for envelopes that touch 0 - the same reason
+// Env.perc's own default curve is -4, not \exp.
     env = EnvGen.kr(
-        Env.linen(attack, sustain, release, 1, \exp),
+        Env.linen(attack, sustain, release, 1, -4),
         doneAction: 2
     );
     sig = sig * env * amp;
@@ -606,7 +615,13 @@ SynthDef(\shimmerPad, { |out=0, amp=0.125,
     envs = Array.fill(numvoices, { LFNoise2.kr(ExpRand(0.8, 3.5)).range(0.05, 1.0) });
     sig = PinkNoise.ar(numvoices.reciprocal ! 2);
     sig = DynKlank.ar(`[freqs, envs, rings], sig);
-    env = EnvGen.kr(Env.new([0, 1, 1, 0], [atk, sus, rel], [\exp, \exp, \exp]), doneAction: 2);
+// Curve -4 (numeric) on all three segments, not the literal \exp symbol -
+// same NaN pitfall as \droneChord's own envelope, above: \exp's a*(b/a)^phase
+// formula divides by the segment's start level, and this envelope's attack
+// segment starts at 0 (silencing everything downstream, not just this
+// synth, once that NaN hits the shared output bus). -4 is SC's own safe
+// exponential-ish shape for envelopes touching 0.
+    env = EnvGen.kr(Env.new([0, 1, 1, 0], [atk, sus, rel], [-4, -4, -4]), doneAction: 2);
     sig = sig * env * amp;
     sig = ~allpassWash.(sig, wet, level);
     ~auxSend.(sig, auxBusA, auxAmtA, auxBusB, auxAmtB);

@@ -600,8 +600,15 @@ their own bullets below for exactly where the line falls:
   `~buildPolyPattern`'s own per-chord envelope calculation for HT1/HT2 (see that
   bullet), so these SynthDef-level defaults only actually apply when something else
   plays `\droneChord` directly (the Synth Lab). The envelope's own curve changed from
-  `\sine` to `\exp` (`Env.linen`'s own curve arg) to match that redesign's "the curve
-  should be exponential." `wet`/`level` are its own tiny
+  `\sine` to a numeric `-4` (`Env.linen`'s own curve arg) to approximate that redesign's
+  "the curve should be exponential" - NOT the literal `\exp` curve type, which a first
+  pass used and which turned out to silence everything: `\exp`'s curve formula divides
+  by the segment's own start level, and this envelope's attack segment starts at 0,
+  so every note produced NaN that poisoned the shared hardware output bus every other
+  track also sums into (per feedback: "everything works until i try to play a
+  dronechord - then all sound stops"). `-4` is SuperCollider's own safe
+  exponential-ish shape for envelopes that touch 0 - the same reason `Env.perc`'s own
+  default curve is `-4`, not `\exp`. `wet`/`level` are its own tiny
   built-in `~allpassWash` tail, same convention as every other instrument's, defaulting
   to a no-op like always (`level`'s own default is `2` now, from the same hand-edit as
   the detune redesign). `\shimmerPad` (the user's own SynthDef, brought in and then
@@ -624,9 +631,12 @@ their own bullets below for exactly where the line falls:
   the SynthDef body; now real control args with those same defaults, same reason as
   `\droneChord`'s own `attack`/`sustain`/`release` above - `~buildPolyPattern` feeds
   them live per chord for HT1/HT2. The envelope's own curve changed from
-  `[\sin, \lin, -4]` to `[\exp, \exp, \exp]` to match, same "the curve should be
-  exponential" instruction. Every other random element (per-voice jitter/ring time/
-  `LFNoise2` rate) was
+  `[\sin, \lin, -4]` to `[-4, -4, -4]` to match "the curve should be exponential" -
+  same fix as `\droneChord`'s own curve, above, and for the same reason: this
+  envelope's attack segment starts at 0, so the literal `\exp` curve type a first pass
+  used produced NaN there (dividing by that 0 start level), silencing everything, not
+  just this synth, once it hit the shared output bus. Every other random element
+  (per-voice jitter/ring time/`LFNoise2` rate) was
   also switched from plain-language methods (`.rand2`/`exprand`/`.choose`) to UGen-rate
   ones (`Rand`/`ExpRand`) - the plain-language ones only ever evaluate once, in sclang,
   at `.add` time (the same freezing issue as a direct `~currentChord` read, just easier
@@ -1005,8 +1015,12 @@ conversion `\fm`'s own old `\rel` already used). attack/sustain/release split
 15/45/15, where release was meant to be 40% not 15%) - `\droneChord` takes this as
 `\attack`/`\sustain`/`\release`, `\shimmerPad` as `\atk`/`\sus`/`\rel` (its own
 hardcoded-local-vars-turned-control-args, `CT8synths.scd`'s own bullet); both
-SynthDefs' own envelope curve is exponential now too, to match ("the curve should be
-exponential"). These three keys are excluded from the Synth Lab's own live-override
+SynthDefs' own envelope curve is a numeric `-4` now too, to match ("the curve should
+be exponential" - `-4`, not the literal `\exp` curve type, which divides by a
+segment's start level and produced NaN on these envelopes' 0-start attack segment,
+silencing all output, not just these two synths' own sound - see each SynthDef's own
+bullet, `CT8synths.scd`, for the fix). These three keys are excluded from the Synth
+Lab's own live-override
 tracking for `\droneChord`/`\shimmerPad` specifically (`CT8guiSynthLab.scd`'s
 `populateLiveOverrides`), for the same reason `\wet`/`\level`/`noteN` already are -
 they now have their own separate live control (this per-chord calculation), so the lab's
