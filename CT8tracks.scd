@@ -952,8 +952,17 @@
 // would advance/re-roll it once per note instead of once per trigger) -
 // safe because Pbind evaluates one event's keys in the order they're given
 // here, so \note1 always runs first for a given event, before \note2 etc
-// for that SAME event.
-        noteArgs = [\note1, Pfunc { currentVoicing = voicingFor.value; currentVoicing[0] }]
+// for that SAME event. Posts the resolved voicing to the console on every
+// trigger (not just when it changes - for \fixed that means the SAME
+// array posts every time, which is itself the useful signal: \fixed only
+// re-picks once per rebuild, not per trigger or per chord change) - a
+// debugging aid, per feedback ("please post the notes in its chord each
+// time they change").
+        noteArgs = [\note1, Pfunc {
+            currentVoicing = voicingFor.value;
+            (name.asString ++ " (" ++ pitchMode.asString ++ ") notes: " ++ currentVoicing).postln;
+            currentVoicing[0]
+        }]
             ++ (2..numVoices).collect { |n|
                 [("note" ++ n).asSymbol, Pfunc { currentVoicing[n - 1] }]
             }.flatten;
