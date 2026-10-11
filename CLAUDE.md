@@ -594,9 +594,9 @@ their own bullets below for exactly where the line falls:
   chord was current at THAT moment forever, never updating per note; `~buildPolyPattern`
   is what reads `~currentChord` live and feeds it in as these four args instead, fresh
   every trigger. `amp`/`attack`/`sustain`/`release` defaults were tuned per feedback
-  across two passes (`attack`/`sustain`/`release` to 0.012/0.12/5 - was "very soft and
-  slow" before; `amp` doubled twice, 0.2 -> 0.4 -> 0.8, still "too low" after the
-  first) - `attack`/`sustain`/`release` are themselves now fed live per chord by
+  across three passes (`attack`/`sustain`/`release` to 0.012/0.12/5 - was "very soft and
+  slow" before; `amp` raised three times, 0.2 -> 0.4 -> 0.8 -> 1.5, still "too low"
+  each time before that) - `attack`/`sustain`/`release` are themselves now fed live per chord by
   `~buildPolyPattern`'s own per-chord envelope calculation for HT1/HT2 (see that
   bullet), so these SynthDef-level defaults only actually apply when something else
   plays `\droneChord` directly (the Synth Lab). The envelope's own curve changed from
@@ -979,14 +979,17 @@ two instruments that manage a chord as one voicing - `\droneChord`/`\shimmerPad`
 Synths via array expansion and `\plucking` has no chord concept at all, so neither fits
 here any more. `~polySource[name]` (Row/Col) is unchanged, feeding `events`/`startRole`
 exactly like `PT1`-`4`'s own `~buildPercPattern`. Dur Pat (`~polyPattern[name]`) narrows
-to exactly three: `\firstBeat` (one trigger per bar, beat 0), `\halfway` (one trigger
-per bar, at beat `(events.size / 2).floor` - new), `\startOnly` (one trigger per
-row/column span). Each trigger's `\dur` (the gap to the NEXT trigger, in beats) is the
-same `nextIdx - idx` technique every other builder in this file already uses to compute
-a span, generalized to wrap the LAST trigger to `events.size + baseSlotIdx[0]` rather
-than just `events.size` - the two only coincide when the pattern's first trigger is at
-index 0, true for `\firstBeat`/`\startOnly` but not `\halfway`, whose one trigger point
-sits mid-array. Pit Pat (`~polyPitchMode[name]`) narrows to `\fixed`/`\random`
+to exactly three: `\firstBeat` (one trigger per bar, beat 0), `\halfway` (TWO triggers
+per bar - beat 0 AND beat `(events.size / 2).floor` - corrected per feedback from an
+earlier version that fired only at the halfway point alone, once a bar, which just
+sounded like an offset `\firstBeat` rather than "twice a bar"), `\startOnly` (one
+trigger per row/column span). Each trigger's `\dur` (the gap to the NEXT trigger, in
+beats) is the same `nextIdx - idx` technique every other builder in this file already
+uses to compute a span, generalized to wrap the LAST trigger to `events.size +
+baseSlotIdx[0]` rather than just `events.size` - the two only coincide when the
+pattern's first trigger is at index 0, true for all three of these now (`\halfway`'s
+own first trigger is beat 0 too, now that it fires there as well). Pit Pat
+(`~polyPitchMode[name]`) narrows to `\fixed`/`\random`
 (unchanged meaning - an independently-random, sorted voicing of `~chordNoteInRange`
 picks, 4 notes for `\droneChord` or 5 for `\shimmerPad`, within `~currentRange[name]`)
 plus two new ones, `\rising`/`\falling`: per feedback, these don't re-pick a fresh
@@ -1029,16 +1032,23 @@ instrument; sliding them in the lab still works for standalone auditioning there
 as always.
 
 A Pbind's own `\dur` sequence only encodes the GAP between triggers, not which
-absolute beat playback actually started on - so `\halfway`'s one trigger (sitting
-mid-bar, unlike `\firstBeat`/`\startOnly`'s own first trigger, always beat 0) needs a
-one-off `leadIn`-beat rest inserted before the repeating cycle, or it just fires at
-whatever beat the stream happened to start (typically bar-start, indistinguishable
-from `\firstBeat`) - found per feedback ("i don't hear droneChord change at half way -
-it only seems to change at first of beat... confirmed by postln"). `isLeadInEvent`
-marks that one extra event `\rest` (consumed - not re-fired on later cycles) via a
-`\type` key that also, while being added, picked up a missing `~trackEnabled[name]`
-check: HT1/HT2's own on/off toggle had never actually silenced them before this fix,
-since no `\type` key existed in this builder at all until now.
+absolute beat playback actually started on - a real problem for an EARLIER version of
+`\halfway` that fired only at the halfway point alone (one trigger, sitting mid-bar,
+unlike every other pattern's own first trigger at beat 0): without knowing which beat
+the stream started on, that one trigger just fired at whatever beat playback happened
+to begin (typically bar-start, indistinguishable from `\firstBeat`) - found per
+feedback ("i don't hear droneChord change at half way - it only seems to change at
+first of beat... confirmed by postln"). `leadIn`/`isLeadInEvent` (a one-off rest
+inserted before the repeating cycle, for any pattern whose first trigger isn't at beat
+0) fixed that version - now moot since `\halfway` was changed again, per further
+feedback, to fire at beat 0 as well (see Dur Pat's own paragraph, above, for "twice a
+bar"), but kept in the code as general, dormant machinery rather than ripped out, in
+case a future Dur Pat choice ever starts mid-bar again. While adding the `\type` key
+this needed, also picked up a missing `~trackEnabled[name]` check: HT1/HT2's own on/off
+toggle had never actually silenced them before this fix, since no `\type` key existed
+in this builder at all until now. The temporary debugging `postln` from that same
+investigation (which chord-pad notes were resolving to, each trigger) has since been
+removed again, per feedback ("turn off the chord postln").
 `MT1` used to mirror `HT1`'s structure from `~colPattern`/`\columnStart`
 through its own bespoke builder, `~buildMelodyPattern` - that builder is gone now,
 along with the whole idea of "melody tracks" as their own family; `MT1`/`MT2` are driven

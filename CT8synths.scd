@@ -529,7 +529,7 @@ SynthDef(\kick, { |out=0, pan=0, amp=0.5, curve=(-4),
 SynthDef(\droneChord, {
     |out=0,
      note1=48, note2=52, note3=55, note4=60,
-     amp=0.8,
+     amp=1.5,
      attack=0.012, sustain=0.12, release=5,
      detune=10,
      driftRate=0.15, driftDepth=5,

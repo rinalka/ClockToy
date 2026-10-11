@@ -287,7 +287,7 @@
             [\note2, 52, 0, 127, \midi],
             [\note3, 55, 0, 127, \midi],
             [\note4, 60, 0, 127, \midi],
-            [\amp, 0.8, 0, 2, \lin],
+            [\amp, 1.5, 0, 2, \lin],
             [\attack, 0.012, 0.01, 60, \exp],
             [\sustain, 0.12, 0.1, 300, \exp],
             [\release, 5, 0.01, 120, \exp],

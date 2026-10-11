@@ -912,9 +912,13 @@
 // the only way there could be zero.
         events.do { |ev, i| if(ev[\role] == startRole) { startIdx = startIdx.add(i) } };
 
+// \halfway triggers TWICE a bar - once at beat 0 (same as \firstBeat) AND
+// once at beat (events.size/2).floor - per feedback correcting an earlier
+// version that only fired at the halfway point alone (once a bar, same
+// cadence as \firstBeat, just offset - not what "plays twice a bar" means).
         baseSlotIdx = switch(pattern,
             \firstBeat, { [0] },
-            \halfway, { [(events.size / 2).floor] },
+            \halfway, { [0, (events.size / 2).floor] },
             { startIdx }
         );
 
@@ -922,7 +926,9 @@
 // LAST trigger's gap wraps to the FIRST trigger of the NEXT cycle
 // (baseSlotIdx[0] beats into that next bar), not just to the end of this
 // bar's array - the two only coincide when baseSlotIdx[0] is 0, true for
-// every pattern except \halfway.
+// every one of these three patterns now (including \halfway, now that its
+// own first trigger is beat 0 too) - kept general rather than special-cased
+// away, in case a future Dur Pat choice ever starts mid-bar again.
         durs = baseSlotIdx.collect { |idx, i|
             var nextIdx = if((i + 1) < baseSlotIdx.size) {
                 baseSlotIdx[i + 1]
@@ -981,24 +987,15 @@
 // would advance/re-roll it once per note instead of once per trigger) -
 // safe because Pbind evaluates one event's keys in the order they're given
 // here, so \note1 always runs first for a given event, before \note2 etc
-// for that SAME event. Still computed (and posted) on the lead-in rest
-// event too, rather than skipped - that event's own \note1-N values never
-// actually sound (\type below marks it \rest), and skipping it would leave
-// currentVoicing nil for \note2-N's own Pfuncs to index into. Posts the
-// resolved voicing to the console on every trigger (not just when it
-// changes - for \fixed that means the SAME array posts every time, which
-// is itself the useful signal: \fixed only re-picks once per rebuild, not
-// per trigger or per chord change) - a debugging aid, per feedback
-// ("please post the notes in its chord each time they change"); the
-// lead-in event's own line is labeled as such so it's not mistaken for an
-// actual sounding change.
-        noteArgs = [\note1, Pfunc {
-            currentVoicing = voicingFor.value;
-            (name.asString ++ " (" ++ pitchMode.asString ++ ") notes: " ++ currentVoicing
-                ++ (if(isLeadInEvent) { " [lead-in rest, not played]" } { "" })
-            ).postln;
-            currentVoicing[0]
-        }]
+// for that SAME event. Still computed on the lead-in rest event too,
+// rather than skipped - that event's own \note1-N values never actually
+// sound (\type below marks it \rest), and skipping it would leave
+// currentVoicing nil for \note2-N's own Pfuncs to index into. A temporary
+// console postln lived here briefly as a debugging aid (per feedback,
+// "please post the notes in its chord each time they change") - removed
+// again once it had served its purpose (per feedback, "turn off the
+// chord postln").
+        noteArgs = [\note1, Pfunc { currentVoicing = voicingFor.value; currentVoicing[0] }]
             ++ (2..numVoices).collect { |n|
                 [("note" ++ n).asSymbol, Pfunc { currentVoicing[n - 1] }]
             }.flatten;
