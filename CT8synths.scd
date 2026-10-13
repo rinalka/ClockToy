@@ -437,16 +437,24 @@ SynthDef(\drone, { |out=0, freq=110, dur=5, amp=0.4, pan=0,
 
 // Lead: sawtooth through a wobbling resonant filter, thickened by a chain
 // of 10 allpass filters.
-SynthDef(\lead, { |out=0, freq=440, dur=2, amp=0.7, pan=0,
+// freq is a MIDI note number now, not Hz (default 69 = A4 = the old literal
+// 440 default, exactly) - same "plain control arg, .midicps'd inside the
+// body" pattern as \droneChord's own note1-4 (CT8synths.scd's own bullet),
+// so the Synth Lab's \midi slider curve (integer-rounded, 0 decimals) means
+// something sensible here. sharpness used to compute freq.cpsmidi (Hz back
+// to MIDI) - now redundant/simplified away, since freq already IS the MIDI
+// value it used to convert TO.
+SynthDef(\lead, { |out=0, freq=69, dur=2, amp=0.7, pan=0,
     wobblelow=0.3, wobblehigh=1|
     var atk = 0.5;
+    var hzFreq = freq.midicps;
     var env = EnvGen.kr(Env([0, 1, 1, 0], [atk, (dur-atk).max(0.01), 10]), doneAction: 2);
     var freqenv = EnvGen.kr(Env([0.7, 1, 1], [0.3, dur]));
-    var sharpness = freq.cpsmidi.linlin(0, 127, 1, 15);
+    var sharpness = freq.linlin(0, 127, 1, 15);
     var wobble = SinOsc.kr(6).range(wobblelow, wobblehigh);
     var sig = RLPF.ar(
-        LFSaw.ar(freqenv * freq * LFNoise1.kr(1).range(0.995, 1.005)),
-        freq * sharpness, LFNoise1.kr(3).range(0.2, 0.5), wobble
+        LFSaw.ar(freqenv * hzFreq * LFNoise1.kr(1).range(0.995, 1.005)),
+        hzFreq * sharpness, LFNoise1.kr(3).range(0.2, 0.5), wobble
     );
     10.do { sig = AllpassN.ar(sig, 0.05, [Rand(0, 0.05), Rand(0, 0.05)], 1) };
     Out.ar(out, amp * env * Pan2.ar(sig / 10, pan));
@@ -454,15 +462,19 @@ SynthDef(\lead, { |out=0, freq=440, dur=2, amp=0.7, pan=0,
 
 // Seq: pulse wave through a swept lowpass, with an optional pitch glide at
 // the start of each note - a short plucky sequencer voice.
-SynthDef(\seq, { |out=0, freq=660, dur=0.5, amp=0.25, pan=0,
+// freq is a MIDI note number now, not Hz (default 76, the nearest integer
+// MIDI note to the old literal 660 default - 76.midicps is ~659.26, under
+// a Hz off) - same reasoning as \lead's own freq, just above.
+SynthDef(\seq, { |out=0, freq=76, dur=0.5, amp=0.25, pan=0,
     glissdir=1, gliss=0.1|
+    var hzFreq = freq.midicps;
     var laggliss = Lag.kr(gliss, 0.1);
     var env = EnvGen.kr(Env.perc(0.01, 2), doneAction: 2);
     var freqenv = EnvGen.kr(Env([
         1 + (glissdir * laggliss), 1 - (glissdir * laggliss), 1, 1
     ], [0.07, 0.07, 1]));
     var filtenv = EnvGen.kr(Env([0.5, 1, 1], [0.15, dur]));
-    var sig = LPF.ar(Pulse.ar(freqenv * freq), freq * filtenv * 3);
+    var sig = LPF.ar(Pulse.ar(freqenv * hzFreq), hzFreq * filtenv * 3);
     Out.ar(out, amp * env * Pan2.ar(sig, pan));
 }).add;
 
@@ -613,8 +625,9 @@ SynthDef(\shimmerPad, { |out=0, amp=0.125,
     freqs = notes.collect(_.midicps) + Array.fill(numvoices, { Rand(-1.5, 1.5) });
     rings = Array.fill(numvoices, { ExpRand(totalTime * 0.6, totalTime) });
     envs = Array.fill(numvoices, { LFNoise2.kr(ExpRand(0.8, 3.5)).range(0.05, 1.0) });
-    sig = PinkNoise.ar(numvoices.reciprocal ! 2);
-    sig = DynKlank.ar(`[freqs, envs, rings], sig);
+ // sig = PinkNoise.ar(numvoices.reciprocal ! 2);
+    sig = PinkNoise.ar(0.05 ! 2);
+    sig = DynKlank.ar(`[freqs, envs, rings], sig) * 0.51;
 // Curve -4 (numeric) on all three segments, not the literal \exp symbol -
 // same NaN pitfall as \droneChord's own envelope, above: \exp's a*(b/a)^phase
 // formula divides by the segment's start level, and this envelope's attack
@@ -627,6 +640,7 @@ SynthDef(\shimmerPad, { |out=0, amp=0.125,
     ~auxSend.(sig, auxBusA, auxAmtA, auxBusB, auxAmtB);
     Out.ar(out, sig);
 }).add;
+
 // Allpass reverb: a second, simpler reverb option alongside \ELIreverb - a
 // straight dry/wet allpass-chain wash rather than \ELIreverb's comb+allpass
 // design. Renamed from \labReverb (its name in the sound lab) since it's now

@@ -578,7 +578,16 @@ their own bullets below for exactly where the line falls:
   `\droneChord`/`\shimmerPad`/`\allpassReverb` - incorporated from the user's Sound Lab
   file; every one but `\droneChord`/`\shimmerPad` is still only auditioned via
   `CT8guiSynthLab.scd`, not used by any
-  track. `\droneChord` (four simultaneous MIDI notes, `note1`-`note4`, eight sine
+  track. `\lead`/`\seq`'s own `freq` arg is a MIDI note number now, not Hz (default
+  `69`/`76` - the nearest integer MIDI note to each one's old literal Hz default,
+  `440`/`660`) - same "plain control arg, `.midicps`'d inside the body" pattern as
+  `\droneChord`'s own `note1`-`note4`, below, so the Synth Lab's `\midi` slider curve
+  (integer-rounded, 0 decimals) means something sensible for them too, per feedback
+  ("put frequency to midi" - both already had every one of their other params exposed
+  in the Synth Lab already; `\noise` has no `freq` arg at all, so nothing to convert
+  there). `\lead`'s own `sharpness` calculation used to compute `freq.cpsmidi` (Hz back
+  to MIDI) - now simplified away, since `freq` already IS the MIDI value it used to
+  convert TO. `\droneChord` (four simultaneous MIDI notes, `note1`-`note4`, eight sine
   oscillators per note, each detuned in cents: a static per-oscillator offset,
   `Rand(-1, 1) * detune` (`detune` is now a plain +/- cents amount, default 10 - a later
   hand-edit's redesign; it used to be a 0-1 normalized spread instead, `1` fully in tune,

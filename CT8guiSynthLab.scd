@@ -177,13 +177,17 @@
             [\width, 0.025, 0, 0.2, \lin],
             [\filterRatio, 2, 0.5, 8, \exp]
     ]);
+// freq is MIDI now, not Hz (CT8synths.scd's own \lead/\seq bullets - the
+// \midi curve means something once the SynthDef itself converts via
+// .midicps internally, unlike \droneChord's note1-4 which were already
+// MIDI-valued with nothing to change here).
     specs.put(\lead, [
-            [\freq, 440, 50, 2000, \exp], [\dur, 2, 0.6, 12, \lin],
+            [\freq, 69, 0, 127, \midi], [\dur, 2, 0.6, 12, \lin],
             [\amp, 0.7, 0, 1, \lin], [\pan, 0, -1, 1, \lin],
             [\wobblelow, 0.3, 0, 1, \lin], [\wobblehigh, 1, 0, 1, \lin]
     ]);
     specs.put(\seq, [
-            [\freq, 660, 50, 3000, \exp], [\dur, 0.5, 0.1, 3, \lin],
+            [\freq, 76, 0, 127, \midi], [\dur, 0.5, 0.1, 3, \lin],
             [\amp, 0.25, 0, 1, \lin], [\pan, 0, -1, 1, \lin],
             [\glissdir, 1, -1, 1, \lin], [\gliss, 0.1, 0, 0.7, \lin]
     ]);
