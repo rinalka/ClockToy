@@ -504,54 +504,58 @@ SynthDef(\noise, { |out=0, dur=5, amp=0.15, pan=0|
     Out.ar(out, Pan2.ar(env * amp * sig, pan));
 }).add;
 
-// Noise FX: the dual-envelope "bar-long pulsing texture" design for
-// FXT1/FXT2 (~buildFxPattern, CT8tracks.scd), per feedback - reuses
-// \noise's own noise-generating chain (WhiteNoise through a swept LPF,
-// gated by a random LFPulse) but replaces its single Env.perc with TWO
-// envelopes summed together: masterEnv spans the WHOLE bar (masterDur
-// seconds, plus a fixed 1-second tail - "a bit tacked on the end" - so the
-// synth's own total lifetime is 0.1+masterDur+1, freed via doneAction:2 on
-// THIS envelope), and burstEnv is a short pulse shape that RETRIGGERS once
-// per row/column/beat span - per feedback ("have the dur pat choices be
-// first beat only, first of row/col, every beat"), span lengths are NOT
-// uniform for "first of row/col" (different rows/columns have different
-// widths), so a plain periodic Impulse.ar can't drive the retrigger any
-// more. Instead, ~buildFxPattern writes this bar's own span lengths (in
-// real seconds - one value for firstBeat/everyBeat, repeated via modulo;
-// one PER SPAN for first of row/col) into a small Buffer (`spanBuf`,
-// `numSpans` entries) every bar, and burstTrig is a TDuty/Dbufrd pair
-// cycling through it - the standard SC idiom for "a trigger train whose
-// own period varies according to a list of durations," the irregular
-// equivalent of Impulse.ar's fixed-rate trigger. pulsedur/releaseDur (how
-// long each pulse's own on/decay portion lasts) are still a single FIXED
-// shape for the whole bar, sized from the AVERAGE span length rather than
-// each individual span's own - letting every pulse's own ENVELOPE SHAPE
-// vary per span too would need a second, carefully-synchronized buffer
-// read; this is far simpler and the timing (which is what's actually
-// meant to "follow the row/col structure") is still exact regardless.
-// Both envelopes use curve -4 uniformly, per feedback - genuinely safe
-// here even on the attack segment (which starts at 0), unlike the literal
-// \exp curve type (see \droneChord/\shimmerPad/\lead's own bullets, this
-// file, for why that one isn't). Final amplitude is masterEnv + burstEnv
-// (added, not multiplied), per feedback. masterDur is NOT named `dur`,
-// deliberately, since that's Pbind's own reserved scheduling key (beats,
-// not seconds) - reusing it here would collide.
-SynthDef(\noiseFx, { |out=0, masterDur=2, pulsedur=0.2, releaseDur=1.8,
-    spanBuf=(-1), numSpans=1, amp=0.15, pan=0,
-    wet=0, level=1, auxBusA=0, auxAmtA=0, auxBusB=0, auxAmtB=0|
-    var masterEnv = EnvGen.ar(
-        Env([0, 0.5, 0.5, 0.0], [0.1, masterDur, 1], -4),
-        doneAction: 2
-    );
-    var burstTrig = TDuty.ar(Dbufrd(spanBuf, Dseries(0, 1, inf) % numSpans), 0, 1);
-    var burstEnv = EnvGen.ar(
-        Env([0, 0.5, 0.5, 0.0], [0.01, pulsedur, releaseDur], -4),
-        burstTrig
-    );
-    var env = masterEnv + burstEnv;
+// Noise Carrier: the "bar-long note" half of FXT1/FXT2's two-synth pulse
+// design, per feedback ("treating the pulse as a separate event. the bar
+// long note gets triggered, but is sent to the input of a second event
+// that is the pulse envelope") - replaces the earlier single-SynthDef
+// masterEnv+burstEnv design, which turned out to always have an audible
+// floor present (masterEnv's own constant hold level), making the pulse
+// itself barely noticeable no matter the Pulse % setting. Reuses \noise's
+// own noise-generating chain (WhiteNoise through a swept LPF, gated by a
+// random LFPulse) verbatim, but writes its raw, CONTINUOUS signal to a
+// private per-track bus (~fxCarrierBus[name], CT8tracks.scd) instead of
+// hardware output - \fxPulse (below) is the ONLY thing that actually
+// shapes it and sends it to real output, so there's no floor to mask
+// anything any more: between pulses, \fxPulse's own envelope is at 0,
+// full silence. This envelope is just a simple fade-in/fade-out for the
+// whole bar (masterDur seconds, plus a fixed 1-second tail - "a bit
+// tacked on the end"), not a held level - it only exists to avoid a click
+// at the bar's own start/end, since \fxPulse alone decides what's
+// actually audible at any given moment. Freed via doneAction:2 at the
+// bar's own end. Curve -4, safe even on the 0-start attack segment,
+// unlike the literal \exp curve type (see \droneChord's own bullet for
+// why not).
+SynthDef(\noiseCarrier, { |out=0, masterDur=2|
+    var env = EnvGen.kr(Env([0, 1, 1, 0], [0.1, masterDur, 1], -4), doneAction: 2);
     var sig = LPF.ar(WhiteNoise.ar * LFPulse.kr(LFNoise1.kr(0.5).range(3, 12)),
         LFNoise1.kr(2).range(2, 1) * 4000);
-    sig = Pan2.ar(env * amp * sig, pan);
+    Out.ar(out, Pan2.ar(env * sig, 0));
+}).add;
+
+// FX Pulse: the shared "pulse envelope" half of FXT1/FXT2's two-synth
+// design (CT8tracks.scd's own ~buildFxPattern bullet has the full
+// two-synth/bus/Group design) - ONE SynthDef, reused regardless of which
+// carrier (\noiseCarrier/\rumbleCarrier, below) is currently writing to
+// this track's own bus (`in`), since shaping a signal doesn't care what
+// generated it. Applies a plain attack/hold/release envelope (curve -4,
+// same reasoning as every other envelope here) and is the ONLY thing that
+// determines whether anything is actually heard at a given moment - no
+// floor underneath it the way the old masterEnv+burstEnv design had, so
+// between pulses this is genuine silence, not a quieter hum. One Pbind
+// event per pulse (triggered however many times a bar, per
+// ~fxPattern[name]'s own Dur Pat choice) - not retriggered internally the
+// way the old design was, so pulsedur/releaseDur are sized from THIS
+// trigger's own actual span length every time, not a bar-wide average.
+// wet/level/auxBusA-auxAmtB are the usual ~allpassWash/~auxSend tail,
+// moved here from the carrier - the reverb send should colour the actual
+// audible bursts, not a signal nothing ever hears on its own.
+SynthDef(\fxPulse, { |in=0, out=0, pulsedur=0.2, releaseDur=0.3,
+    wet=0, level=1, auxBusA=0, auxAmtA=0, auxBusB=0, auxAmtB=0|
+    var env = EnvGen.kr(
+        Env([0, 1, 1, 0], [0.01, pulsedur, releaseDur], -4),
+        doneAction: 2
+    );
+    var sig = In.ar(in, 2) * env;
     sig = ~allpassWash.(sig, wet, level);
     ~auxSend.(sig, auxBusA, auxAmtA, auxBusB, auxAmtB);
     Out.ar(out, sig);
@@ -781,33 +785,22 @@ SynthDef(\rumble, {
     Out.ar(out, sig);
 }).add;
 
-// Rumble FX: \rumble's own 20-voice texture (identical sound-generating
-// chain, copied verbatim) wrapped in the SAME dual-envelope/buffer-driven
-// burst design \noiseFx uses (see that SynthDef's own comment, above, for
-// the full explanation of masterEnv/burstEnv/spanBuf/numSpans) - added for
-// FXT1/FXT2 per feedback ("to hard to hear with noise... lets do it with
-// rumble. add rumble to both FX tracks"), answering \rumble's own
-// hand-written comment just above ("needs envlope that kind of pulses
-// based on start of row/col"). \rumble's own per-voice envelope
-// (EnvGen.ar(Env([0,1,0],[0.8,0.8]), trig[x])) stays untouched - that's
-// part of the texture itself, independent of this outer bar/pulse shaping
-// - masterEnv+burstEnv multiplies the WHOLE mixed-down signal, same as
-// \noiseFx does to its own noise chain.
-SynthDef(\rumbleFx, {
-    |out=0, freq=60, detune=0.5, pan=0, amp=0.1,
-     speed=1.99, density=1, tone=0.25, blur=2,
-     masterDur=2, pulsedur=0.2, releaseDur=1.8, spanBuf=(-1), numSpans=1,
-     wet=0, level=1, auxBusA=0, auxAmtA=0, auxBusB=0, auxAmtB=0|
-    var masterEnv = EnvGen.ar(
-        Env([0, 0.5, 0.5, 0.0], [0.1, masterDur, 1], -4),
-        doneAction: 2
-    );
-    var burstTrig = TDuty.ar(Dbufrd(spanBuf, Dseries(0, 1, inf) % numSpans), 0, 1);
-    var burstEnv = EnvGen.ar(
-        Env([0, 0.5, 0.5, 0.0], [0.01, pulsedur, releaseDur], -4),
-        burstTrig
-    );
-    var env = masterEnv + burstEnv;
+// Rumble Carrier: \rumble's own 20-voice texture (identical
+// sound-generating chain, copied verbatim, including its own unrelated
+// per-voice envelope/texture shaping - EnvGen.ar(Env([0,1,0],[0.8,0.8]),
+// trig[x]) stays untouched, that's part of the texture itself) wrapped in
+// the same carrier role \noiseCarrier plays (see that SynthDef's own
+// bullet, above, and ~buildFxPattern's own bullet, CT8tracks.scd, for the
+// full two-synth/bus/Group design) - writes its raw, continuous signal to
+// a private bus instead of hardware output; \fxPulse is what shapes it
+// and actually makes it audible. Added for FXT1/FXT2 per feedback ("to
+// hard to hear with noise... lets do it with rumble. add rumble to both
+// FX tracks"), answering \rumble's own hand-written comment just above
+// ("needs envlope that kind of pulses based on start of row/col").
+SynthDef(\rumbleCarrier, {
+    |out=0, freq=60, detune=0.5,
+     speed=1.99, density=1, tone=0.25, blur=2, masterDur=2|
+    var env = EnvGen.kr(Env([0, 1, 1, 0], [0.1, masterDur, 1], -4), doneAction: 2);
     var sig;
     var size = 20;
     var trig = Impulse.ar(
@@ -853,10 +846,7 @@ SynthDef(\rumbleFx, {
         ),
         1
     ).mean;
-    sig = sig * env * amp;
-    sig = ~allpassWash.(sig, wet, level);
-    ~auxSend.(sig, auxBusA, auxAmtA, auxBusB, auxAmtB);
-    Out.ar(out, sig);
+    Out.ar(out, sig * env);
 }).add;
 
 // Allpass reverb: a second, simpler reverb option alongside \ELIreverb - a

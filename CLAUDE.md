@@ -576,7 +576,8 @@ their own bullets below for exactly where the line falls:
 - **`CT8synths.scd`** — owns everything sound-*generating*: SynthDefs (`\plucking`,
   `\hat`, `\baseD`, `\cym`, `\fm`, `\ELIreverb`, `\drone`/`\lead`/`\seq`/`\noise`/`\rumble`/
   `\kick`/
-  `\droneChord`/`\shimmerPad`/`\noiseFx`/`\rumbleFx`/`\allpassReverb` - incorporated from the user's Sound Lab
+  `\droneChord`/`\shimmerPad`/`\noiseCarrier`/`\rumbleCarrier`/`\fxPulse`/
+  `\allpassReverb` - incorporated from the user's Sound Lab
   file; every one but `\droneChord`/`\shimmerPad` is still only auditioned via
   `CT8guiSynthLab.scd`, not used by any
   track. `\rumble` (the user's own SynthDef, brought in directly) is a 20-voice textural
@@ -1096,78 +1097,90 @@ removed again, per feedback ("turn off the chord postln").
 
 `HT3`/`HT4` are GONE from `~trackNames` entirely now - per feedback ("going to take
 HT3 and HT4 and rename them FXT1 and FXT2"), those two slots are `FXT1`/`FXT2` instead,
-a wholly new "fx" track family (not a mere rename): `~buildFxPattern.(name)`
-(`CT8tracks.scd`) builds a Pbind that fires exactly ONE event per bar (`\dur,
+a wholly new "fx" track family (not a mere rename). Each FX track is actually TWO
+Synths working together, per feedback ("treating the pulse as a separate event. the
+bar long note gets triggered, but is sent to the input of a second event that is the
+pulse envelope") - this replaced an EARLIER, single-SynthDef design (one Synth per bar,
+masterEnv+burstEnv ADDED together inside it) that turned out to always leave an
+audible floor (masterEnv's own constant hold level) underneath the pulse, making it
+barely noticeable regardless of Pulse % - confirmed per feedback ("i do not hear a
+pulse in rumble or in noise... if dur pat is first beat only, should i not just hear a
+burst of noise and then almost nothing till the next bar"), which is exactly what the
+ADDITIVE design could never produce (there was always a floor, never true silence).
+
+`~buildFxPattern.(name)` (`CT8tracks.scd`) now builds TWO Pbinds running concurrently
+as one `Ppar` (a `Ppar` is just another Pattern, so this needed no changes to the
+surrounding `~trackPatterns[name]`/`.play(t, quant:1)`/`~syncTrackPlayer` machinery
+every other track family already uses): a "carrier" pattern fires once per bar (`\dur,
 events.size`, same bar-length-in-beats every other single-trigger-per-bar pattern in
-this file uses) - unlike every other family, the "pulsing" described by Dur Pat does
-NOT come from multiple Pbind events; it happens entirely INSIDE that one event's own
-SynthDef (`\noiseFx`/`\rumbleFx`, `CT8synths.scd`'s own bullets), which lives for the
-WHOLE BAR and generates its own repeating internal bursts. `~fxInstrument[name]` is
-`\rumble` or `\noise` (both default `\rumble` now - per feedback, "to hard to hear with
-noise... lets do it with rumble") - `\seq`/`\lead` are still a planned follow-up, each
-needing their own envelope-driving SynthDef variant the way `\noiseFx`/`\rumbleFx` wrap
-`\noise`/`\rumble`'s own sound; `~fxSynthNames` maps the friendly menu symbol to the
-actual SynthDef, same role `CT8guiSynthLab.scd`'s own `synthNames` plays there.
-`~fxSource[name]` (`\row`/`\col`, `FXT1` defaults `\row`, `FXT2` `\col`, same convention
-every other family's own Source uses) feeds `events`/`startRole` exactly like
-`PT1`-`4`'s own `~buildPercPattern` - only matters for `\startOnly`, below.
-`~fxPattern[name]` is now all three originally-planned choices, per feedback ("have the
-dur pat choices be first beat only, first of row/col, every beat... this should make
-the envelope that follows the row or every beat more obvious"): `\firstBeat` (one pulse
-per bar), `\startOnly` (one pulse per row/column span - IRREGULAR, since different
-rows/columns have different widths), or `\everyBeat` (one pulse per beat, uniform).
-`~fxPulsePercent[name]` (0-100) is what fraction of the (average) span length each
-pulse's own "on" portion occupies.
+this file uses), playing `\noiseCarrier`/`\rumbleCarrier` (`CT8synths.scd`'s own
+bullets) into this track's own PRIVATE audio bus (`~fxCarrierBus[name]`) rather than
+hardware output - it just needs to keep sounding continuously for the bar, no
+Dur-Pat-driven pulsing baked in at all. A separate "pulse" pattern fires one event PER
+PULSE (however many times a bar, per `~fxPattern[name]`'s own Dur Pat choice), each a
+short-lived `\fxPulse` synth (ONE shared SynthDef, reused regardless of which carrier
+is on the bus, since shaping a signal doesn't care what generated it) that reads FROM
+that same bus and is the ONLY thing that actually reaches real output - between
+pulses, nothing else is writing to `out` for this track, so it's genuine silence, not
+a quieter hum. `~fxCarrierBus[name]` (a private 2-channel audio `Bus`) and
+`~fxSourceGroup[name]`/`~fxPulseGroup[name]` (persistent `Group`s, the pulse group
+created immediately AFTER the source group via `Group.after` - so the carrier's own
+node always executes before the pulse's, regardless of which actually got triggered
+first that instant, guaranteeing the pulse always reads that block's freshly-written
+carrier signal rather than stale/empty data) are each allocated once, lazily, and
+reused across rebuilds - same "allocate once, keep forever" convention as every other
+persistent server resource in this project (`~revBus`, Groups, etc.).
 
-Since a single continuous per-bar Synth can't retrigger at an IRREGULAR rate from a
-plain periodic `Impulse.ar` the way the uniform `\firstBeat`/`\everyBeat` cases could,
-`~buildFxPattern` computes `spanBeats` - the actual list of per-pulse span lengths, IN
-BEATS (one entry for `\firstBeat` (the whole bar) or `\everyBeat` (one beat, cycled via
-modulo inside the SynthDef so only a single buffer entry is ever needed), one PER
-ROW/COLUMN for `\startOnly`, via the same `nextIdx - idx` gap technique every other
-builder in this file already uses) - fixed once per rebuild, same as every other
-builder's own `durs` array. Fresh every bar via `Pfunc` (so a live tempo change takes
-effect on the very next bar, same convention `HT1`/`HT2`'s own per-chord envelope
-uses), `spanBeats` gets converted to real seconds and written into a small per-track
-`Buffer` (`~fxSpanBuf[name]`, allocated once via `Buffer.alloc(s, 256, 1)` and reused
-across rebuilds, 256 frames being comfortably more than any plausible row/column
-count) - `\noiseFx`/`\rumbleFx` then drive their own burst retrigger from a
-`TDuty`/`Dbufrd` pair cycling through that buffer (see each SynthDef's own bullet,
-below, for the exact mechanism) - the standard SC idiom for "a trigger train whose own
-period varies according to a list of durations." `pulsedur`/`releaseDur` (how long
-each pulse's own on/decay portion lasts) are sized from the AVERAGE span length for
-the whole bar, not each individual span - letting the envelope SHAPE itself vary per
-span too would need a second, carefully-synchronized buffer read; the simpler fixed
-shape still gets the TIMING exactly right, which is what "follows the row/col
-structure" actually means. `~fxWet[name]`/`~fxLevel[name]` (the usual `~allpassWash`
-tail) double as FXT1/FXT2's ONLY overall volume control - no separate amp slider,
-since `level` already scales the whole mix. Deliberately does NOT splice in
-`~labOverrideArgs` (unlike every other builder) - `\noiseFx`/`\rumbleFx` are different
-SynthDefs from the Synth Lab's own plain `\noise`/`\rumble` entries, and `\noise`'s own
-`dur` key (seconds) would collide with Pbind's reserved `\dur` (beats) if the Synth Lab
-ever live-tracked it, silently breaking this track's own bar-length scheduling.
+`~fxInstrument[name]` is `\rumble` or `\noise` (both default `\rumble` now - per
+feedback, "to hard to hear with noise... lets do it with rumble") - `\seq`/`\lead` are
+still a planned follow-up, each needing their own carrier SynthDef variant the way
+`\noiseCarrier`/`\rumbleCarrier` wrap `\noise`/`\rumble`'s own sound; `~fxSynthNames`
+maps the friendly menu symbol to the actual carrier SynthDef, same role
+`CT8guiSynthLab.scd`'s own `synthNames` plays there. `~fxSource[name]` (`\row`/`\col`,
+`FXT1` defaults `\row`, `FXT2` `\col`, same convention every other family's own Source
+uses) feeds `events`/`startRole` exactly like `PT1`-`4`'s own `~buildPercPattern` -
+only matters for `\startOnly`, below. `~fxPattern[name]` is all three
+originally-planned choices, per feedback ("have the dur pat choices be first beat
+only, first of row/col, every beat"): `\firstBeat` (one pulse per bar), `\startOnly`
+(one pulse per row/column span - IRREGULAR, since different rows/columns have
+different widths), or `\everyBeat` (one pulse per beat, uniform) - `pulseDurs` is the
+actual list of per-pulse span lengths, IN BEATS, computed once per rebuild via the
+exact same `nextIdx - idx` gap technique every other builder in this file already uses
+(`\firstBeat` is one span, the whole bar; `\everyBeat` is one span, one beat, cycled
+via `Pseq`'s own infinite repeat; `\startOnly` is one span PER ROW/COLUMN, each that
+span's own real width) - since each pulse is now its OWN independent Pbind event (the
+same multi-event-per-bar technique every other family's own builder already uses), an
+irregular span is exactly as easy to schedule as a uniform one; no buffer or
+demand-rate machinery needed at all. `~fxPulsePercent[name]` (0-100) is what fraction
+of THIS SPECIFIC pulse's own span length its "on" portion occupies - `pulsedur`/
+`releaseDur` are computed fresh per trigger (`ev[\dur]`, that event's own resolved
+span length) rather than a bar-wide average, so the envelope shape is exact for every
+individual pulse, not approximated. `~fxWet[name]`/`~fxLevel[name]` (the usual
+`~allpassWash` tail, now living on `\fxPulse`, not the carrier - the reverb send
+should colour the actual audible bursts, not a signal nothing ever hears on its own)
+double as FXT1/FXT2's ONLY overall volume control. Deliberately does NOT splice in
+`~labOverrideArgs` (unlike every other builder) - `\noiseCarrier`/`\rumbleCarrier`/
+`\fxPulse` are different SynthDefs from the Synth Lab's own plain `\noise`/`\rumble`
+entries, and `\noise`'s own `dur` key (seconds) would collide with Pbind's reserved
+`\dur` (beats) if the Synth Lab ever live-tracked it, silently breaking this track's
+own bar-length scheduling.
 
-`\noiseFx`/`\rumbleFx` (`CT8synths.scd`) reuse `\noise`/`\rumble`'s own
-sound-generating chains verbatim but replace/add a dual envelope SUMMED together, per
-feedback's own sketch: `masterEnv` spans the WHOLE bar (`masterDur` seconds, plus a
-fixed 1-second tail - "a bit tacked on the end" - so the synth's own total lifetime is
-`0.1+masterDur+1`, freed via `doneAction:2` on this envelope - NOT named `dur`,
-deliberately, since that's Pbind's own reserved scheduling key and would collide), and
-`burstEnv` is a short pulse shape that RETRIGGERS once per span via
-`TDuty.ar(Dbufrd(spanBuf, Dseries(0,1,inf) % numSpans), 0, 1)` - cycling through
-whichever span-length schedule `~buildFxPattern` wrote into `spanBuf` that bar (the
-irregular equivalent of the plain-impulse-driven-retrigger idiom `\rumble`'s own
-per-voice envelope already uses for its OWN internal texture - no sustain/release node
-needed on `burstEnv` either, a fresh gate pulse just restarts the shape from scratch) -
-`pulsedur` of each cycle is "on," `releaseDur` is released. Both envelopes use curve
-`-4` uniformly, per feedback - genuinely safe here even on the attack segment (which
-starts at 0), unlike the literal `\exp` curve type (see `\droneChord`/`\shimmerPad`/
-`\lead`'s own bullets for why that one isn't). Final amplitude is `masterEnv +
-burstEnv` (added, not multiplied), per feedback. `\rumbleFx` is `\rumble`'s own
-20-voice texture (identical sound-generating chain, copied verbatim, including its own
-unrelated per-voice envelope/texture shaping) with this same outer dual-envelope
-multiplying the whole mixed-down signal - answering `\rumble`'s own hand-written
-comment ("needs envlope that kind of pulses based on start of row/col").
+`\noiseCarrier`/`\rumbleCarrier` (`CT8synths.scd`) reuse `\noise`/`\rumble`'s own
+sound-generating chains verbatim (`\rumbleCarrier` keeps `\rumble`'s own unrelated
+per-voice envelope/texture shaping untouched - that's part of the texture itself) but
+replace the old single-envelope/dual-envelope designs with just a simple fade-in/
+fade-out for the whole bar (`masterDur` seconds, plus a fixed 1-second tail - "a bit
+tacked on the end" - so the synth's own total lifetime is `0.1+masterDur+1`, freed via
+`doneAction:2`) - it exists only to avoid a click at the bar's own start/end, since
+it's `\fxPulse` alone that decides what's actually audible at any given moment, not a
+held level the way the old `masterEnv` was. `\fxPulse` applies a plain attack/hold/
+release envelope (`[0,1,1,0]` over `[0.01, pulsedur, releaseDur]`) to whatever it reads
+off the bus and is the ONLY source of amplitude shaping left - no floor underneath it
+at all, so between pulses this is genuine silence. All of these use curve `-4`
+uniformly, per feedback - genuinely safe even on attack segments starting at 0, unlike
+the literal `\exp` curve type (see `\droneChord`/`\shimmerPad`/`\lead`'s own bullets
+for why that one isn't). `\rumbleCarrier` answers `\rumble`'s own hand-written comment
+("needs envlope that kind of pulses based on start of row/col").
 
 `MT1` used to mirror `HT1`'s structure from `~colPattern`/`\columnStart`
 through its own bespoke builder, `~buildMelodyPattern` - that builder is gone now,
