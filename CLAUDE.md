@@ -596,7 +596,10 @@ their own bullets below for exactly where the line falls:
   but never actually read anywhere in the body - flagged rather than silently wired in,
   since how it should affect the saw spread is a creative call, not an obvious bug fix;
   it's still exposed as a Synth Lab slider (per feedback, every param) but currently has
-  no audible effect. `\lead`/`\seq`'s own `freq` arg is a MIDI note number now, not Hz (default
+  no audible effect. `amp` default dropped *0.25 (`0.1` -> `0.025`) per feedback
+  ("rumble same story *.25") - `\rumbleCarrier` (FXT1/FXT2's own bullet, `CT8tracks.scd`)
+  has no `amp` arg of its own, so the same proportional cut goes directly into its own
+  signal chain instead (`* 0.25` right before its own `Out.ar`). `\lead`/`\seq`'s own `freq` arg is a MIDI note number now, not Hz (default
   `69`/`76` - the nearest integer MIDI note to each one's old literal Hz default,
   `440`/`660`) - same "plain control arg, `.midicps`'d inside the body" pattern as
   `\droneChord`'s own `note1`-`note4`, below, so the Synth Lab's `\midi` slider curve
@@ -1052,7 +1055,15 @@ result, with `\note2` onward just indexing into that cached array - safe because
 evaluates one event's keys in the order they're given, so `\note1`'s Pfunc always runs
 before `\note2`'s for the same event. Accents (Volume) is gone entirely, per feedback -
 no `\amp` key at all, so every chord just plays at its instrument's own SynthDef-default
-amp.
+amp. `\wet`/`\level` (`Pfunc { ~polyWet[name] }`/`Pfunc { ~polyLevel[name] }`) WERE
+missing from this Pbind entirely until found per feedback ("shimmer at vol 0 is still
+loud") - the Mix/Vol sliders (`CT8guiHarmonyMelodyGenerator.scd`'s own leftPane) had
+been writing `~polyWet`/`~polyLevel` since the HT1/HT2 redesign without anything ever
+reading them back, so those two sliders did literally nothing to the actual sound the
+whole time - now live via `Pfunc`, same convention as every other family's own Mix/Vol.
+`\shimmerPad`'s own `amp` default also dropped *0.25 (`0.125` -> `0.03125`) - still too
+loud even accounting for the above - matching the same cut applied to `\rumble`/
+`\rumbleCarrier` (`CT8synths.scd`'s own bullets, "rumble same story *.25").
 
 THE BIG CHANGE, per feedback: the envelope is recalculated fresh for every chord played,
 from the beats-until-the-next-chord `\dur` value above, plus 2 beats (deliberately

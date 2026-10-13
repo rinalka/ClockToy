@@ -1206,6 +1206,14 @@
             envKeys[0], Pfunc { |ev| ((ev[\dur] + 2) / t.tempo) * 0.15 },
             envKeys[1], Pfunc { |ev| ((ev[\dur] + 2) / t.tempo) * 0.45 },
             envKeys[2], Pfunc { |ev| ((ev[\dur] + 2) / t.tempo) * 0.40 },
+// Previously missing entirely - the Mix/Vol sliders (CT8guiHarmonyMelodyGenerator.scd's
+// own leftPane) wrote ~polyWet[name]/~polyLevel[name] but nothing here ever
+// read them back, so those two sliders did literally nothing to the actual
+// sound since the HT1/HT2 redesign - found per feedback ("shimmer at vol 0
+// is still loud"). Live via Pfunc, same convention as every other track
+// family's own Mix/Vol (~percWet/~percLevel, ~monoWet/~monoLevel).
+            \wet, Pfunc { ~polyWet[name] },
+            \level, Pfunc { ~polyLevel[name] },
             \out, 0,
 // \type goes to \rest for the one-off lead-in event above (consumed here,
 // not re-fired on later cycles - isLeadInEvent flips false right after) or

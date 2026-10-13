@@ -265,13 +265,13 @@
             .value_(~polyWet[name])
             .action_({ |sl|
                 ~polyWet[name] = sl.value;
-                statusText.string_("Changed (not yet wired to playback).");
+                statusText.string_("Changed (live, no rebuild needed).");
             });
         volSlider = Slider(leftPane, 20@90)
             .value_(~polyLevel[name])
             .action_({ |sl|
                 ~polyLevel[name] = sl.value;
-                statusText.string_("Changed (not yet wired to playback).");
+                statusText.string_("Changed (live, no rebuild needed).");
             });
         sendASlider = Slider(leftPane, 20@90)
             .value_(~sendAAmt[name])

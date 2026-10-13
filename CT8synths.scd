@@ -686,7 +686,13 @@ SynthDef(\droneChord, {
 // UNEVALUATED closure, not its result, so the array ends up full of
 // Function objects instead of numbers; Array.fill actually calls the
 // block once per voice.
-SynthDef(\shimmerPad, { |out=0, amp=0.125,
+// amp *0.25 (0.125 -> 0.03125) - still far too loud at its old default per
+// feedback ("shimmer at vol 0 is still loud - it needs to be *.25 or
+// something") - found alongside a real bug: HT1/HT2's own Mix/Vol sliders
+// had never actually been wired into ~buildPolyPattern's Pbind since the
+// HT1/HT2 redesign (CT8tracks.scd's own bullet), so Vol genuinely did
+// nothing regardless of where it was set - fixed there too.
+SynthDef(\shimmerPad, { |out=0, amp=0.03125,
     note1=60, note2=63, note3=67, note4=71, note5=72,
     atk=2.0, sus=1.0, rel=5.0,
     wet=0, level=1,
@@ -727,8 +733,9 @@ SynthDef(\shimmerPad, { |out=0, amp=0.125,
 // output"). `detune` is declared but never read anywhere in this body -
 // flagged, not silently wired in, since guessing how it should affect the
 // saw spread is a creative call, not a bug fix.
+// amp *0.25 (0.1 -> 0.025) per feedback ("rumble same story *.25").
 SynthDef(\rumble, {
-    |out = 0, freq = 60, detune = 0.5, pan = 0, amp = 0.1,
+    |out = 0, freq = 60, detune = 0.5, pan = 0, amp = 0.025,
      speed = 1.99, density = 1, tone = 0.25, blur = 2,
      wet=0, level=1, auxBusA=0, auxAmtA=0, auxBusB=0, auxAmtB=0|
     var sig;
@@ -846,7 +853,12 @@ SynthDef(\rumbleCarrier, {
         ),
         1
     ).mean;
-    Out.ar(out, sig * env);
+// *0.25 - same reduction as standalone \rumble's own amp default, per
+// feedback ("rumble same story *.25") - this carrier has no amp arg of
+// its own (CT8tracks.scd's \fxPulse/~fxLevel is FXT1/FXT2's one overall
+// volume control instead), so the same proportional cut goes directly
+// into the signal chain here.
+    Out.ar(out, sig * env * 0.25);
 }).add;
 
 // Allpass reverb: a second, simpler reverb option alongside \ELIreverb - a

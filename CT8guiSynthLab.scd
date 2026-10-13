@@ -210,7 +210,8 @@
             [\freq, 60, 20, 500, \exp],
             [\detune, 0.5, 0, 2, \lin],
             [\pan, 0, -1, 1, \lin],
-            [\amp, 0.1, 0, 1, \lin],
+// amp *0.25 (0.1 -> 0.025) per feedback ("rumble same story *.25").
+            [\amp, 0.025, 0, 1, \lin],
             [\speed, 1.99, 0.1, 5, \exp],
             [\density, 1, 0.1, 5, \exp],
             [\tone, 0.25, 0, 2, \lin],
@@ -337,8 +338,9 @@
             [\note3, 67, 0, 127, \midi],
             [\note4, 71, 0, 127, \midi],
             [\note5, 72, 0, 127, \midi],
-// amp halved per feedback (0.25 -> 0.125).
-            [\amp, 0.125, 0, 1, \lin],
+// amp halved per feedback (0.25 -> 0.125), then *0.25 again (0.125 ->
+// 0.03125) - still too loud.
+            [\amp, 0.03125, 0, 1, \lin],
 // atk/sus/rel used to be hardcoded local vars inside the SynthDef; now real
 // control args (CT8synths.scd) so HT1/HT2's own per-chord envelope
 // calculation (~buildPolyPattern, CT8tracks.scd) can drive them - these
