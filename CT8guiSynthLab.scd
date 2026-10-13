@@ -180,11 +180,18 @@
 // freq is MIDI now, not Hz (CT8synths.scd's own \lead/\seq bullets - the
 // \midi curve means something once the SynthDef itself converts via
 // .midicps internally, unlike \droneChord's note1-4 which were already
-// MIDI-valued with nothing to change here).
+// MIDI-valued with nothing to change here). Range 30-99, not the full
+// 0-127, matching the SynthDef's own internal freq.clip(30, 99) - per
+// feedback ("lead needs to limit freq to never go below 30 or above 99"),
+// so this slider can't produce an out-of-range value in the first place.
+// rel is a real control arg now (CT8synths.scd's own \lead bullet), not a
+// hardcoded local var - per feedback ("added a release variable rel to
+// lead, can you please see it gets into synthlab").
     specs.put(\lead, [
-            [\freq, 69, 0, 127, \midi], [\dur, 2, 0.6, 12, \lin],
+            [\freq, 69, 30, 99, \midi], [\dur, 2, 0.6, 12, \lin],
             [\amp, 0.7, 0, 1, \lin], [\pan, 0, -1, 1, \lin],
-            [\wobblelow, 0.3, 0, 1, \lin], [\wobblehigh, 1, 0, 1, \lin]
+            [\wobblelow, 0.3, 0, 1, \lin], [\wobblehigh, 1, 0, 1, \lin],
+            [\rel, 2, 0.01, 20, \exp]
     ]);
     specs.put(\seq, [
             [\freq, 76, 0, 127, \midi], [\dur, 0.5, 0.1, 3, \lin],

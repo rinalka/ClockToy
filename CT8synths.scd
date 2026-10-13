@@ -443,14 +443,31 @@ SynthDef(\drone, { |out=0, freq=110, dur=5, amp=0.4, pan=0,
 // so the Synth Lab's \midi slider curve (integer-rounded, 0 decimals) means
 // something sensible here. sharpness used to compute freq.cpsmidi (Hz back
 // to MIDI) - now redundant/simplified away, since freq already IS the MIDI
-// value it used to convert TO.
+// value it used to convert TO. Clamped to [30, 99] per feedback ("lead
+// needs to limit freq to never go below 30 or above 99") - both here (so
+// anything that ever feeds this synth an out-of-range value stays safe)
+// and in the Synth Lab's own slider range (CT8guiSynthLab.scd), which can
+// no longer produce one in the first place.
+// rel (the overall envelope's release time) is a real control arg now,
+// not a hardcoded local var - per feedback ("added a release variable rel
+// to lead, can you please see it gets into synthlab"). That envelope's own
+// release segment is curve -4 now (was unspecified, i.e. linear) - per
+// feedback ("i would like the release for the overall envelope to be
+// gradual") - NOT the literal \exp curve type: that's degenerate for a
+// segment ENDING at 0 (the level just holds at its start value until the
+// very last instant, then drops instantly - not gradual at all, a
+// different failure mode than \exp's own NaN-at-a-zero-START bug found
+// earlier on \droneChord/\shimmerPad, but still wrong). -4 is this
+// project's own established, safe way to get a natural-sounding gradual
+// decay on a segment touching zero (same curve \shimmerPad/\kick use).
 SynthDef(\lead, { |out=0, freq=69, dur=2, amp=0.7, pan=0,
-    wobblelow=0.3, wobblehigh=1|
+    wobblelow=0.3, wobblehigh=1, rel=2|
     var atk = 0.5;
-    var hzFreq = freq.midicps;
-    var env = EnvGen.kr(Env([0, 1, 1, 0], [atk, (dur-atk).max(0.01), 10]), doneAction: 2);
+    var midiFreq = freq.clip(30, 99);
+    var hzFreq = midiFreq.midicps;
+    var env = EnvGen.kr(Env([0, 1, 1, 0], [atk, (dur-atk).max(0.01), rel], [\lin, \lin, -4]), doneAction: 2);
     var freqenv = EnvGen.kr(Env([0.7, 1, 1], [0.3, dur]));
-    var sharpness = freq.linlin(0, 127, 1, 15);
+    var sharpness = midiFreq.linlin(0, 127, 1, 15);
     var wobble = SinOsc.kr(6).range(wobblelow, wobblehigh);
     var sig = RLPF.ar(
         LFSaw.ar(freqenv * hzFreq * LFNoise1.kr(1).range(0.995, 1.005)),

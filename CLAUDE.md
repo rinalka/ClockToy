@@ -604,7 +604,21 @@ their own bullets below for exactly where the line falls:
   in the Synth Lab already; `\noise` has no `freq` arg at all, so nothing to convert
   there). `\lead`'s own `sharpness` calculation used to compute `freq.cpsmidi` (Hz back
   to MIDI) - now simplified away, since `freq` already IS the MIDI value it used to
-  convert TO. `\droneChord` (four simultaneous MIDI notes, `note1`-`note4`, eight sine
+  convert TO. `\lead`'s `freq` is clamped to `[30, 99]` (both internally,
+  `freq.clip(30, 99)`, and in the Synth Lab's own slider range, which can no longer
+  produce an out-of-range value in the first place) - per feedback ("lead needs to
+  limit freq to never go below 30 or above 99"). `\lead` also gained a real `rel`
+  control arg (its overall envelope's release time) - per feedback ("added a release
+  variable rel to lead, can you please see it gets into synthlab") - replacing a
+  hardcoded local var of the same name; that envelope's own release segment is curve
+  `-4` now (was unspecified, i.e. linear) for a gradual decay, per feedback ("i would
+  like the release for the overall envelope to be gradual") - not the literal `\exp`
+  curve type, which is degenerate for a segment ending at 0 (holds at its start level
+  until the very last instant, then drops instantly - a different failure mode than
+  `\exp`'s own NaN-at-a-zero-start bug found earlier on `\droneChord`/`\shimmerPad`,
+  but still wrong); `-4` is this project's own established, safe way to get a gradual
+  decay on a segment touching zero (same curve `\shimmerPad`/`\kick` use).
+  `\droneChord` (four simultaneous MIDI notes, `note1`-`note4`, eight sine
   oscillators per note, each detuned in cents: a static per-oscillator offset,
   `Rand(-1, 1) * detune` (`detune` is now a plain +/- cents amount, default 10 - a later
   hand-edit's redesign; it used to be a 0-1 normalized spread instead, `1` fully in tune,
