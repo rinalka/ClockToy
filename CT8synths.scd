@@ -504,6 +504,48 @@ SynthDef(\noise, { |out=0, dur=5, amp=0.15, pan=0|
     Out.ar(out, Pan2.ar(env * amp * sig, pan));
 }).add;
 
+// Noise FX: the dual-envelope "bar-long pulsing texture" design for
+// FXT1/FXT2 (~buildFxPattern, CT8tracks.scd), per feedback - reuses
+// \noise's own noise-generating chain (WhiteNoise through a swept LPF,
+// gated by a random LFPulse) but replaces its single Env.perc with TWO
+// envelopes summed together: masterEnv spans the WHOLE bar (masterDur
+// seconds, plus a fixed 1-second tail - "a bit tacked on the end" - so the
+// synth's own total lifetime is 0.1+masterDur+1, freed via doneAction:2 on
+// THIS envelope), and burstEnv is a short pulse shape that RETRIGGERS
+// every bdur seconds via a periodic Impulse.ar gate (the same plain-
+// Impulse-driven-retrigger idiom \rumble's own per-voice envelope already
+// uses - no sustain/release node needed, a fresh gate pulse just restarts
+// the shape from scratch) - pulsedur of each bdur-second cycle is "on"
+// (ramping up then back down), the rest is released. Both envelopes use
+// curve -4 uniformly, per feedback - genuinely safe here even on the
+// attack segment (which starts at 0), unlike the literal \exp curve type
+// (see \droneChord/\shimmerPad/\lead's own bullets, this file, for why
+// that one isn't). Final amplitude is masterEnv + burstEnv (added, not
+// multiplied), per feedback. masterDur/bdur/pulsedur are real seconds,
+// computed by ~buildFxPattern from the current tempo/Dur Pat/Pulse % and
+// fed in fresh via Pfunc every bar, same convention HT1/HT2's own
+// per-chord envelope uses - masterDur is NOT named `dur`, deliberately,
+// since that's Pbind's own reserved scheduling key (beats, not seconds) -
+// reusing it here would collide.
+SynthDef(\noiseFx, { |out=0, masterDur=2, bdur=2, pulsedur=0.2, amp=0.15, pan=0,
+    wet=0, level=1, auxBusA=0, auxAmtA=0, auxBusB=0, auxAmtB=0|
+    var masterEnv = EnvGen.ar(
+        Env([0, 0.5, 0.5, 0.0], [0.1, masterDur, 1], -4),
+        doneAction: 2
+    );
+    var burstEnv = EnvGen.ar(
+        Env([0, 0.5, 0.5, 0.0], [0.01, pulsedur, (bdur - pulsedur).max(0.01)], -4),
+        Impulse.ar(bdur.reciprocal)
+    );
+    var env = masterEnv + burstEnv;
+    var sig = LPF.ar(WhiteNoise.ar * LFPulse.kr(LFNoise1.kr(0.5).range(3, 12)),
+        LFNoise1.kr(2).range(2, 1) * 4000);
+    sig = Pan2.ar(env * amp * sig, pan);
+    sig = ~allpassWash.(sig, wet, level);
+    ~auxSend.(sig, auxBusA, auxAmtA, auxBusB, auxAmtB);
+    Out.ar(out, sig);
+}).add;
+
 // Kick: PMOsc drum body plus a filtered-noise beater transient, each with
 // its own pitch-sweep/filter envelope; frees itself via DetectSilence once
 // both have died out (no hard safety timeout like ~baseD's, so a run of

@@ -354,11 +354,111 @@
 };
 
 
+// ---------------------------------------------------------------------------
+// FX GENERATOR CONFIG (FXT1/FXT2)
+// ---------------------------------------------------------------------------
+// FXT1/FXT2 replace HT3/HT4 (~trackNames, below) - a new track family, per
+// feedback ("going to take HT3 and HT4 and rename them FXT1 and FXT2"), not
+// a mere rename: unlike every other family, a Pbind event here fires only
+// ONCE PER BAR (~fxPattern[name] has no bearing on the Pbind's own event
+// rate at all - that's always ~numBeats beats) - the PULSING happens
+// entirely INSIDE \noiseFx's own SynthDef body (CT8synths.scd's own
+// bullet), via a second envelope that retriggers internally. This
+// section's job is just computing the three real-second values that
+// drive it, below (~buildFxPattern).
+//   ~fxInstrument[name] - only \noise for now, per feedback ("for the
+//     moment lets deal only with noise") - \seq/\lead are a planned
+//     follow-up, each needing their own envelope-driving SynthDef variant
+//     the way \noiseFx wraps \noise's own sound. ~fxSynthNames maps the
+//     friendly menu symbol to the actual SynthDef that plays it, same role
+//     CT8guiSynthLab.scd's own `synthNames` plays there.
+//   ~fxPattern[name] - \firstBeat (one pulse per bar) or \everyBeat (one
+//     pulse per beat) - \startOnly (start of row/col) is a deliberately
+//     deferred third choice, per feedback: its pulses would need to land on
+//     IRREGULAR row/column span boundaries, which (since the whole bar is
+//     ONE continuous Synth, not one Pbind event per pulse) needs a
+//     Buffer-driven variable-rate internal trigger - real extra plumbing,
+//     worth its own later pass once First beat only/Every beat are solid.
+//   ~fxPulsePercent[name] - what fraction (0-100) of bdur (the gap between
+//     pulses - the whole bar for \firstBeat, one beat for \everyBeat) each
+//     pulse's own "on" portion occupies - converted to pulsedur (real
+//     seconds) by ~buildFxPattern.
+//   ~fxWet[name]/~fxLevel[name] - this track's own tiny built-in
+//     ~allpassWash tail, same role/convention as ~percWet/~percLevel -
+//     doubles as FXT1/FXT2's only overall volume control (no separate amp
+//     slider - ~allpassWash's own `level` arg already scales the whole
+//     mix, so a second one would be redundant), read live via Pfunc same
+//     as everywhere else.
+~fxTrackNames = [\FXT1, \FXT2];
+~fxSynthNames = (noise: \noiseFx);
+~fxInstrument = ~fxInstrument ? ();
+~fxPattern = ~fxPattern ? ();
+~fxPulsePercent = ~fxPulsePercent ? ();
+~fxWet = ~fxWet ? ();
+~fxLevel = ~fxLevel ? ();
+~fxTrackNames.do { |name|
+    ~fxInstrument[name] = ~fxInstrument[name] ? \noise;
+    ~fxPattern[name] = ~fxPattern[name] ? \firstBeat;
+    ~fxPulsePercent[name] = ~fxPulsePercent[name] ? 20;
+    ~fxWet[name] = ~fxWet[name] ? 0;
+    ~fxLevel[name] = ~fxLevel[name] ? 1;
+};
+
+// Forcibly resets one FX track's whole config back to these same original
+// defaults - mirrors ~resetPercConfig/~resetMonoConfig/~resetPolyConfig,
+// same reason (see any one's own comment).
+~resetFxConfig = { |name|
+    ~fxInstrument[name] = \noise;
+    ~fxPattern[name] = \firstBeat;
+    ~fxPulsePercent[name] = 20;
+    ~fxWet[name] = 0;
+    ~fxLevel[name] = 1;
+};
+
+// ---------------------------------------------------------------------------
+// FXT1/FXT2: BAR-LONG PULSING TEXTURE, FROM FX GENERATOR CONFIG
+// ---------------------------------------------------------------------------
+// One Pbind event per bar (\dur, ~numBeats - same bar-length-in-beats every
+// other builder's own one-trigger-per-bar patterns use) - NOT one event
+// per pulse. This function's only job is computing, fresh every bar via
+// Pfunc (so a live tempo change takes effect on the very next bar, same
+// convention HT1/HT2's own per-chord envelope uses), the three real-second
+// values \noiseFx needs: masterDur (the whole bar), bdur (the gap between
+// pulses - masterDur itself for \firstBeat, one beat for \everyBeat), and
+// pulsedur (~fxPulsePercent[name]% of bdur). Deliberately does NOT splice
+// in ~labOverrideArgs (unlike every other builder) - \noiseFx is a
+// different SynthDef from the Synth Lab's own plain \noise entry, and
+// \noise's own `dur` key (Hz... no, seconds, but still) would collide with
+// Pbind's reserved \dur (beats) if the Synth Lab ever live-tracked it,
+// silently breaking this track's own bar-length scheduling - not worth the
+// risk for a feature (tune-in-the-lab-hear-it-live) that wouldn't even
+// apply cleanly here given how different \noiseFx's own param set is.
+~buildFxPattern = { |name|
+    var instrument = ~fxInstrument[name];
+    var synthName = ~fxSynthNames[instrument];
+    var pattern = ~fxPattern[name];
+    ~trackPatterns[name] = Pbind(*([
+        \instrument, synthName,
+        \dur, Pfunc { ~numBeats ? 1 },
+        \masterDur, Pfunc { |ev| ev[\dur] / t.tempo },
+        \bdur, Pfunc { |ev|
+            if(pattern == \everyBeat) { 1 / t.tempo } { ev[\masterDur] }
+        },
+        \pulsedur, Pfunc { |ev| ev[\bdur] * (~fxPulsePercent[name] / 100) },
+        \out, 0,
+        \wet, Pfunc { ~fxWet[name] },
+        \level, Pfunc { ~fxLevel[name] },
+        \type, Pfunc { if(~trackEnabled[name]) { \note } { \rest } }
+    ] ++ ~auxSendPbindArgs.(name)));
+};
+
 
 ~trackNames = [
     \PT1, \PT2, \PT3, \PT4,   // percussion
     \BT1,  \BT2,                    // bass
-    \HT1, \HT2, \HT3, \HT4,   // rhythm/harmony
+    \HT1, \HT2, \FXT1, \FXT2, // rhythm/harmony + fx (FXT1/FXT2 replace the
+                              // old HT3/HT4 slots - a new family, not a
+                              // mere rename, per feedback)
     \MT1, \MT2, \MT3, \MT4    // melody
 ];
 ~trackPatterns = ~trackPatterns ? ();
@@ -1883,6 +1983,8 @@
 ~trackBuilders[\PT4] = { ~buildPercPattern.(\PT4) };
 ~trackBuilders[\HT1] = { ~buildPolyPattern.(\HT1) };
 ~trackBuilders[\HT2] = { ~buildPolyPattern.(\HT2) };
+~trackBuilders[\FXT1] = { ~buildFxPattern.(\FXT1) };
+~trackBuilders[\FXT2] = { ~buildFxPattern.(\FXT2) };
 ~trackBuilders[\BT1] = { ~buildMonoTrackPattern.(\BT1) };
 ~trackBuilders[\BT2] = { ~buildMonoTrackPattern.(\BT2) };
 ~trackBuilders[\MT1] = { ~buildMonoTrackPattern.(\MT1) };

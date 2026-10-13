@@ -193,8 +193,9 @@
 ~currentRange = ~currentRange ? ();
 ~currentRange[\HT1] = ~currentRange[\HT1] ? [60, 96];
 ~currentRange[\HT2] = ~currentRange[\HT2] ? [60, 96];
-~currentRange[\HT3] = ~currentRange[\HT3] ? [60, 96];
-~currentRange[\HT4] = ~currentRange[\HT4] ? [60, 96];
+// No \HT3/\HT4 entries any more - those two slots are \FXT1/\FXT2 now
+// (CT8tracks.scd's own TRACK REGISTRY), a family with no pitch/range
+// concept at all (their only instrument so far, \noise, has no freq arg).
 ~currentRange[\MT1] = ~currentRange[\MT1] ? [60, 96];
 ~currentRange[\MT2] = ~currentRange[\MT2] ? [60, 96];
 ~currentRange[\MT3] = ~currentRange[\MT3] ? [60, 96];

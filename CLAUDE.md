@@ -576,7 +576,7 @@ their own bullets below for exactly where the line falls:
 - **`CT8synths.scd`** — owns everything sound-*generating*: SynthDefs (`\plucking`,
   `\hat`, `\baseD`, `\cym`, `\fm`, `\ELIreverb`, `\drone`/`\lead`/`\seq`/`\noise`/`\rumble`/
   `\kick`/
-  `\droneChord`/`\shimmerPad`/`\allpassReverb` - incorporated from the user's Sound Lab
+  `\droneChord`/`\shimmerPad`/`\noiseFx`/`\allpassReverb` - incorporated from the user's Sound Lab
   file; every one but `\droneChord`/`\shimmerPad` is still only auditioned via
   `CT8guiSynthLab.scd`, not used by any
   track. `\rumble` (the user's own SynthDef, brought in directly) is a 20-voice textural
@@ -835,8 +835,8 @@ every entry on every run regardless of GUI state, replacing both the old default
 guard (`PT1`/`PT2`/`PT3`/`MT1` used to default on this way) and the old separate
 `HT1`/`MT1`/`BT1`/`MT2` force-on block `CT8main.scd` used to run every time - for every
 one of the 13
-planned tracks (4 percussion `PT1-4`, 2 bass `BT1-2`, 4 rhythm/harmony `HT1-4`, 4 melody
-`MT1-4`) for a planned generative "Daily Piece" mode uniformly. The same section also
+planned tracks (4 percussion `PT1-4`, 2 bass `BT1-2`, 2 harmony `HT1-2`, 2 fx
+`FXT1-2`, 4 melody `MT1-4`) for a planned generative "Daily Piece" mode uniformly. The same section also
 unconditionally resets every `~copyGuiTracks` track's `~copyPlaying`/
 `~copyPlayStartArmed`/`~copyStopRequested`/`~copyPlayBuffer`/`~copyPlayIdx` (Track Copy,
 below) for the identical reason - those are `?`-guarded in `CT8tracks.scd`'s own TRACK
@@ -865,10 +865,13 @@ registered, per feedback) and are fully
 playable - just disabled by default like every other track now (see this section's own
 opening paragraph, above) until toggled on in the Percussion + Bass Generator window
 (`PT4`/`BT2`, beside each one's name) or the Harmony + Melody Generator/Clock Toy
-Adjust windows (`HT1`/`HT2`); `HT3`/`HT4`/`MT3`/`MT4` are still registered but inert (no
-builder exists
+Adjust windows (`HT1`/`HT2`). `FXT1`/`FXT2` (the new "fx" family, replacing `HT3`/
+`HT4` entirely - see `~buildFxPattern`'s own bullet, above) ALSO have a real builder
+and are fully playable the same way, toggled on in the Harmony + Melody Generator
+window beside their own name; `MT3`/`MT4` are the only ones still registered but inert
+(no builder exists
 for them
-yet - `HT3`/`HT4` explicitly "ignored for now," per feedback, not forgotten). See the
+yet). See the
 TRACK REGISTRY block in `CT8tracks.scd`:
 - **`~trackNames`** — all 13 track name symbols.
 - **`~trackPatterns[name]`** / **`~trackPlayers[name]`** / **`~trackEnabled[name]`** — that
@@ -877,15 +880,16 @@ TRACK REGISTRY block in `CT8tracks.scd`:
 - **`~syncTrackPlayer.(name)`** — stops a track's current player, then restarts it if
   `~trackEnabled[name]` and a pattern exist; used for any future per-track on/off UI.
 - **`~trackBuilders[name]`** — the function that (re)builds `~trackPatterns[name]`;
-  currently `PT1`/`PT2`/`PT3`/`PT4`/`BT1`/`BT2`/`MT1`/`MT2`/`HT1`/`HT2` have one
-  registered (`HT2` newly, per feedback - see `~buildPolyPattern`'s own bullet, below).
-  `PT1`-`PT4` each get a small wrapper closure (`{ ~buildPercPattern.(\PT1) }`, etc.)
+  currently `PT1`/`PT2`/`PT3`/`PT4`/`BT1`/`BT2`/`MT1`/`MT2`/`HT1`/`HT2`/`FXT1`/`FXT2`
+  have one
+  registered. `PT1`-`PT4` each get a small wrapper closure (`{ ~buildPercPattern.(\PT1) }`, etc.)
   around the one shared `~buildPercPattern` function; `BT1`/`BT2`/`MT1`/`MT2` all mirror
   that with their own shared `~buildMonoTrackPattern` (the four Note tracks -
   see the paragraph above); `HT1`/`HT2` mirror that too, with their own shared
-  `~buildPolyPattern` (`{ ~buildPolyPattern.(\HT1) }`/`{ ~buildPolyPattern.(\HT2) }`) -
-  `HT3`/`HT4` are deliberately left unregistered, per feedback ("should be ignored for
-  now"). Registering a builder
+  `~buildPolyPattern` (`{ ~buildPolyPattern.(\HT1) }`/`{ ~buildPolyPattern.(\HT2) }`);
+  `FXT1`/`FXT2` (replacing `HT3`/`HT4` entirely, not a mere rename - see
+  `~buildFxPattern`'s own bullet, above) mirror that too, with their own shared
+  `~buildFxPattern`. Registering a builder
   for a new track name is the only step needed to bring it under the existing
   `~setStartPbinds`/`~stopPbinds`/`~updatePbinds`/`~restartPbinds` machinery, which all
   loop generically over `~trackNames` rather than hardcoding specific tracks.
@@ -1089,6 +1093,58 @@ toggle had never actually silenced them before this fix, since no `\type` key ex
 in this builder at all until now. The temporary debugging `postln` from that same
 investigation (which chord-pad notes were resolving to, each trigger) has since been
 removed again, per feedback ("turn off the chord postln").
+
+`HT3`/`HT4` are GONE from `~trackNames` entirely now - per feedback ("going to take
+HT3 and HT4 and rename them FXT1 and FXT2"), those two slots are `FXT1`/`FXT2` instead,
+a wholly new "fx" track family (not a mere rename): `~buildFxPattern.(name)`
+(`CT8tracks.scd`) builds a Pbind that fires exactly ONE event per bar (`\dur,
+~numBeats`, same bar-length-in-beats every other single-trigger-per-bar pattern in
+this file uses) - unlike every other family, the "pulsing" described by Dur Pat does
+NOT come from multiple Pbind events; it happens entirely INSIDE that one event's own
+SynthDef (`\noiseFx`, `CT8synths.scd`'s own bullet), which lives for the WHOLE BAR
+and generates its own repeating internal bursts. `~fxInstrument[name]` is `\noise`
+only for now, per feedback ("for the moment lets deal only with noise") - `\seq`/
+`\lead` are a planned follow-up, each needing their own envelope-driving SynthDef
+variant the way `\noiseFx` wraps `\noise`'s own sound; `~fxSynthNames` maps the
+friendly menu symbol to the actual SynthDef, same role `CT8guiSynthLab.scd`'s own
+`synthNames` plays there. `~fxPattern[name]` is `\firstBeat` (one pulse per bar) or
+`\everyBeat` (one pulse per beat) - `\startOnly` (start of row/col) is a deliberately
+DEFERRED third choice, per feedback: its pulses would need to land on IRREGULAR
+row/column span boundaries, which (since the whole bar is one continuous Synth, not
+one Pbind event per pulse) needs a Buffer-driven variable-rate internal trigger -
+real extra plumbing, left for a later pass once First beat only/Every beat are
+solid. `~fxPulsePercent[name]` (0-100) is what fraction of `bdur` (the gap between
+pulses - the whole bar for `\firstBeat`, one beat for `\everyBeat`) each pulse's own
+"on" portion occupies - converted to `pulsedur` (real seconds) by `~buildFxPattern`,
+computed fresh via `Pfunc` every bar (so a live tempo change takes effect on the very
+next bar, same convention `HT1`/`HT2`'s own per-chord envelope uses) - `\dur`'s own
+bar-length-in-BEATS is read back via `ev[\dur]` to derive `masterDur` (real seconds),
+which `bdur`'s own `Pfunc` then reads via `ev[\masterDur]`, same "later key reads an
+earlier key's resolved value" chaining `HT1`/`HT2`'s envelope keys already use.
+`~fxWet[name]`/`~fxLevel[name]` (the usual `~allpassWash` tail) double as FXT1/FXT2's
+ONLY overall volume control - no separate amp slider, since `level` already scales
+the whole mix. Deliberately does NOT splice in `~labOverrideArgs` (unlike every other
+builder) - `\noiseFx` is a different SynthDef from the Synth Lab's own plain `\noise`
+entry, and `\noise`'s own `dur` key (seconds) would collide with Pbind's reserved
+`\dur` (beats) if the Synth Lab ever live-tracked it, silently breaking this track's
+own bar-length scheduling.
+
+`\noiseFx` (`CT8synths.scd`) reuses `\noise`'s own noise-generating chain (`WhiteNoise`
+through a swept `LPF`, gated by a random `LFPulse`) but replaces its single `Env.perc`
+with TWO envelopes SUMMED together, per feedback's own sketch: `masterEnv` spans the
+WHOLE bar (`masterDur` seconds, plus a fixed 1-second tail - "a bit tacked on the
+end" - so the synth's own total lifetime is `0.1+masterDur+1`, freed via
+`doneAction:2` on this envelope - NOT named `dur`, deliberately, since that's Pbind's
+own reserved scheduling key and would collide), and `burstEnv` is a short pulse shape
+that RETRIGGERS every `bdur` seconds via a periodic `Impulse.ar` gate (the same
+plain-impulse-driven-retrigger idiom `\rumble`'s own per-voice envelope already uses -
+no sustain/release node needed, a fresh gate pulse just restarts the shape from
+scratch) - `pulsedur` of each `bdur`-second cycle is "on," the rest is released. Both
+envelopes use curve `-4` uniformly, per feedback - genuinely safe here even on the
+attack segment (which starts at 0), unlike the literal `\exp` curve type (see
+`\droneChord`/`\shimmerPad`/`\lead`'s own bullets for why that one isn't). Final
+amplitude is `masterEnv + burstEnv` (added, not multiplied), per feedback.
+
 `MT1` used to mirror `HT1`'s structure from `~colPattern`/`\columnStart`
 through its own bespoke builder, `~buildMelodyPattern` - that builder is gone now,
 along with the whole idea of "melody tracks" as their own family; `MT1`/`MT2` are driven

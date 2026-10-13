@@ -1,30 +1,29 @@
 // ============================================================================
 // CT8guiHarmonyMelodyGenerator.scd
-// CLOCKTOY - HARMONY + MELODY GENERATOR WINDOW (HT1-HT4, MT1-MT2) - SKELETON
+// CLOCKTOY - HARMONY + MELODY + FX GENERATOR WINDOW (HT1-HT2, MT1-MT2, FXT1-FXT2)
 // ============================================================================
 //
-// Two different kinds of block live in this one window, per feedback - the
-// project now groups its tracks into three families by how many notes each
-// one ever sounds at once (see CT8tracks.scd's MONO TRACK CONFIG section
-// for the full naming rationale): Perc (PT1-4, unaffected), mono - one note
-// at a time - for the "Note" tracks (BT1/BT2/MT1/MT2), and poly - a chord
-// at a time - for the Harmony tracks (HT1-4):
+// Three different kinds of block live in this one window now - the project
+// groups its tracks into families by how many notes/what kind of sound each
+// one makes (see CT8tracks.scd's MONO TRACK CONFIG section for the full
+// naming rationale): Perc (PT1-4, unaffected), mono - one note at a time -
+// for the "Note" tracks (BT1/BT2/MT1/MT2), poly - a chord at a time - for
+// the Harmony tracks (HT1/HT2), and now fx - one bar-long pulsing texture
+// at a time - for FXT1/FXT2:
 //
-// HT1/HT2 (makePolyTrackSection) are now real, wired-up chord-pad tracks,
+// HT1/HT2 (makePolyTrackSection) are real, wired-up chord-pad tracks,
 // per feedback ("going to change the rules for HT1 and HT2") - restricted
 // to the two chord-voicing instruments (\droneChord/\shimmerPad), three Dur
 // Pat choices, four Pit Pat choices, and no Accents/Volume at all (see
 // ~buildPolyPattern's own header comment, CT8tracks.scd, for the full
-// design). HT3/HT4 are deliberately untouched ("HT3 and HT4 should be
-// ignored for now") - still the original skeleton, still no builder, still
-// every control besides on/off reading and writing a placeholder global
-// that doesn't affect playback. makePolyTrackSection's own `isRestricted`
-// flag (true for HT1/HT2 only) is what the two halves of this split, below.
-// The on/off button IS real for all four, regardless: same
-// ~trackEnabled[name]/~syncTrackPlayer every other window's on/off button
-// already uses, green/red once a track has a builder (now true for HT1/
-// HT2, same convention CT8guiAdjust.scd's own buttons use), still orange
-// for HT3/HT4.
+// design). HT3/HT4 are GONE now, not just untouched - per feedback ("going
+// to take HT3 and HT4 and rename them FXT1 and FXT2"), those two track
+// slots are now FXT1/FXT2 instead (~trackNames, CT8tracks.scd), a wholly
+// different family, not a mere rename - see makeFxTrackSection, below, and
+// ~buildFxPattern's own header comment (CT8tracks.scd) for the full design.
+// makePolyTrackSection's own `isRestricted` flag is now always true (only
+// HT1/HT2 are left in ~polyTrackNames), so its `isRestricted.not` branches
+// are dead code, kept rather than ripped out purely to minimize churn.
 //
 // MT1/MT2 (makeMonoTrackSection) are real, full Note tracks now - no
 // longer a melody-specific builder of their own (~buildMelodyPattern is
@@ -55,7 +54,7 @@
 // MT1/MT2 dropped from this list - they're real Note tracks now, sharing
 // ~monoX config (CT8tracks.scd) instead of this file's own placeholder
 // ~polyX - see this file's own header comment.
-~polyTrackNames = [\HT1, \HT2, \HT3, \HT4];
+~polyTrackNames = [\HT1, \HT2];
 ~polySource = ~polySource ? ();
 ~polyInstrument = ~polyInstrument ? ();
 ~polyPattern = ~polyPattern ? ();
@@ -67,12 +66,12 @@
 ~polySplitPercent = ~polySplitPercent ? ();
 // HT1-4 default to Row scan - the same identity ~buildPolyPattern (HT1)
 // already has today, even though this Source menu doesn't drive it yet.
-~polySourceDefaults = (HT1: \row, HT2: \row, HT3: \row, HT4: \row);
+~polySourceDefaults = (HT1: \row, HT2: \row);
 // HT1/HT2 default to \droneChord now - restricted to \droneChord/
 // \shimmerPad only, per feedback (~buildPolyPattern, CT8tracks.scd); HT3/
 // HT4 keep \fm, the original skeleton's own default, since they're
 // untouched.
-~polyInstrumentDefaults = (HT1: \droneChord, HT2: \droneChord, HT3: \fm, HT4: \fm);
+~polyInstrumentDefaults = (HT1: \droneChord, HT2: \droneChord);
 ~polyTrackNames.do { |name|
     var isRestricted = #[\HT1, \HT2].includes(name);
     ~polySource[name] = ~polySource[name] ? ~polySourceDefaults[name];
@@ -123,7 +122,7 @@
 };
 
 ~makeHarmonyMelodyGeneratorWindow = {
-    var statusText, applyNow, makePolyTrackSection, makeMonoTrackSection;
+    var statusText, applyNow, makePolyTrackSection, makeMonoTrackSection, makeFxTrackSection;
     var hmGenWidth = 640;
 // 1360 -> 1060: each block shrank by 50px (190 -> 140, from the
 // Mix/Vol/Dry/Rev sliders going 130 -> 90) - 50 * 6 blocks = 300px saved
@@ -134,8 +133,12 @@
 // Send A/Send B target-effect row - HT1-4's own four blocks by 32px each
 // (140 -> 172), MT1/MT2's own two by 32px each on top of their already-172
 // height (172 -> 204) - "mixer phase" per feedback, same +192px total as
-// CT8guiPercGenerator.scd's own window just got.
-    var hmGenHeight = 1316;
+// CT8guiPercGenerator.scd's own window just got. 1316 -> 1346: HT3/HT4's
+// own two 172px blocks are gone (FXT1/FXT2 replace them, per feedback -
+// "going to take HT3 and HT4 and rename them FXT1 and FXT2"), but FXT1/
+// FXT2 get their own two new 172px blocks plus one new section header -
+// net +30px.
+    var hmGenHeight = 1346;
     var hmGenBounds = Rect(700, 40, hmGenWidth, hmGenHeight);
 
     if(~hmGeneratorWindow.notNil) { ~hmGeneratorWindow.close };
@@ -874,6 +877,136 @@
 
     [\MT1, \MT2].do(makeMonoTrackSection);
 
+    StaticText(~hmGeneratorWindow, 600@24).string_("FX GENERATOR (FXT1-FXT2)")
+        .font_(Font("Arial", 14, true)).stringColor_(Color.white);
+    ~hmGeneratorWindow.view.decorator.nextLine;
+
+// FXT1/FXT2's own block - the new bar-long-pulsing-texture family, per
+// feedback ("going to take HT3 and HT4 and rename them FXT1 and FXT2").
+// Much simpler than HT1/HT2's own block: no Pit Pat (the only instrument
+// so far, \noise, has no pitch arg), no Accents (~fxLevel/~fxWet, in
+// leftPane, are already live volume controls, same role Mix/Vol play
+// everywhere else - no separate amp slider needed), no Source (not needed
+// yet - \startOnly, the one Dur Pat choice that would need it, is
+// deliberately deferred - see ~buildFxPattern's own comment,
+// CT8tracks.scd).
+    makeFxTrackSection = { |name|
+        var trackContainer, trackColor, labelColor = Color.black;
+        var leftPane, rightPane;
+        var mixSlider, volSlider, sendASlider, sendBSlider;
+        var sendAEffectMenu, sendBEffectMenu;
+        var onOffButton, instrumentMenu, patternMenu;
+        var percentSlider, percentReadout;
+        var instrumentSymbols = [\noise];
+        var instrumentLabels = ["noise"];
+        var patternSymbols = [\firstBeat, \everyBeat];
+        var patternLabels = ["First beat only", "Every beat"];
+
+        trackColor = Color.rand(0.7);
+        trackContainer = CompositeView(~hmGeneratorWindow, 600@172).background_(trackColor);
+        ~hmGeneratorWindow.view.decorator.nextLine;
+
+        leftPane = CompositeView(trackContainer, Rect(484, 6, 110, 160)).background_(
+            Color.new(trackColor.red * 0.8, trackColor.green * 0.8, trackColor.blue * 0.8, trackColor.alpha)
+        );
+        leftPane.decorator = FlowLayout(leftPane.bounds, 4@4, 4@4);
+
+        StaticText(leftPane, 20@14).string_("Mix").stringColor_(labelColor);
+        StaticText(leftPane, 20@14).string_("Vol").stringColor_(labelColor);
+        StaticText(leftPane, 20@14).string_("SdA").stringColor_(labelColor);
+        StaticText(leftPane, 20@14).string_("SdB").stringColor_(labelColor);
+        leftPane.decorator.nextLine;
+
+        mixSlider = Slider(leftPane, 20@90)
+            .value_(~fxWet[name])
+            .action_({ |sl|
+                ~fxWet[name] = sl.value;
+                statusText.string_("Changed (live, no rebuild needed).");
+            });
+        volSlider = Slider(leftPane, 20@90)
+            .value_(~fxLevel[name])
+            .action_({ |sl|
+                ~fxLevel[name] = sl.value;
+                statusText.string_("Changed (live, no rebuild needed).");
+            });
+        sendASlider = Slider(leftPane, 20@90)
+            .value_(~sendAAmt[name])
+            .action_({ |sl|
+                ~sendAAmt[name] = sl.value;
+                statusText.string_("Send A updated (live, no rebuild needed).");
+            });
+        sendBSlider = Slider(leftPane, 20@90)
+            .value_(~sendBAmt[name])
+            .action_({ |sl|
+                ~sendBAmt[name] = sl.value;
+                statusText.string_("Send B updated (live, no rebuild needed).");
+            });
+
+        rightPane = CompositeView(trackContainer, Rect(6, 6, 470, 160)).background_(trackColor);
+        rightPane.decorator = FlowLayout(rightPane.bounds, 6@6, 4@4);
+
+        StaticText(rightPane, 48@22).string_(name.asString)
+            .font_(Font("Arial", 13, true)).stringColor_(labelColor);
+        onOffButton = Button(rightPane, 24@24)
+            .states_([[" ", Color.black, Color.red], [" ", Color.black, Color.green]])
+            .value_(if(~trackEnabled[name] == false) { 0 } { 1 })
+            .action_({ |b|
+                ~trackEnabled[name] = (b.value == 1);
+                ~syncTrackPlayer.(name);
+            });
+        StaticText(rightPane, 30@22).string_("Inst").stringColor_(labelColor);
+        instrumentMenu = PopUpMenu(rightPane, 80@22)
+            .items_(instrumentLabels)
+            .value_(instrumentSymbols.indexOf(~fxInstrument[name]) ? 0)
+            .action_({ |m|
+                ~fxInstrument[name] = instrumentSymbols[m.value];
+                statusText.string_("Changed - applies at next rebuild or Apply now.");
+            });
+        rightPane.decorator.nextLine;
+
+        StaticText(rightPane, 70@22).string_("Dur Pat").stringColor_(labelColor);
+        patternMenu = PopUpMenu(rightPane, 120@22)
+            .items_(patternLabels)
+            .value_(patternSymbols.indexOf(~fxPattern[name]) ? 0)
+            .action_({ |m|
+                ~fxPattern[name] = patternSymbols[m.value];
+                statusText.string_("Changed - applies at next rebuild or Apply now.");
+            });
+        rightPane.decorator.nextLine;
+
+        StaticText(rightPane, 70@22).string_("Pulse %").stringColor_(labelColor);
+        percentSlider = Slider(rightPane, 120@22)
+            .value_(~fxPulsePercent[name] / 100)
+            .action_({ |sl|
+                var v = (sl.value * 100).round(1);
+                ~fxPulsePercent[name] = v;
+                percentReadout.string_(v.asString ++ "%");
+                statusText.string_("Changed - applies at next rebuild or Apply now.");
+            });
+        percentReadout = StaticText(rightPane, 50@22)
+            .string_(~fxPulsePercent[name].round(1).asString ++ "%").stringColor_(labelColor);
+        rightPane.decorator.nextLine;
+
+        StaticText(rightPane, 54@22).string_("Snd A ->").stringColor_(labelColor);
+        sendAEffectMenu = PopUpMenu(rightPane, 100@22)
+            .items_(~auxEffectNames)
+            .value_(~sendAEffect[name] ? 0)
+            .action_({ |m|
+                ~sendAEffect[name] = m.value;
+                statusText.string_("Send A target updated (live, no rebuild needed).");
+            });
+        StaticText(rightPane, 54@22).string_("Snd B ->").stringColor_(labelColor);
+        sendBEffectMenu = PopUpMenu(rightPane, 100@22)
+            .items_(~auxEffectNames)
+            .value_(~sendBEffect[name] ? 0)
+            .action_({ |m|
+                ~sendBEffect[name] = m.value;
+                statusText.string_("Send B target updated (live, no rebuild needed).");
+            });
+    };
+
+    ~fxTrackNames.do(makeFxTrackSection);
+
     Button(~hmGeneratorWindow, 120@26).states_([["Apply now", Color.black, Color(0.65, 0.85, 0.65)]])
         .action_({ applyNow.value });
 
@@ -881,6 +1014,7 @@
         .action_({
             ~polyTrackNames.do(~resetPolyConfig);
             [\MT1, \MT2].do(~resetMonoConfig);
+            ~fxTrackNames.do(~resetFxConfig);
             ~makeHarmonyMelodyGeneratorWindow.value;
             ~stopPbinds.value;
             ~updatePbinds.value;
