@@ -195,6 +195,22 @@
             [\dur, 5, 0.2, 20, \lin], [\amp, 0.15, 0, 0.7, \lin],
             [\pan, 0, -1, 1, \lin]
     ]);
+// detune has no audible effect yet - declared on the SynthDef but never
+// read in its body (CT8synths.scd's own bullet flags this rather than
+// guessing how it should wire in); exposed here anyway since every other
+// param is, per feedback ("add it to synthlab").
+    specs.put(\rumble, [
+            [\freq, 60, 20, 500, \exp],
+            [\detune, 0.5, 0, 2, \lin],
+            [\pan, 0, -1, 1, \lin],
+            [\amp, 0.1, 0, 1, \lin],
+            [\speed, 1.99, 0.1, 5, \exp],
+            [\density, 1, 0.1, 5, \exp],
+            [\tone, 0.25, 0, 2, \lin],
+            [\blur, 2, 0, 10, \lin],
+            [\wet, 0, 0, 1, \lin],
+            [\level, 1, 0, 1, \lin]
+    ]);
     specs.put(\kick, [
             [\amp, 0.5, 0, 1, \lin], [\pan, 0, -1, 1, \lin],
             [\curve, -4, -12, 0, \lin],
@@ -328,13 +344,14 @@
             [\wet, 0, 0, 1, \lin],
             [\level, 1, 0, 1, \lin]
     ]);
-    names = [\drone, \lead, \seq, \noise, \kick, \plucking, \hat, \cym, \baseD, \fm, \droneChord, \shimmerPad];
+    names = [\drone, \lead, \seq, \noise, \rumble, \kick, \plucking, \hat, \cym, \baseD, \fm, \droneChord, \shimmerPad];
 
 // Maps each entry in `names` to the SynthDef that actually plays it -
-// \drone/\lead/\seq/\noise/\kick/\droneChord/\baseD are the shared synths
-// now in CT8synths.scd (\baseD already uses a single `out` arg with no
-// hardcoded extra reverb-send line, so it's directly compatible with this
-// lab's bus convention - no \labBaseD variant needed); \plucking/\hat/\cym/
+// \drone/\lead/\seq/\noise/\rumble/\kick/\droneChord/\baseD are the shared
+// synths now in CT8synths.scd (\baseD/\rumble already use a single `out`
+// arg with no hardcoded extra reverb-send line, so they're directly
+// compatible with this lab's bus convention - no \labBaseD/\labRumble
+// variant needed); \plucking/\hat/\cym/
 // \fm point to this file's own \labX variants (see the file header for why -
 // \fm's is about its fx/fxsend send leaking to hardware output, not a bus-
 // convention mismatch like the other three).
@@ -343,6 +360,7 @@
     synthNames.put(\lead, \lead);
     synthNames.put(\seq, \seq);
     synthNames.put(\noise, \noise);
+    synthNames.put(\rumble, \rumble);
     synthNames.put(\kick, \kick);
     synthNames.put(\fm, \labFm);
     synthNames.put(\plucking, \labPlucking);

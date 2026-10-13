@@ -574,11 +574,28 @@ their own bullets below for exactly where the line falls:
   time, so the ordering constraint is looser than it looks).
 
 - **`CT8synths.scd`** — owns everything sound-*generating*: SynthDefs (`\plucking`,
-  `\hat`, `\baseD`, `\cym`, `\fm`, `\ELIreverb`, `\drone`/`\lead`/`\seq`/`\noise`/`\kick`/
+  `\hat`, `\baseD`, `\cym`, `\fm`, `\ELIreverb`, `\drone`/`\lead`/`\seq`/`\noise`/`\rumble`/
+  `\kick`/
   `\droneChord`/`\shimmerPad`/`\allpassReverb` - incorporated from the user's Sound Lab
   file; every one but `\droneChord`/`\shimmerPad` is still only auditioned via
   `CT8guiSynthLab.scd`, not used by any
-  track. `\lead`/`\seq`'s own `freq` arg is a MIDI note number now, not Hz (default
+  track. `\rumble` (the user's own SynthDef, brought in directly) is a 20-voice textural
+  drone - 5 detuned saws plus pink noise per voice, each independently bandpass-swept,
+  wave-folded, and spread across a slowly moving stereo field - checked and fixed per
+  feedback ("check it out, fix the output"): `{...} ! size` (4 places) duplicated the
+  UNEVALUATED function `size` times rather than calling it `size` times (the exact same
+  bug already found and fixed in `\shimmerPad`, above - `\drone`'s own near-identical
+  20-voice design already uses `Array.fill` for exactly this reason), so every one of
+  the 20 voices was hearing the SAME random saw mix, the SAME noise signal, and the SAME
+  base pan position, not 20 independent ones - fixed by switching all four to
+  `Array.fill(size, {...})`. Also gained the standard `wet`/`level`/`auxBusA`-`auxAmtB`
+  tail (`~allpassWash`/`~auxSend`, this file's own bullet) it was missing entirely, and
+  added to the Synth Lab (`CT8guiSynthLab.scd`) with every param exposed - its own `out`
+  arg needed no `\labRumble` variant, same as `\baseD`. `detune` is declared as an arg
+  but never actually read anywhere in the body - flagged rather than silently wired in,
+  since how it should affect the saw spread is a creative call, not an obvious bug fix;
+  it's still exposed as a Synth Lab slider (per feedback, every param) but currently has
+  no audible effect. `\lead`/`\seq`'s own `freq` arg is a MIDI note number now, not Hz (default
   `69`/`76` - the nearest integer MIDI note to each one's old literal Hz default,
   `440`/`660`) - same "plain control arg, `.midicps`'d inside the body" pattern as
   `\droneChord`'s own `note1`-`note4`, below, so the Synth Lab's `\midi` slider curve

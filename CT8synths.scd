@@ -641,6 +641,76 @@ SynthDef(\shimmerPad, { |out=0, amp=0.125,
     Out.ar(out, sig);
 }).add;
 
+
+// `{...} ! size` (4 places, originally) duplicates the UNEVALUATED function
+// `size` times, not `size` independent results - the exact same bug already
+// found and fixed in \shimmerPad (CT8synths.scd's own bullet) - so every
+// one of the 20 "voices" below was actually hearing the SAME random saw
+// mix, the SAME noise signal, and the SAME base pan position, not 20
+// independent ones. Array.fill(size, {...}), which \drone (just above)
+// already uses for its own near-identical 20-voice design, actually calls
+// the block once per voice - per feedback ("check it out... fix the
+// output"). `detune` is declared but never read anywhere in this body -
+// flagged, not silently wired in, since guessing how it should affect the
+// saw spread is a creative call, not a bug fix.
+SynthDef(\rumble, {
+    |out = 0, freq = 60, detune = 0.5, pan = 0, amp = 0.1,
+     speed = 1.99, density = 1, tone = 0.25, blur = 2,
+     wet=0, level=1, auxBusA=0, auxAmtA=0, auxBusB=0, auxAmtB=0|
+    var sig;
+    var size = 20;
+    var trig = Impulse.ar(
+        Array.fill(size, { rrand(1.0, 15.0) }) * density
+    );
+
+	sig = Array.fill(size, {
+        var sawFreqs;
+        sawFreqs = Array.fill(5, {
+			freq + Rand(100,1000)
+        });
+        Mix(Saw.ar(sawFreqs)) / 20;
+    });
+
+// pink noise added to the signal - not each saw!!
+	sig = (sig + (Array.fill(size, { PinkNoise.ar }))/2);
+
+// Each wave gets its own moving filter, envelope and modulation
+    sig = sig.collect({ arg sig, x;
+        var bpfreq = exprand(50.0, 16000) * tone;
+        var bpfrq =
+            0.1 *
+            SinOsc.ar((x + 1) * (1/153) * speed)
+            .exprange(0.1, 4) *  blur;
+        sig = BPF.ar(sig, bpfreq, bpfrq) * 34;
+        sig = BPF.ar(sig, bpfreq, bpfrq) * 4;
+        sig = sig * EnvGen.ar( Env([0, 1, 0], [0.8, 0.8]),  trig[x] );
+        sig = sig.fold2(
+            LFNoise0.kr(
+                (1/23) * (x + 1) * speed
+            ).range(0.01, 8)
+        ) * 4;
+        sig = sig *
+            SinOsc.ar(
+                (1/800) * (x + 1) * speed
+            ).range(0.01, 1);
+    });
+    // Slowly moving random stereo positions; combine all 20 voices
+	//needs envlope that kind of pulses based on start of row/col
+    sig = Pan2.ar(
+        sig,
+        (
+            Array.fill(size, { rrand(-1.0, 1.0) }) *
+            SinOsc.ar(
+                (1/132) * (1..size) * speed
+            ).range(0, 1)
+        ),
+        amp
+    ).mean;
+    sig = ~allpassWash.(sig, wet, level);
+    ~auxSend.(sig, auxBusA, auxAmtA, auxBusB, auxAmtB);
+    Out.ar(out, sig);
+}).add;
+
 // Allpass reverb: a second, simpler reverb option alongside \ELIreverb - a
 // straight dry/wet allpass-chain wash rather than \ELIreverb's comb+allpass
 // design. Renamed from \labReverb (its name in the sound lab) since it's now
