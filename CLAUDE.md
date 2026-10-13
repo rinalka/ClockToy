@@ -1193,6 +1193,21 @@ the literal `\exp` curve type (see `\droneChord`/`\shimmerPad`/`\lead`'s own bul
 for why that one isn't). `\rumbleCarrier` answers `\rumble`'s own hand-written comment
 ("needs envlope that kind of pulses based on start of row/col").
 
+When `~fxInstrument[name]` is `\rumble` specifically, `~buildFxPattern` adds a SECOND,
+independent carrier+pulse pair - per feedback ("when rumble is on in a track i would
+like it to in effect be played twice. once with the controls as is. but a second one
+played on first of beat only... a slider for the second version to control the
+volume") - its own bus/Groups entirely separate from the main layer's
+(`~fxRumbleLayerBus[name]`/`~fxRumbleLayerSourceGroup[name]`/
+`~fxRumbleLayerPulseGroup[name]`), always `\firstBeat` (one pulse per bar) regardless
+of this track's own Dur Pat choice, sharing `~fxWet[name]`/`~fxPulsePercent[name]` with
+the main layer but with its own independent volume, `~fxLayerLevel[name]` (GUI: "2nd
+Vol," `CT8guiHarmonyMelodyGenerator.scd`'s own `makeFxTrackSection`) - defaults to
+`0.25`, "1/4 of the volume of the first" taken as a fixed starting value (matching
+`~fxLevel[name]`'s own default of `1`), not a live ratio tracking the main Vol slider.
+Not built at all when the instrument is `\noise` - deliberately rumble-specific, per
+feedback.
+
 `MT1` used to mirror `HT1`'s structure from `~colPattern`/`\columnStart`
 through its own bespoke builder, `~buildMelodyPattern` - that builder is gone now,
 along with the whole idea of "melody tracks" as their own family; `MT1`/`MT2` are driven

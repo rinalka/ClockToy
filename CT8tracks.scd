@@ -415,6 +415,21 @@
 ~fxPulsePercent = ~fxPulsePercent ? ();
 ~fxWet = ~fxWet ? ();
 ~fxLevel = ~fxLevel ? ();
+// ~fxLayerLevel[name] - per feedback ("when rumble is on in a track i
+// would like it to in effect be played twice. once with the controls as
+// is. but a second one played on first of beat only... a slider for the
+// second version to control the volume"): when ~fxInstrument[name] is
+// \rumble specifically, ~buildFxPattern adds a SECOND, independent
+// carrier+pulse pair (its own bus/Groups, ~fxRumbleLayerBus[name]/
+// ~fxRumbleLayerSourceGroup[name]/~fxRumbleLayerPulseGroup[name], below) -
+// always \firstBeat (one pulse per bar), regardless of this track's own
+// ~fxPattern[name] - sharing ~fxWet[name]/~fxPulsePercent[name] with the
+// main layer but with its OWN independent volume. Defaults to 0.25 - "1/4
+// of the volume of the first" taken as a fixed starting value (matching
+// ~fxLevel[name]'s own default of 1), not a live ratio that tracks the
+// main Vol slider afterward. Not built at all when the instrument is
+// \noise - this is deliberately rumble-specific, per feedback.
+~fxLayerLevel = ~fxLayerLevel ? ();
 ~fxTrackNames.do { |name|
     ~fxSource[name] = ~fxSource[name] ? ~fxSourceDefaults[name];
     ~fxInstrument[name] = ~fxInstrument[name] ? \rumble;
@@ -422,6 +437,7 @@
     ~fxPulsePercent[name] = ~fxPulsePercent[name] ? 20;
     ~fxWet[name] = ~fxWet[name] ? 0;
     ~fxLevel[name] = ~fxLevel[name] ? 1;
+    ~fxLayerLevel[name] = ~fxLayerLevel[name] ? 0.25;
 };
 
 // Forcibly resets one FX track's whole config back to these same original
@@ -434,6 +450,7 @@
     ~fxPulsePercent[name] = 20;
     ~fxWet[name] = 0;
     ~fxLevel[name] = 1;
+    ~fxLayerLevel[name] = 0.25;
 };
 
 // ---------------------------------------------------------------------------
@@ -490,6 +507,12 @@
 ~fxCarrierBus = ~fxCarrierBus ? ();
 ~fxSourceGroup = ~fxSourceGroup ? ();
 ~fxPulseGroup = ~fxPulseGroup ? ();
+// The second, rumble-only layer's own bus/Groups - entirely separate from
+// the main layer's (above), same "allocate once lazily, reuse forever"
+// convention, so the two layers never fight over the same bus.
+~fxRumbleLayerBus = ~fxRumbleLayerBus ? ();
+~fxRumbleLayerSourceGroup = ~fxRumbleLayerSourceGroup ? ();
+~fxRumbleLayerPulseGroup = ~fxRumbleLayerPulseGroup ? ();
 ~buildFxPattern = { |name|
     var instrument = ~fxInstrument[name];
     var carrierSynthName = ~fxSynthNames[instrument];
@@ -499,7 +522,7 @@
     var startRole = if(fromRow) { \rowStart } { \columnStart };
     var startIdx = [];
     var pulseDurs;
-    var carrierPattern, pulsePattern;
+    var carrierPattern, pulsePattern, patterns;
 
     if(events.isEmpty) {
         ("No active clock cells to play (" ++ name ++ ").").warn;
@@ -544,7 +567,46 @@
             \type, Pfunc { if(~trackEnabled[name]) { \note } { \rest } }
         ] ++ ~auxSendPbindArgs.(name)));
 
-        ~trackPatterns[name] = Ppar([carrierPattern, pulsePattern]);
+        patterns = [carrierPattern, pulsePattern];
+
+// Second layer, rumble only - per feedback ("when rumble is on in a track
+// i would like it to in effect be played twice. once with the controls
+// as is. but a second one played on first of beat only"). Its own bus/
+// Groups, its own carrier+pulse pair, ALWAYS \firstBeat regardless of
+// this track's own Dur Pat - sharing ~fxWet[name]/~fxPulsePercent[name]
+// with the main layer, but its own independent ~fxLayerLevel[name]
+// (that bullet, above, has the default-value reasoning).
+        if(instrument == \rumble) {
+            var layerCarrierPattern, layerPulsePattern;
+            if(~fxRumbleLayerBus[name].isNil) {
+                ~fxRumbleLayerBus[name] = Bus.audio(s, 2);
+                ~fxRumbleLayerSourceGroup[name] = Group.new(s);
+                ~fxRumbleLayerPulseGroup[name] = Group.after(~fxRumbleLayerSourceGroup[name]);
+            };
+            layerCarrierPattern = Pbind(
+                \instrument, carrierSynthName,
+                \dur, Pfunc { events.size },
+                \masterDur, Pfunc { |ev| ev[\dur] / t.tempo },
+                \out, Pfunc { ~fxRumbleLayerBus[name].index },
+                \group, Pfunc { ~fxRumbleLayerSourceGroup[name] },
+                \type, Pfunc { if(~trackEnabled[name]) { \note } { \rest } }
+            );
+            layerPulsePattern = Pbind(*([
+                \instrument, \fxPulse,
+                \dur, Pfunc { events.size },
+                \pulsedur, Pfunc { |ev| (ev[\dur] / t.tempo) * (~fxPulsePercent[name] / 100) },
+                \releaseDur, Pfunc { |ev| ((ev[\dur] / t.tempo) - ev[\pulsedur]).max(0.01) },
+                \in, Pfunc { ~fxRumbleLayerBus[name].index },
+                \out, 0,
+                \wet, Pfunc { ~fxWet[name] },
+                \level, Pfunc { ~fxLayerLevel[name] },
+                \group, Pfunc { ~fxRumbleLayerPulseGroup[name] },
+                \type, Pfunc { if(~trackEnabled[name]) { \note } { \rest } }
+            ] ++ ~auxSendPbindArgs.(name)));
+            patterns = patterns ++ [layerCarrierPattern, layerPulsePattern];
+        };
+
+        ~trackPatterns[name] = Ppar(patterns);
     };
 };
 

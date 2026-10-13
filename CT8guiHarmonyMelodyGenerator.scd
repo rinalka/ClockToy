@@ -137,8 +137,10 @@
 // own two 172px blocks are gone (FXT1/FXT2 replace them, per feedback -
 // "going to take HT3 and HT4 and rename them FXT1 and FXT2"), but FXT1/
 // FXT2 get their own two new 172px blocks plus one new section header -
-// net +30px.
-    var hmGenHeight = 1346;
+// net +30px. 1346 -> 1410: FXT1/FXT2's own two blocks each grew by 32px
+// (172 -> 204) for the new "2nd Vol" row (rumble's second-layer volume,
+// per feedback).
+    var hmGenHeight = 1410;
     var hmGenBounds = Rect(700, 40, hmGenWidth, hmGenHeight);
 
     if(~hmGeneratorWindow.notNil) { ~hmGeneratorWindow.close };
@@ -892,14 +894,17 @@
 // row-col/Every beat) - per feedback ("have the dur pat choices be first
 // beat only, first of row/col, every beat") - see ~buildFxPattern's own
 // comment, CT8tracks.scd, for how the irregular row/col case is actually
-// driven.
+// driven. "2nd Vol" (row 4) is new too, per feedback - only actually
+// audible when Instrument is \rumble (~buildFxPattern's own second-layer
+// design, CT8tracks.scd), but shown regardless of which instrument is
+// selected, same as every other control here.
     makeFxTrackSection = { |name|
         var trackContainer, trackColor, labelColor = Color.black;
         var leftPane, rightPane;
         var mixSlider, volSlider, sendASlider, sendBSlider;
         var sendAEffectMenu, sendBEffectMenu;
         var onOffButton, sourceMenu, instrumentMenu, patternMenu;
-        var percentSlider, percentReadout;
+        var percentSlider, percentReadout, layerLevelSlider, layerLevelReadout;
         var instrumentSymbols = [\rumble, \noise];
         var instrumentLabels = ["rumble", "noise"];
         var patternSymbols = [\firstBeat, \startOnly, \everyBeat];
@@ -914,10 +919,13 @@
         };
 
         trackColor = Color.rand(0.7);
-        trackContainer = CompositeView(~hmGeneratorWindow, 600@172).background_(trackColor);
+// 172 -> 204, for the new "2nd Vol" row (rumble's second-layer volume,
+// per feedback) - same +32px-per-new-row convention every other block in
+// this project already uses.
+        trackContainer = CompositeView(~hmGeneratorWindow, 600@204).background_(trackColor);
         ~hmGeneratorWindow.view.decorator.nextLine;
 
-        leftPane = CompositeView(trackContainer, Rect(484, 6, 110, 160)).background_(
+        leftPane = CompositeView(trackContainer, Rect(484, 6, 110, 192)).background_(
             Color.new(trackColor.red * 0.8, trackColor.green * 0.8, trackColor.blue * 0.8, trackColor.alpha)
         );
         leftPane.decorator = FlowLayout(leftPane.bounds, 4@4, 4@4);
@@ -953,7 +961,7 @@
                 statusText.string_("Send B updated (live, no rebuild needed).");
             });
 
-        rightPane = CompositeView(trackContainer, Rect(6, 6, 470, 160)).background_(trackColor);
+        rightPane = CompositeView(trackContainer, Rect(6, 6, 470, 192)).background_(trackColor);
         rightPane.decorator = FlowLayout(rightPane.bounds, 6@6, 4@4);
 
         StaticText(rightPane, 48@22).string_(name.asString)
@@ -1006,6 +1014,22 @@
             });
         percentReadout = StaticText(rightPane, 50@22)
             .string_(~fxPulsePercent[name].round(1).asString ++ "%").stringColor_(labelColor);
+        rightPane.decorator.nextLine;
+
+// Only actually audible when Instrument is \rumble (~buildFxPattern's own
+// comment, CT8tracks.scd, has the full "second layer" design) - shown
+// regardless of which instrument is selected, same as every other
+// control here, rather than hiding/disabling it when it wouldn't apply.
+        StaticText(rightPane, 70@22).string_("2nd Vol").stringColor_(labelColor);
+        layerLevelSlider = Slider(rightPane, 120@22)
+            .value_(~fxLayerLevel[name])
+            .action_({ |sl|
+                ~fxLayerLevel[name] = sl.value;
+                layerLevelReadout.string_(sl.value.round(0.01).asString);
+                statusText.string_("Changed (live, no rebuild needed).");
+            });
+        layerLevelReadout = StaticText(rightPane, 50@22)
+            .string_(~fxLayerLevel[name].round(0.01).asString).stringColor_(labelColor);
         rightPane.decorator.nextLine;
 
         StaticText(rightPane, 54@22).string_("Snd A ->").stringColor_(labelColor);
