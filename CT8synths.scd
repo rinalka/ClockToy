@@ -511,31 +511,42 @@ SynthDef(\noise, { |out=0, dur=5, amp=0.15, pan=0|
 // envelopes summed together: masterEnv spans the WHOLE bar (masterDur
 // seconds, plus a fixed 1-second tail - "a bit tacked on the end" - so the
 // synth's own total lifetime is 0.1+masterDur+1, freed via doneAction:2 on
-// THIS envelope), and burstEnv is a short pulse shape that RETRIGGERS
-// every bdur seconds via a periodic Impulse.ar gate (the same plain-
-// Impulse-driven-retrigger idiom \rumble's own per-voice envelope already
-// uses - no sustain/release node needed, a fresh gate pulse just restarts
-// the shape from scratch) - pulsedur of each bdur-second cycle is "on"
-// (ramping up then back down), the rest is released. Both envelopes use
-// curve -4 uniformly, per feedback - genuinely safe here even on the
-// attack segment (which starts at 0), unlike the literal \exp curve type
-// (see \droneChord/\shimmerPad/\lead's own bullets, this file, for why
-// that one isn't). Final amplitude is masterEnv + burstEnv (added, not
-// multiplied), per feedback. masterDur/bdur/pulsedur are real seconds,
-// computed by ~buildFxPattern from the current tempo/Dur Pat/Pulse % and
-// fed in fresh via Pfunc every bar, same convention HT1/HT2's own
-// per-chord envelope uses - masterDur is NOT named `dur`, deliberately,
-// since that's Pbind's own reserved scheduling key (beats, not seconds) -
-// reusing it here would collide.
-SynthDef(\noiseFx, { |out=0, masterDur=2, bdur=2, pulsedur=0.2, amp=0.15, pan=0,
+// THIS envelope), and burstEnv is a short pulse shape that RETRIGGERS once
+// per row/column/beat span - per feedback ("have the dur pat choices be
+// first beat only, first of row/col, every beat"), span lengths are NOT
+// uniform for "first of row/col" (different rows/columns have different
+// widths), so a plain periodic Impulse.ar can't drive the retrigger any
+// more. Instead, ~buildFxPattern writes this bar's own span lengths (in
+// real seconds - one value for firstBeat/everyBeat, repeated via modulo;
+// one PER SPAN for first of row/col) into a small Buffer (`spanBuf`,
+// `numSpans` entries) every bar, and burstTrig is a TDuty/Dbufrd pair
+// cycling through it - the standard SC idiom for "a trigger train whose
+// own period varies according to a list of durations," the irregular
+// equivalent of Impulse.ar's fixed-rate trigger. pulsedur/releaseDur (how
+// long each pulse's own on/decay portion lasts) are still a single FIXED
+// shape for the whole bar, sized from the AVERAGE span length rather than
+// each individual span's own - letting every pulse's own ENVELOPE SHAPE
+// vary per span too would need a second, carefully-synchronized buffer
+// read; this is far simpler and the timing (which is what's actually
+// meant to "follow the row/col structure") is still exact regardless.
+// Both envelopes use curve -4 uniformly, per feedback - genuinely safe
+// here even on the attack segment (which starts at 0), unlike the literal
+// \exp curve type (see \droneChord/\shimmerPad/\lead's own bullets, this
+// file, for why that one isn't). Final amplitude is masterEnv + burstEnv
+// (added, not multiplied), per feedback. masterDur is NOT named `dur`,
+// deliberately, since that's Pbind's own reserved scheduling key (beats,
+// not seconds) - reusing it here would collide.
+SynthDef(\noiseFx, { |out=0, masterDur=2, pulsedur=0.2, releaseDur=1.8,
+    spanBuf=(-1), numSpans=1, amp=0.15, pan=0,
     wet=0, level=1, auxBusA=0, auxAmtA=0, auxBusB=0, auxAmtB=0|
     var masterEnv = EnvGen.ar(
         Env([0, 0.5, 0.5, 0.0], [0.1, masterDur, 1], -4),
         doneAction: 2
     );
+    var burstTrig = TDuty.ar(Dbufrd(spanBuf, Dseries(0, 1, inf) % numSpans), 0, 1);
     var burstEnv = EnvGen.ar(
-        Env([0, 0.5, 0.5, 0.0], [0.01, pulsedur, (bdur - pulsedur).max(0.01)], -4),
-        Impulse.ar(bdur.reciprocal)
+        Env([0, 0.5, 0.5, 0.0], [0.01, pulsedur, releaseDur], -4),
+        burstTrig
     );
     var env = masterEnv + burstEnv;
     var sig = LPF.ar(WhiteNoise.ar * LFPulse.kr(LFNoise1.kr(0.5).range(3, 12)),
@@ -765,6 +776,84 @@ SynthDef(\rumble, {
         ),
         amp
     ).mean;
+    sig = ~allpassWash.(sig, wet, level);
+    ~auxSend.(sig, auxBusA, auxAmtA, auxBusB, auxAmtB);
+    Out.ar(out, sig);
+}).add;
+
+// Rumble FX: \rumble's own 20-voice texture (identical sound-generating
+// chain, copied verbatim) wrapped in the SAME dual-envelope/buffer-driven
+// burst design \noiseFx uses (see that SynthDef's own comment, above, for
+// the full explanation of masterEnv/burstEnv/spanBuf/numSpans) - added for
+// FXT1/FXT2 per feedback ("to hard to hear with noise... lets do it with
+// rumble. add rumble to both FX tracks"), answering \rumble's own
+// hand-written comment just above ("needs envlope that kind of pulses
+// based on start of row/col"). \rumble's own per-voice envelope
+// (EnvGen.ar(Env([0,1,0],[0.8,0.8]), trig[x])) stays untouched - that's
+// part of the texture itself, independent of this outer bar/pulse shaping
+// - masterEnv+burstEnv multiplies the WHOLE mixed-down signal, same as
+// \noiseFx does to its own noise chain.
+SynthDef(\rumbleFx, {
+    |out=0, freq=60, detune=0.5, pan=0, amp=0.1,
+     speed=1.99, density=1, tone=0.25, blur=2,
+     masterDur=2, pulsedur=0.2, releaseDur=1.8, spanBuf=(-1), numSpans=1,
+     wet=0, level=1, auxBusA=0, auxAmtA=0, auxBusB=0, auxAmtB=0|
+    var masterEnv = EnvGen.ar(
+        Env([0, 0.5, 0.5, 0.0], [0.1, masterDur, 1], -4),
+        doneAction: 2
+    );
+    var burstTrig = TDuty.ar(Dbufrd(spanBuf, Dseries(0, 1, inf) % numSpans), 0, 1);
+    var burstEnv = EnvGen.ar(
+        Env([0, 0.5, 0.5, 0.0], [0.01, pulsedur, releaseDur], -4),
+        burstTrig
+    );
+    var env = masterEnv + burstEnv;
+    var sig;
+    var size = 20;
+    var trig = Impulse.ar(
+        Array.fill(size, { rrand(1.0, 15.0) }) * density
+    );
+
+    sig = Array.fill(size, {
+        var sawFreqs;
+        sawFreqs = Array.fill(5, {
+            freq + Rand(100, 1000)
+        });
+        Mix(Saw.ar(sawFreqs)) / 20;
+    });
+
+    sig = (sig + (Array.fill(size, { PinkNoise.ar }))/2);
+
+    sig = sig.collect({ arg sig, x;
+        var bpfreq = exprand(50.0, 16000) * tone;
+        var bpfrq =
+            0.1 *
+            SinOsc.ar((x + 1) * (1/153) * speed)
+            .exprange(0.1, 4) *  blur;
+        sig = BPF.ar(sig, bpfreq, bpfrq) * 34;
+        sig = BPF.ar(sig, bpfreq, bpfrq) * 4;
+        sig = sig * EnvGen.ar( Env([0, 1, 0], [0.8, 0.8]),  trig[x] );
+        sig = sig.fold2(
+            LFNoise0.kr(
+                (1/23) * (x + 1) * speed
+            ).range(0.01, 8)
+        ) * 4;
+        sig = sig *
+            SinOsc.ar(
+                (1/800) * (x + 1) * speed
+            ).range(0.01, 1);
+    });
+    sig = Pan2.ar(
+        sig,
+        (
+            Array.fill(size, { rrand(-1.0, 1.0) }) *
+            SinOsc.ar(
+                (1/132) * (1..size) * speed
+            ).range(0, 1)
+        ),
+        1
+    ).mean;
+    sig = sig * env * amp;
     sig = ~allpassWash.(sig, wet, level);
     ~auxSend.(sig, auxBusA, auxAmtA, auxBusB, auxAmtB);
     Out.ar(out, sig);

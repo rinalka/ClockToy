@@ -883,24 +883,35 @@
 
 // FXT1/FXT2's own block - the new bar-long-pulsing-texture family, per
 // feedback ("going to take HT3 and HT4 and rename them FXT1 and FXT2").
-// Much simpler than HT1/HT2's own block: no Pit Pat (the only instrument
-// so far, \noise, has no pitch arg), no Accents (~fxLevel/~fxWet, in
+// Simpler than HT1/HT2's own block in one way still: no Pit Pat (neither
+// \rumble nor \noise exposes a pitched, chord-aware arg the way
+// \droneChord/\shimmerPad do) and no Accents (~fxLevel/~fxWet, in
 // leftPane, are already live volume controls, same role Mix/Vol play
-// everywhere else - no separate amp slider needed), no Source (not needed
-// yet - \startOnly, the one Dur Pat choice that would need it, is
-// deliberately deferred - see ~buildFxPattern's own comment,
-// CT8tracks.scd).
+// everywhere else - no separate amp slider needed). Source (Row/Col) IS
+// here now, alongside all three Dur Pat choices (First beat only/First of
+// row-col/Every beat) - per feedback ("have the dur pat choices be first
+// beat only, first of row/col, every beat") - see ~buildFxPattern's own
+// comment, CT8tracks.scd, for how the irregular row/col case is actually
+// driven.
     makeFxTrackSection = { |name|
         var trackContainer, trackColor, labelColor = Color.black;
         var leftPane, rightPane;
         var mixSlider, volSlider, sendASlider, sendBSlider;
         var sendAEffectMenu, sendBEffectMenu;
-        var onOffButton, instrumentMenu, patternMenu;
+        var onOffButton, sourceMenu, instrumentMenu, patternMenu;
         var percentSlider, percentReadout;
-        var instrumentSymbols = [\noise];
-        var instrumentLabels = ["noise"];
-        var patternSymbols = [\firstBeat, \everyBeat];
-        var patternLabels = ["First beat only", "Every beat"];
+        var instrumentSymbols = [\rumble, \noise];
+        var instrumentLabels = ["rumble", "noise"];
+        var patternSymbols = [\firstBeat, \startOnly, \everyBeat];
+// Label tracks whichever Source is selected, same "Start of Row/Col"
+// convention every other family's own Dur Pat menu already uses.
+        var patternLabelsFor = { |source|
+            [
+                "First beat only",
+                "First of " ++ (if(source == \row) { "Row" } { "Col" }),
+                "Every beat"
+            ]
+        };
 
         trackColor = Color.rand(0.7);
         trackContainer = CompositeView(~hmGeneratorWindow, 600@172).background_(trackColor);
@@ -954,6 +965,16 @@
                 ~trackEnabled[name] = (b.value == 1);
                 ~syncTrackPlayer.(name);
             });
+        StaticText(rightPane, 26@22).string_("Src").stringColor_(labelColor);
+        sourceMenu = PopUpMenu(rightPane, 55@22)
+            .items_(["Row", "Col"])
+            .value_([\row, \col].indexOf(~fxSource[name]) ? 0)
+            .action_({ |m|
+                ~fxSource[name] = [\row, \col][m.value];
+                patternMenu.items_(patternLabelsFor.(~fxSource[name]));
+                patternMenu.value_(patternSymbols.indexOf(~fxPattern[name]) ? 0);
+                statusText.string_("Changed - applies at next rebuild or Apply now.");
+            });
         StaticText(rightPane, 30@22).string_("Inst").stringColor_(labelColor);
         instrumentMenu = PopUpMenu(rightPane, 80@22)
             .items_(instrumentLabels)
@@ -966,7 +987,7 @@
 
         StaticText(rightPane, 70@22).string_("Dur Pat").stringColor_(labelColor);
         patternMenu = PopUpMenu(rightPane, 120@22)
-            .items_(patternLabels)
+            .items_(patternLabelsFor.(~fxSource[name]))
             .value_(patternSymbols.indexOf(~fxPattern[name]) ? 0)
             .action_({ |m|
                 ~fxPattern[name] = patternSymbols[m.value];

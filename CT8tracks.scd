@@ -362,27 +362,34 @@
 // a mere rename: unlike every other family, a Pbind event here fires only
 // ONCE PER BAR (~fxPattern[name] has no bearing on the Pbind's own event
 // rate at all - that's always ~numBeats beats) - the PULSING happens
-// entirely INSIDE \noiseFx's own SynthDef body (CT8synths.scd's own
-// bullet), via a second envelope that retriggers internally. This
-// section's job is just computing the three real-second values that
-// drive it, below (~buildFxPattern).
-//   ~fxInstrument[name] - only \noise for now, per feedback ("for the
-//     moment lets deal only with noise") - \seq/\lead are a planned
-//     follow-up, each needing their own envelope-driving SynthDef variant
-//     the way \noiseFx wraps \noise's own sound. ~fxSynthNames maps the
-//     friendly menu symbol to the actual SynthDef that plays it, same role
-//     CT8guiSynthLab.scd's own `synthNames` plays there.
-//   ~fxPattern[name] - \firstBeat (one pulse per bar) or \everyBeat (one
-//     pulse per beat) - \startOnly (start of row/col) is a deliberately
-//     deferred third choice, per feedback: its pulses would need to land on
-//     IRREGULAR row/column span boundaries, which (since the whole bar is
-//     ONE continuous Synth, not one Pbind event per pulse) needs a
-//     Buffer-driven variable-rate internal trigger - real extra plumbing,
-//     worth its own later pass once First beat only/Every beat are solid.
-//   ~fxPulsePercent[name] - what fraction (0-100) of bdur (the gap between
-//     pulses - the whole bar for \firstBeat, one beat for \everyBeat) each
-//     pulse's own "on" portion occupies - converted to pulsedur (real
-//     seconds) by ~buildFxPattern.
+// entirely INSIDE the SynthDef's own body (CT8synths.scd's own \noiseFx/
+// \rumbleFx bullets), via a second envelope that retriggers internally.
+// This section's job is just computing the values that drive it, below
+// (~buildFxPattern).
+//   ~fxSource[name] - \row or \col, same meaning/defaults convention as
+//     every other family's own Source (PT1/PT3 default \row, PT2/PT4
+//     default \col, etc.) - FXT1 defaults \row, FXT2 \col. Only matters
+//     for \startOnly (below); \firstBeat/\everyBeat ignore it entirely,
+//     same as every other family's own Source/pattern interaction.
+//   ~fxInstrument[name] - \rumble or \noise, per feedback ("to hard to
+//     hear with noise... lets do it with rumble. add rumble to both FX
+//     tracks") - both FXT1/FXT2 now default to \rumble. \seq/\lead are
+//     still a planned follow-up, each needing their own envelope-driving
+//     SynthDef variant the way \noiseFx/\rumbleFx wrap \noise/\rumble's
+//     own sound. ~fxSynthNames maps the friendly menu symbol to the actual
+//     SynthDef that plays it, same role CT8guiSynthLab.scd's own
+//     `synthNames` plays there.
+//   ~fxPattern[name] - \firstBeat (one pulse per bar), \startOnly (one
+//     pulse per row/column span), or \everyBeat (one pulse per beat) - all
+//     three now real, per feedback ("have the dur pat choices be first
+//     beat only, first of row/col, every beat... this should make the
+//     envelope that follows the row or every beat more obvious"). Row/
+//     column spans are IRREGULAR (different rows/columns have different
+//     widths), unlike firstBeat/everyBeat's own uniform spacing - see
+//     ~buildFxPattern's own comment for how that's actually driven.
+//   ~fxPulsePercent[name] - what fraction (0-100) of the (average) span
+//     length each pulse's own "on" portion occupies - converted to
+//     pulsedur/releaseDur (real seconds) by ~buildFxPattern.
 //   ~fxWet[name]/~fxLevel[name] - this track's own tiny built-in
 //     ~allpassWash tail, same role/convention as ~percWet/~percLevel -
 //     doubles as FXT1/FXT2's only overall volume control (no separate amp
@@ -390,14 +397,17 @@
 //     mix, so a second one would be redundant), read live via Pfunc same
 //     as everywhere else.
 ~fxTrackNames = [\FXT1, \FXT2];
-~fxSynthNames = (noise: \noiseFx);
+~fxSynthNames = (noise: \noiseFx, rumble: \rumbleFx);
+~fxSourceDefaults = (FXT1: \row, FXT2: \col);
+~fxSource = ~fxSource ? ();
 ~fxInstrument = ~fxInstrument ? ();
 ~fxPattern = ~fxPattern ? ();
 ~fxPulsePercent = ~fxPulsePercent ? ();
 ~fxWet = ~fxWet ? ();
 ~fxLevel = ~fxLevel ? ();
 ~fxTrackNames.do { |name|
-    ~fxInstrument[name] = ~fxInstrument[name] ? \noise;
+    ~fxSource[name] = ~fxSource[name] ? ~fxSourceDefaults[name];
+    ~fxInstrument[name] = ~fxInstrument[name] ? \rumble;
     ~fxPattern[name] = ~fxPattern[name] ? \firstBeat;
     ~fxPulsePercent[name] = ~fxPulsePercent[name] ? 20;
     ~fxWet[name] = ~fxWet[name] ? 0;
@@ -408,7 +418,8 @@
 // defaults - mirrors ~resetPercConfig/~resetMonoConfig/~resetPolyConfig,
 // same reason (see any one's own comment).
 ~resetFxConfig = { |name|
-    ~fxInstrument[name] = \noise;
+    ~fxSource[name] = ~fxSourceDefaults[name];
+    ~fxInstrument[name] = \rumble;
     ~fxPattern[name] = \firstBeat;
     ~fxPulsePercent[name] = 20;
     ~fxWet[name] = 0;
@@ -418,38 +429,91 @@
 // ---------------------------------------------------------------------------
 // FXT1/FXT2: BAR-LONG PULSING TEXTURE, FROM FX GENERATOR CONFIG
 // ---------------------------------------------------------------------------
-// One Pbind event per bar (\dur, ~numBeats - same bar-length-in-beats every
-// other builder's own one-trigger-per-bar patterns use) - NOT one event
-// per pulse. This function's only job is computing, fresh every bar via
-// Pfunc (so a live tempo change takes effect on the very next bar, same
-// convention HT1/HT2's own per-chord envelope uses), the three real-second
-// values \noiseFx needs: masterDur (the whole bar), bdur (the gap between
-// pulses - masterDur itself for \firstBeat, one beat for \everyBeat), and
-// pulsedur (~fxPulsePercent[name]% of bdur). Deliberately does NOT splice
-// in ~labOverrideArgs (unlike every other builder) - \noiseFx is a
-// different SynthDef from the Synth Lab's own plain \noise entry, and
-// \noise's own `dur` key (Hz... no, seconds, but still) would collide with
-// Pbind's reserved \dur (beats) if the Synth Lab ever live-tracked it,
-// silently breaking this track's own bar-length scheduling - not worth the
-// risk for a feature (tune-in-the-lab-hear-it-live) that wouldn't even
-// apply cleanly here given how different \noiseFx's own param set is.
+// One Pbind event per bar (\dur, events.size - same bar-length-in-beats
+// every other builder's own one-trigger-per-bar patterns use) - NOT one
+// event per pulse. The pulsing itself happens entirely INSIDE the
+// SynthDef's own body - this function's job is computing, fresh every bar
+// via Pfunc (so a live tempo change takes effect on the very next bar,
+// same convention HT1/HT2's own per-chord envelope uses), the values that
+// drive it: masterDur (the whole bar, real seconds), and the span schedule
+// (spanBuf/numSpans) the burst envelope retriggers from.
+//
+// spanBeats (plural) is the actual list of per-pulse span lengths, IN
+// BEATS - computed once per rebuild (structure only changes when the clock
+// scan itself changes), via the exact same nextIdx-idx gap technique every
+// other builder in this file already uses: \firstBeat is one span, the
+// whole bar; \everyBeat is one span, one beat (repeated via modulo inside
+// the SynthDef, so only a single buffer entry is ever needed); \startOnly
+// is one span PER ROW/COLUMN, each one that span's own real width - the
+// IRREGULAR case this feature is actually for.
+//
+// Since SynthDef args can't hold a variable-length array, spanBeats gets
+// converted to real seconds (dividing by the LIVE tempo, fresh every bar)
+// and written into a small per-track Buffer (~fxSpanBuf[name], allocated
+// once and reused across rebuilds) - the SynthDef then drives its own
+// burst retrigger from a TDuty/Dbufrd pair cycling through that buffer
+// (CT8synths.scd's own \noiseFx/\rumbleFx bullets have the full mechanism)
+// - the standard SC idiom for "a trigger train whose own period varies
+// according to a list of durations," since a plain fixed-rate Impulse.ar
+// can't produce irregular timing. pulsedur/releaseDur (how long each
+// pulse's own on/decay portion lasts) are sized from the AVERAGE span
+// length for the whole bar, not each individual span - see
+// ~buildFxPattern's own SynthDef-side comment for why that's a deliberate
+// simplification, not an oversight.
+//
+// Deliberately does NOT splice in ~labOverrideArgs (unlike every other
+// builder) - \noiseFx/\rumbleFx are different SynthDefs from the Synth
+// Lab's own plain \noise/\rumble entries, and \noise's own `dur` key
+// (seconds) would collide with Pbind's reserved \dur (beats) if the Synth
+// Lab ever live-tracked it, silently breaking this track's own bar-length
+// scheduling - not worth the risk for a feature that wouldn't even apply
+// cleanly here given how different these two SynthDefs' own param sets are.
+~fxSpanBuf = ~fxSpanBuf ? ();
 ~buildFxPattern = { |name|
     var instrument = ~fxInstrument[name];
     var synthName = ~fxSynthNames[instrument];
     var pattern = ~fxPattern[name];
-    ~trackPatterns[name] = Pbind(*([
-        \instrument, synthName,
-        \dur, Pfunc { ~numBeats ? 1 },
-        \masterDur, Pfunc { |ev| ev[\dur] / t.tempo },
-        \bdur, Pfunc { |ev|
-            if(pattern == \everyBeat) { 1 / t.tempo } { ev[\masterDur] }
-        },
-        \pulsedur, Pfunc { |ev| ev[\bdur] * (~fxPulsePercent[name] / 100) },
-        \out, 0,
-        \wet, Pfunc { ~fxWet[name] },
-        \level, Pfunc { ~fxLevel[name] },
-        \type, Pfunc { if(~trackEnabled[name]) { \note } { \rest } }
-    ] ++ ~auxSendPbindArgs.(name)));
+    var fromRow = (~fxSource[name] == \row);
+    var events = if(fromRow) { ~rowPattern ? [] } { ~colPattern ? [] };
+    var startRole = if(fromRow) { \rowStart } { \columnStart };
+    var startIdx = [];
+    var spanBeats;
+
+    if(events.isEmpty) {
+        ("No active clock cells to play (" ++ name ++ ").").warn;
+        ~trackPatterns[name] = Pbind(\dur, 1, \type, \rest);
+    } {
+        events.do { |ev, i| if(ev[\role] == startRole) { startIdx = startIdx.add(i) } };
+
+        spanBeats = switch(pattern,
+            \firstBeat, { [events.size] },
+            \everyBeat, { [1] },
+            { startIdx.collect { |idx, i|
+                var nextIdx = if((i + 1) < startIdx.size) { startIdx[i + 1] } { events.size + startIdx[0] };
+                nextIdx - idx
+            } }
+        );
+
+        if(~fxSpanBuf[name].isNil) { ~fxSpanBuf[name] = Buffer.alloc(s, 256, 1) };
+
+        ~trackPatterns[name] = Pbind(*([
+            \instrument, synthName,
+            \dur, Pfunc { events.size },
+            \masterDur, Pfunc { |ev| ev[\dur] / t.tempo },
+            \numSpans, Pfunc { spanBeats.size },
+            \spanBuf, Pfunc {
+                ~fxSpanBuf[name].setn(0, spanBeats.collect(_ / t.tempo));
+                ~fxSpanBuf[name].bufnum;
+            },
+            \avgSpanDur, Pfunc { (spanBeats.sum / spanBeats.size) / t.tempo },
+            \pulsedur, Pfunc { |ev| ev[\avgSpanDur] * (~fxPulsePercent[name] / 100) },
+            \releaseDur, Pfunc { |ev| (ev[\avgSpanDur] - ev[\pulsedur]).max(0.01) },
+            \out, 0,
+            \wet, Pfunc { ~fxWet[name] },
+            \level, Pfunc { ~fxLevel[name] },
+            \type, Pfunc { if(~trackEnabled[name]) { \note } { \rest } }
+        ] ++ ~auxSendPbindArgs.(name)));
+    };
 };
 
 
